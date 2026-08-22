@@ -165,6 +165,29 @@ borrow headroom from another account.
   session 5h ▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░···········································  you 70%
 ```
 
+
+### Controls
+
+Everything is editable from the watch view — no exiting, no file editing. Every change writes
+through `control.json`, so a launchd tick seconds later sees it even if you close the window.
+
+| Key | Does |
+|---|---|
+| `j` / `k` (or ↑↓) | select a program |
+| `space` / `e` | enable/disable the selected program |
+| `[` `]` | nudge its priority (clamped ±9) |
+| `m` | cycle mode: off → low → normal → away |
+| `p` | pause 1h, or clear an active pause |
+| `P` | extend the pause to the next step (1h → 3h → 8h → 24h) |
+| `+` / `-` | concurrency cap (1–8) |
+| `t` | run a tick now, launching cycles if capacity allows |
+| `x` | stop the selected program's cycle (`y` to confirm) |
+| `q` / ctrl-c | quit |
+
+Every write is validated before it lands, so a mistyped edit is refused rather than leaving a
+control file the next tick cannot parse. `x` signals the worker's whole process group, so the
+cycle goes down with it instead of being orphaned.
+
 ## aice installs
 
 Each program targets its own aice install, selected by `AICE_BASE_URL`. Token caches must not

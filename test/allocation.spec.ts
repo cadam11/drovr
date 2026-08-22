@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { allocationFor, type Allocation } from '../src/allocation.ts';
 import { poolFrom } from '../src/capacity.ts';
+import { estimateCycleCost } from '../src/ledger.ts';
 import { account, NOW, status } from './fixtures.ts';
 
 const ceilings = { weekly: 0.55, session: 0.4 };
@@ -96,4 +97,45 @@ test('reservations never exceed the headroom they draw from', () => {
   assert.equal(a.programsAvailable, 0);
   assert.ok(a.programsReserved <= 0.25 + 1e-9);
   assert.equal(sum(a).toFixed(6), '1.000000');
+});
+
+test('a 5h window that reset mid-cycle is discarded, not recorded as zero cost', () => {
+  // Cycles run for hours, so the 5h bucket resetting mid-flight is the normal case.
+  // Counting those as zero would drag the median down until session stopped binding.
+  const spanning = [1, 2, 3].map((index) => ({
+    v: 1 as const,
+    kind: 'delivery' as const,
+    program: 'demo',
+    startedAt: new Date(NOW - index * 3_600_000).toISOString(),
+    endedAt: new Date(NOW).toISOString(),
+    exit: 'context' as const,
+    poolBefore: { fable: 1, general: 1, session: 0.3 },
+    poolAfter: { fable: 0.9, general: 0.92, session: 0.8 },
+    startupTokens: null,
+    yield: null,
+    asksRaised: 0,
+  }));
+  const seed = { fable: 0.1, general: 0.08, session: 0.25 };
+  const cost = estimateCycleCost(spanning, seed);
+  assert.equal(cost.fable.toFixed(3), '0.100');
+  assert.equal(cost.session, seed.session);
+});
+
+test('a bucket with enough clean samples still learns while another falls back', () => {
+  const clean = [1, 2, 3].map((index) => ({
+    v: 1 as const,
+    kind: 'delivery' as const,
+    program: 'demo',
+    startedAt: new Date(NOW - index * 3_600_000).toISOString(),
+    endedAt: new Date(NOW).toISOString(),
+    exit: 'context' as const,
+    poolBefore: { fable: 1, general: 1, session: 0.9 },
+    poolAfter: { fable: 0.8, general: 0.92, session: 0.5 },
+    startupTokens: null,
+    yield: null,
+    asksRaised: 0,
+  }));
+  const cost = estimateCycleCost(clean, { fable: 0.1, general: 0.08, session: 0.25 });
+  assert.equal(cost.session.toFixed(3), '0.400');
+  assert.equal(cost.fable.toFixed(3), '0.200');
 });

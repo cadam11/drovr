@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
-import { aiceEnv } from './publish.ts';
+import { wrap } from './publish.ts';
 
 /**
  * Written by the runner before it exits. Its absence after the process ends is
@@ -56,11 +56,13 @@ export const runCycle = async (program: Program, startedAt: string): Promise<num
 
   writeFileSync(join(paths().programState(program.name), 'current-command.txt'), command, 'utf8');
 
+  // sh -c carries the command string, so direnv never has to re-quote it.
+  const { file, args } = wrap(program, ['sh', '-c', command]);
+
   return new Promise((resolve, reject) => {
-    const child = spawn(command, {
+    const child = spawn(file, args, {
       cwd: program.cwd,
-      shell: true,
-      env: { ...process.env, ...aiceEnv(program), DROVR_PROGRAM: program.name },
+      env: { ...process.env, DROVR_PROGRAM: program.name },
       stdio: ['ignore', log, log],
       detached: false,
     });

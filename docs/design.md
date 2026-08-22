@@ -85,6 +85,33 @@ estimate is a median over recent delivery cycles, seeded from config until three
 Onboarding cycles are excluded — they are read-heavy and Fable-light, and averaging them in would
 skew every admission decision afterward.
 
+
+## The three buckets are not a hierarchy
+
+It is tempting to read `unified5h`, `unified7d` and `unified7dFable` as nested — 5h inside
+weekly, Fable inside weekly. They are not a precedence order. **One Fable token decrements all
+three counters**: they are overlapping windows on the same spend, so they bind simultaneously
+and the tightest wins. That is what `min()` in `cyclesFundableFrom` expresses, and no
+precedence logic is needed.
+
+But they are not interchangeable either, and treating them as symmetric caused two defects:
+
+**Recovery time depends on which bucket binds.** A 5h window recovers in hours; a weekly one in
+days. The first version reported the soonest reset across all three, so a weekly-bound wait
+would claim it recovered in two hours. `Pool` now carries a reset per bucket, `cyclesFundableFrom`
+returns which bucket binds, and the WAIT reason names it: `general tightest — funds 0.40 cycles,
+need 1.50, recovers in 90h`.
+
+**The 5h bucket resets mid-cycle, which corrupts cost measurement.** Cycles run for hours, so a
+5h window resetting during one is the normal case, not an edge case. The pool then *grows* over
+the cycle and the delta measures the reset, not the spend. Clamping that to zero — which the
+first version did — dragged the median toward nothing, and since `ratio()` treats near-zero cost
+as near-infinite capacity, the tightest and most often binding constraint quietly stopped binding
+at all after a few cycles.
+
+Reset-corrupted samples are now discarded rather than recorded as zero, and each bucket keeps its
+own sample count: the 5h bucket can fall back to the seed while the weekly buckets go on learning.
+
 ## Two independent gates
 
 **Affordability** — can the pool fund a whole cycle, plus a reserve?

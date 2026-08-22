@@ -1,32 +1,32 @@
 import { execFile } from 'node:child_process';
-import { homedir } from 'node:os';
 import { promisify } from 'node:util';
 import type { Program } from './control.ts';
 
 const run = promisify(execFile);
 
-const expand = (path: string): string =>
-  path.startsWith('~/') ? `${homedir()}/${path.slice(2)}` : path;
-
 /**
- * Each program targets its own aice install. AICE_BASE_URL selects it and
- * AICE_CONFIG_DIR keeps the token caches apart — sharing one would make a login
- * to any install clobber the others.
+ * Each program's repo already declares its own environment (aice install, config
+ * dir, API tokens) in .envrc. Running through direnv keeps that the single source
+ * of truth instead of duplicating it into control.json, where it would drift.
  */
-export const aiceEnv = (program: Program): NodeJS.ProcessEnv => {
-  if (program.aice === null) return {};
-  return {
-    AICE_BASE_URL: program.aice.baseUrl,
-    ...(program.aice.configDir === null ? {} : { AICE_CONFIG_DIR: expand(program.aice.configDir) }),
-  };
-};
+export const wrap = (program: Program, argv: string[]): { file: string; args: string[] } =>
+  program.useDirenv
+    ? { file: 'direnv', args: ['exec', program.cwd, ...argv] }
+    : { file: argv[0]!, args: argv.slice(1) };
 
 /** Best-effort: a failed status publish must not fail an otherwise healthy tick, but it is logged. */
 export const publishStatus = async (program: Program, file: string): Promise<boolean> => {
   if (program.aice === null) return false;
-  const args = ['publish', file, '--as', program.aice.statusPage, ...program.aice.publishArgs];
+  const { file: bin, args } = wrap(program, [
+    'aice',
+    'publish',
+    file,
+    '--as',
+    program.aice.statusPage,
+    ...program.aice.publishArgs,
+  ]);
   try {
-    await run('aice', args, { cwd: program.cwd, env: { ...process.env, ...aiceEnv(program) } });
+    await run(bin, args, { cwd: program.cwd });
     return true;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

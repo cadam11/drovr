@@ -61,12 +61,34 @@ export const readCycles = (path: string): CycleRecord[] => {
     });
 };
 
-const costOf = (cycle: CycleRecord): CycleCost | null => {
+type PartialCost = { [K in keyof CycleCost]: number | null };
+
+/**
+ * A bucket that grew over the cycle reset mid-flight, which is the normal case for
+ * the 5h window during an hours-long cycle. The delta then measures the reset, not
+ * the spend, so the sample is discarded rather than recorded as zero — recording
+ * zero would drag the median toward nothing and quietly stop the tightest
+ * constraint from ever binding.
+ */
+const delta = (before: number, after: number): number | null =>
+  after > before ? null : before - after;
+
+const costOf = (cycle: CycleRecord): PartialCost | null => {
   if (cycle.poolAfter === null) return null;
   return {
-    fable: Math.max(0, cycle.poolBefore.fable - cycle.poolAfter.fable),
-    general: Math.max(0, cycle.poolBefore.general - cycle.poolAfter.general),
-    session: Math.max(0, cycle.poolBefore.session - cycle.poolAfter.session),
+    fable: delta(cycle.poolBefore.fable, cycle.poolAfter.fable),
+    general: delta(cycle.poolBefore.general, cycle.poolAfter.general),
+    session: delta(cycle.poolBefore.session, cycle.poolAfter.session),
+  };
+};
+
+/** Spend only; a reset-corrupted sample contributes nothing rather than a zero. */
+const spendOf = (cycle: CycleRecord): CycleCost => {
+  const cost = costOf(cycle);
+  return {
+    fable: cost?.fable ?? 0,
+    general: cost?.general ?? 0,
+    session: cost?.session ?? 0,
   };
 };
 
@@ -88,24 +110,28 @@ export const estimateCycleCost = (
   const costs = cycles
     .filter((cycle) => cycle.kind === 'delivery' && cycle.exit !== 'crash')
     .map(costOf)
-    .filter((cost): cost is CycleCost => cost !== null);
+    .filter((cost): cost is PartialCost => cost !== null);
 
-  if (costs.length < minSamples) return seed;
-  return {
-    fable: Math.max(median(costs.map((c) => c.fable)), seed.fable / 4),
-    general: Math.max(median(costs.map((c) => c.general)), seed.general / 4),
-    session: Math.max(median(costs.map((c) => c.session)), seed.session / 4),
+  // Each bucket keeps its own sample count: the 5h window resets mid-cycle far more
+  // often than the weekly ones, so it can fall back to the seed while the others learn.
+  const perBucket = (bucket: keyof CycleCost): number => {
+    const samples = costs.map((cost) => cost[bucket]).filter((value): value is number => value !== null);
+    if (samples.length < minSamples) return seed[bucket];
+    return Math.max(median(samples), seed[bucket] / 4);
   };
+
+  return { fable: perBucket('fable'), general: perBucket('general'), session: perBucket('session') };
 };
 
 /** Drovr's own spend inside the current weekly window — the pace-keeping numerator. */
 export const spentSince = (cycles: CycleRecord[], windowStart: number): CycleCost => {
-  const inWindow = cycles.filter((cycle) => Date.parse(cycle.startedAt) >= windowStart);
-  const costs = inWindow.map(costOf).filter((cost): cost is CycleCost => cost !== null);
+  const spends = cycles
+    .filter((cycle) => Date.parse(cycle.startedAt) >= windowStart)
+    .map(spendOf);
   return {
-    fable: costs.reduce((total, cost) => total + cost.fable, 0),
-    general: costs.reduce((total, cost) => total + cost.general, 0),
-    session: costs.reduce((total, cost) => total + cost.session, 0),
+    fable: spends.reduce((total, spend) => total + spend.fable, 0),
+    general: spends.reduce((total, spend) => total + spend.general, 0),
+    session: spends.reduce((total, spend) => total + spend.session, 0),
   };
 };
 

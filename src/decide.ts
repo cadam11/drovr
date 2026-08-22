@@ -10,6 +10,7 @@ import {
   type CycleCost,
   type CycleRecord,
 } from './ledger.ts';
+import type { BucketName } from './allocation.ts';
 import type { TeamclaudeStatus } from './teamclaude.ts';
 
 const WEEKLY_WINDOW_HOURS = 168;
@@ -22,6 +23,8 @@ export type Decision = {
   reason: string;
   pool: Pool | null;
   cyclesFundable: number | null;
+  /** Which bucket is tightest — the difference between waiting hours and waiting days. */
+  binding: BucketName | null;
   earliestRecoveryAt: number | null;
 };
 
@@ -37,12 +40,19 @@ export type DecideInput = {
 const ratio = (available: number, cost: number): number =>
   cost <= 0 ? Number.POSITIVE_INFINITY : available / cost;
 
-export const cyclesFundableFrom = (pool: Pool, cost: CycleCost): number =>
-  Math.min(
-    ratio(pool.fable, cost.fable),
-    ratio(pool.general, cost.general),
-    ratio(pool.session, cost.session),
-  );
+export type Funding = { cycles: number; binding: BucketName };
+
+/**
+ * The buckets are not a hierarchy: one Fable token decrements all three, so they
+ * are simultaneous constraints and the tightest binds. Which one binds matters —
+ * a 5h window is hours from recovery, a weekly one is days.
+ */
+export const cyclesFundableFrom = (pool: Pool, cost: CycleCost): Funding => {
+  const buckets: BucketName[] = ['fable', 'general', 'session'];
+  return buckets
+    .map((bucket) => ({ cycles: ratio(pool[bucket], cost[bucket]), binding: bucket }))
+    .reduce((tightest, candidate) => (candidate.cycles < tightest.cycles ? candidate : tightest));
+};
 
 /**
  * Cycles already running have not yet shown up as spent quota, so admitting
@@ -83,15 +93,23 @@ const halt = (reason: string): Decision => ({
   reason,
   pool: null,
   cyclesFundable: null,
+  binding: null,
   earliestRecoveryAt: null,
 });
 
-const hold = (reason: string, pool: Pool | null, fundable: number | null): Decision => ({
+/** Recovery is read from the binding bucket's own reset, not the soonest of all three. */
+const hold = (
+  reason: string,
+  pool: Pool | null,
+  funding: Funding | null,
+): Decision => ({
   verdict: 'WAIT',
   reason,
   pool,
-  cyclesFundable: fundable,
-  earliestRecoveryAt: pool?.earliestRecoveryAt ?? null,
+  cyclesFundable: funding?.cycles ?? null,
+  binding: funding?.binding ?? null,
+  earliestRecoveryAt:
+    funding === null || pool === null ? (pool?.earliestRecoveryAt ?? null) : pool.resetAt[funding.binding],
 });
 
 export const decide = (input: DecideInput): Decision => {
@@ -135,21 +153,27 @@ export const decide = (input: DecideInput): Decision => {
 
   const cost = estimateCycleCost(cycles, control.seedCycleCost);
   const available = lessReserved(pool, cost, running.length);
-  const fundable = cyclesFundableFrom(available, cost);
+  const funding = cyclesFundableFrom(available, cost);
   const required = 1 + control.reserveCycles;
-  if (fundable < required) {
+  if (funding.cycles < required) {
+    const recovers = pool.resetAt[funding.binding];
+    const when = recovers === null ? 'unknown' : `${Math.round((recovers - now) / 3_600_000)}h`;
     return hold(
-      `pool funds ${fundable.toFixed(2)} more cycles (${running.length} in flight), need ${required.toFixed(2)}`,
+      `${funding.binding} tightest — funds ${funding.cycles.toFixed(2)} cycles ` +
+        `(${running.length} in flight), need ${required.toFixed(2)}, recovers in ${when}`,
       pool,
-      fundable,
+      funding,
     );
   }
 
   return {
     verdict: 'GO',
-    reason: `pool funds ${fundable.toFixed(2)} more cycles across ${pool.usableAccounts} accounts (${running.length} in flight)`,
+    reason:
+      `funds ${funding.cycles.toFixed(2)} more cycles across ${pool.usableAccounts} accounts ` +
+      `(${running.length} in flight, ${funding.binding} tightest)`,
     pool,
-    cyclesFundable: fundable,
+    cyclesFundable: funding.cycles,
+    binding: funding.binding,
     earliestRecoveryAt: pool.earliestRecoveryAt,
   };
 };

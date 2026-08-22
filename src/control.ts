@@ -4,13 +4,8 @@ import type { Ceilings } from './capacity.ts';
 
 const ceilingsShape = z.object({ weekly: z.number(), session: z.number() });
 
-/**
- * Every program has its own aice install, selected by AICE_BASE_URL. Token
- * caches must not share a directory or a login to one clobbers the others.
- */
+/** The install itself comes from the repo's .envrc via direnv, not from here. */
 const aiceShape = z.object({
-  baseUrl: z.string(),
-  configDir: z.string().nullable().default(null),
   /** Null until the program has an asks page; the loop creates one on onboarding. */
   asksPage: z.string().nullable().default(null),
   statusPage: z.string(),
@@ -23,6 +18,8 @@ const programShape = z.object({
   /** {program} and {mode} are substituted before spawning. */
   cycleCommand: z.string().default('teamclaude run -- -p "/project-loop {program}"'),
   enabled: z.boolean().default(true),
+  /** Run the cycle through direnv so the repo's own .envrc supplies its environment. */
+  useDirenv: z.boolean().default(true),
   /** Lower wins the next capacity slot, matching teamclaude priority. */
   priority: z.number().default(0),
   /** ISO date. Inside the horizon the program is promoted one priority step. */

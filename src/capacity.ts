@@ -10,6 +10,12 @@ export type Pool = {
   general: number;
   session: number;
   usableAccounts: number;
+  /**
+   * Soonest future reset per bucket. The buckets are not interchangeable: a 5h
+   * window recovers in hours, a weekly one in days, so which bucket binds decides
+   * whether waiting is cheap or the loop is done for the week.
+   */
+  resetAt: { fable: number | null; general: number | null; session: number | null };
   earliestRecoveryAt: number | null;
 };
 
@@ -40,16 +46,23 @@ export const poolFrom = (
   now: number,
 ): Pool => {
   const usable = status.accounts.filter((account) => isUsable(account, now));
-  const resets = usable
-    .flatMap((a) => [a.quota.unified5hReset, a.quota.unified7dReset, a.quota.unified7dFableReset])
-    .filter((at): at is number => at !== null && at > now);
+  const soonest = (times: (number | null)[]): number | null => {
+    const future = times.filter((at): at is number => at !== null && at > now);
+    return future.length === 0 ? null : Math.min(...future);
+  };
+  const resetAt = {
+    fable: soonest(usable.map((a) => a.quota.unified7dFableReset)),
+    general: soonest(usable.map((a) => a.quota.unified7dReset)),
+    session: soonest(usable.map((a) => a.quota.unified5hReset)),
+  };
 
   return {
     fable: sum(usable.map((a) => headroom(a.quota.unified7dFable, ceilings.weekly))),
     general: sum(usable.map((a) => headroom(a.quota.unified7d, ceilings.weekly))),
     session: sum(usable.map((a) => headroom(a.quota.unified5h, ceilings.session))),
     usableAccounts: usable.length,
-    earliestRecoveryAt: resets.length === 0 ? null : Math.min(...resets),
+    resetAt,
+    earliestRecoveryAt: soonest([resetAt.fable, resetAt.general, resetAt.session]),
   };
 };
 

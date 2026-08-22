@@ -73,7 +73,7 @@ test('a pool that cannot fund a whole cycle plus reserve waits', () => {
   const thin = status([account({ name: 'a', fable: 0.5, general: 0.5, session: 0.35 })]);
   const decision = run({ status: thin });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /pool funds/);
+  assert.match(decision.reason, /tightest — funds/);
 });
 
 test('the reserve is what separates admitting from refusing a marginal pool', () => {
@@ -146,12 +146,16 @@ test('away mode raises the entitlement enough to keep running', () => {
 test('cyclesFundable is bound by the scarcest of the three buckets', () => {
   const pool = poolFrom(healthy(), { weekly: 0.55, session: 0.4 }, NOW);
   const fundable = cyclesFundableFrom(pool, { fable: 0.1, general: 0.1, session: 0.6 });
-  assert.equal(fundable.toFixed(2), '2.00');
+  assert.equal(fundable.binding, 'session');
+  assert.equal(fundable.cycles.toFixed(2), "2.00");
 });
 
 test('a zero-cost bucket does not constrain funding', () => {
   const pool = poolFrom(healthy(), { weekly: 0.55, session: 0.4 }, NOW);
-  assert.equal(Number.isFinite(cyclesFundableFrom(pool, { fable: 0, general: 0, session: 0 })), false);
+  assert.equal(
+    Number.isFinite(cyclesFundableFrom(pool, { fable: 0, general: 0, session: 0 }).cycles),
+    false,
+  );
 });
 
 test('a program with a cycle already in flight does not start a second one', () => {
@@ -215,4 +219,26 @@ test('the stuck streak counts only this program', () => {
     cycle({ program: 'other', yield: { ticketsMoved: 0, prsOpened: 0, commits: 0 } }),
   );
   assert.equal(run({ cycles: barren }).verdict, 'GO');
+});
+
+test('the binding bucket is named, so a 5h hold reads differently from a weekly one', () => {
+  // Session is the tightest here: fable and general have room, the 5h window does not.
+  const squeezed = status([account({ name: 'a', fable: 0.05, general: 0.05, session: 0.39 })]);
+  const decision = run({ status: squeezed });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.equal(decision.binding, 'session');
+  assert.match(decision.reason, /session tightest/);
+});
+
+test('recovery time comes from the binding bucket, not the soonest reset overall', () => {
+  // The 5h reset is 2h out and the weekly 90h out; a weekly-bound wait must not
+  // claim it recovers in 2 hours.
+  const weeklyBound = status([
+    account({ name: 'a', fable: 0.05, general: 0.54, session: 0.0, weeklyResetInHours: 90 }),
+  ]);
+  const decision = run({ status: weeklyBound });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.equal(decision.binding, 'general');
+  assert.equal(decision.earliestRecoveryAt, NOW + 90 * HOUR);
+  assert.match(decision.reason, /recovers in 90h/);
 });
