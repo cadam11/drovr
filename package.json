@@ -1,0 +1,14 @@
+{
+  "name": "drovr",
+  "version": "0.1.0",
+  "description": "Capacity-aware supervisor for long-horizon autonomous delivery loops",
+  "type": "module",
+  "bin": { "drovr": "./src/cli.ts" },
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "test": "node --test test/*.spec.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": { "zod": "^3.23.8" },
+  "devDependencies": { "typescript": "^5.6.0", "@types/node": "^22.0.0" }
+}
