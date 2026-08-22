@@ -20,6 +20,16 @@ const programShape = z.object({
   enabled: z.boolean().default(true),
   /** Run the cycle through direnv so the repo's own .envrc supplies its environment. */
   useDirenv: z.boolean().default(true),
+  /**
+   * 'herdr' opens the cycle as an interactive agent tab in the program's workspace, so it can
+   * be talked to like any other session. 'headless' runs claude -p to a log file instead.
+   */
+  runner: z.enum(['herdr', 'headless']).default('herdr'),
+  /** Pin the herdr workspace; otherwise it is matched by label, then by cwd. */
+  herdrWorkspace: z.string().nullable().default(null),
+  /** Prompt sent to the runner. {program} is substituted.
+   *  Only used by the headless runner as a full shell command. */
+  cyclePrompt: z.string().default('/project-loop {program}'),
   /** Lower wins the next capacity slot, matching teamclaude priority. */
   priority: z.number().default(0),
   /** ISO date. Inside the horizon the program is promoted one priority step. */
@@ -41,6 +51,8 @@ const controlShape = z.object({
   /** Spare cycles the pool must still hold after admitting one, so a cycle can always land. */
   reserveCycles: z.number().default(0.5),
   maxCyclesPerDay: z.number().default(8),
+  /** Hard stop on watching one cycle, so a wedged runner cannot hold its slot forever. */
+  maxCycleHours: z.number().default(12),
   /** Concurrent cycles across all programs; each one reserves capacity from the shared pool. */
   maxConcurrentCycles: z.number().default(2),
   /** Days before a deadline at which a program is promoted one priority step. */

@@ -132,7 +132,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     };
 
     record({});
-    const code = await runCycle(program, startedAt);
+    const outcome = await runCycle(program, startedAt, control.maxCycleHours);
     const report = readReport(name);
     const after = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 
@@ -146,7 +146,9 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     });
 
     if (report === null) {
-      console.error(`cycle for ${name} exited ${code} without a report — recorded as crash`);
+      console.error(
+        `cycle for ${name} produced no report — recorded as crash. ${outcome.detail}`,
+      );
       const cycles = readCycles(p.cycles).filter((cycle) => cycle.program === name);
       const decision = decide({
         status: await readStatus(),

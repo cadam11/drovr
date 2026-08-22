@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { wrap } from './publish.ts';
+import { agentState, resolveWorkspace, startCycleAgent, teamclaudeEnv } from './herdr.ts';
 
 /**
  * Written by the runner before it exits. Its absence after the process ends is
@@ -45,21 +46,20 @@ const substitute = (command: string, program: Program, onboarding: boolean): str
     .replaceAll('{program}', program.name)
     .replaceAll('{mode}', onboarding ? 'onboard' : 'deliver');
 
-/** Resolves with the child's exit code once the cycle finishes; cycles run for hours. */
-export const runCycle = async (program: Program, startedAt: string): Promise<number | null> => {
-  ensureDirs(program.name);
-  clearReport(program.name);
+export type CycleOutcome = { finished: boolean; detail: string };
 
+const POLL_MS = 30_000;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Headless fallback: claude -p to a log file. Nothing to talk to; used only when asked for. */
+const runHeadless = async (program: Program, startedAt: string): Promise<CycleOutcome> => {
   const logPath = join(paths().logs, `${program.name}-${startedAt.replaceAll(':', '-')}.log`);
   const log = openSync(logPath, 'a');
   const command = substitute(program.cycleCommand, program, isOnboarding(program.name));
-
-  writeFileSync(join(paths().programState(program.name), 'current-command.txt'), command, 'utf8');
-
-  // sh -c carries the command string, so direnv never has to re-quote it.
   const { file, args } = wrap(program, ['sh', '-c', command]);
 
-  return new Promise((resolve, reject) => {
+  const code = await new Promise<number | null>((resolve, reject) => {
     const child = spawn(file, args, {
       cwd: program.cwd,
       env: { ...process.env, DROVR_PROGRAM: program.name },
@@ -67,6 +67,64 @@ export const runCycle = async (program: Program, startedAt: string): Promise<num
       detached: false,
     });
     child.on('error', reject);
-    child.on('close', (code) => resolve(code));
+    child.on('close', resolve);
   });
+  return { finished: true, detail: `headless runner exited ${code}, log at ${logPath}` };
+};
+
+/**
+ * Opens the cycle as an interactive agent tab in the program's own herdr workspace,
+ * so Craig can read it and talk to it mid-cycle like any other session. drovr does
+ * not own the process, so completion is detected from the runner's own report or
+ * from the agent disappearing — never by killing anything.
+ */
+const runInHerdr = async (
+  program: Program,
+  startedAt: string,
+  maxHours: number,
+): Promise<CycleOutcome> => {
+  const workspaceId = await resolveWorkspace(program);
+  const prompt = substitute(program.cyclePrompt, program, isOnboarding(program.name));
+  const started = await startCycleAgent({
+    program,
+    workspaceId,
+    prompt,
+    env: await teamclaudeEnv(),
+  });
+
+  writeFileSync(
+    join(paths().programState(program.name), 'current-cycle.json'),
+    `${JSON.stringify({ ...started, workspaceId, prompt, startedAt }, null, 2)}\n`,
+    'utf8',
+  );
+
+  // Bounded: a wedged runner must not hold its capacity slot indefinitely.
+  const deadline = Date.now() + maxHours * 3_600_000;
+  while (Date.now() < deadline) {
+    await sleep(POLL_MS);
+    if (readReport(program.name) !== null) {
+      return { finished: true, detail: `runner reported in as agent ${started.agentName}` };
+    }
+    const state = await agentState(started.agentName);
+    if (state === 'gone') {
+      return { finished: true, detail: `agent ${started.agentName} is no longer present` };
+    }
+  }
+  return {
+    finished: false,
+    detail: `still running after ${maxHours}h — agent ${started.agentName} left in place for inspection`,
+  };
+};
+
+/** Resolves once the cycle finishes or the watch window expires; cycles run for hours. */
+export const runCycle = async (
+  program: Program,
+  startedAt: string,
+  maxHours: number,
+): Promise<CycleOutcome> => {
+  ensureDirs(program.name);
+  clearReport(program.name);
+  return program.runner === 'headless'
+    ? runHeadless(program, startedAt)
+    : runInHerdr(program, startedAt, maxHours);
 };

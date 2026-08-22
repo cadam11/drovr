@@ -185,6 +185,29 @@ drovr service print       # plist to stdout, writes nothing
 ```
 
 
+## Where a cycle actually runs
+
+A cycle is **an interactive claude session in that program's own herdr workspace**, not a headless
+background process. drovr creates a tab (never focused, so it does not steal your cursor), starts a
+`claude` agent named `drovr-<program>` in it, and prompts it with `/project-loop <program>`. You can
+read it, interrupt it, and chat with it like any other session — and the loop agent creates its own
+herdr worktrees from there, which project-loop already knows how to do.
+
+The proxy is applied via `teamclaude env`, teamclaude's own documented path for "agent multiplexers
+that spawn claude themselves", so the pane runs a normal interactive `claude` while still rotating
+across accounts.
+
+The workspace is matched by label, then by checkout path. Pin it with `herdrWorkspace` on the
+program if neither is right.
+
+**drovr never kills a cycle.** It watches for the runner's own report file, or for the agent to
+disappear. `x` in the watch view sends an interrupt, not a kill, so the runner still gets to wind
+down and make its work durable. After `maxCycleHours` (default 12) drovr stops watching and records
+the cycle, leaving the tab in place for you to inspect.
+
+Set `"runner": "headless"` on a program for the old behaviour — `claude -p` to a log file, with
+nothing to talk to.
+
 ## Multiple programs
 
 Programs are independent and run concurrently, up to `maxConcurrentCycles` (default 2). Each
@@ -267,6 +290,7 @@ through `control.json`, so a launchd tick seconds later sees it even if you clos
 | `p` | pause 1h, or clear an active pause |
 | `P` | extend the pause to the next step (1h → 3h → 8h → 24h) |
 | `+` / `-` | concurrency cap (1–8) |
+| `r` | redraw now instead of waiting for the timer |
 | `t` | run a tick now, launching cycles if capacity allows |
 | `x` | stop the selected program's cycle (`y` to confirm) |
 | `q` / ctrl-c | quit |

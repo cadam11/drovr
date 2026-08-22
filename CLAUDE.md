@@ -8,7 +8,13 @@ decision logic — it records why several obvious-looking approaches are wrong.
 
 - **drovr never kills a cycle.** Cycles run for hours and end themselves (context ceiling,
   thinning capacity, a natural seam, everything blocked). The supervisor only decides when to
-  *start* one. The single exception is the operator pressing `x` in the watch view.
+  *start* one, then watches. `x` in the watch view sends an interrupt, not a kill, so the runner
+  still winds down and makes its work durable.
+- **A cycle is an interactive herdr session, not a background process.** Craig has to be able to
+  read it and talk to it mid-cycle. drovr creates an unfocused tab in the program's own workspace
+  and starts a `claude` agent in it; the proxy comes from `teamclaude env`, not from wrapping the
+  command in `teamclaude run`. Because drovr does not own the process, completion is detected from
+  the report file or from the agent vanishing — never from an exit code it waited on.
 - **drovr never mutates teamclaude state.** No `disable`/`enable`, no `priority`, no `probe`
   changes. Those are global and shared with Craig's own foreground sessions; a supervisor that
   crashes mid-change would silently take an account away from him. Model capacity honestly

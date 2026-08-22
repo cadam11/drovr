@@ -21,6 +21,7 @@ import {
   toggleEnabled,
   type Action,
 } from './keys.ts';
+import { interruptAgent } from './herdr.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import { describeService, serviceState } from './service.ts';
@@ -88,8 +89,9 @@ const KEYBAR = [
   'm mode',
   'p pause',
   '+/- cap',
+  'r refresh',
   't tick',
-  'x stop',
+  'x interrupt',
   'q quit',
 ].join(dim(' · '));
 
@@ -262,22 +264,33 @@ const runTickNow = (): Action => {
 };
 
 /**
- * The worker was spawned detached, so it leads its own process group; signalling
- * the group takes the cycle down with it rather than orphaning the child.
+ * A herdr cycle is a real session Craig can talk to, so this interrupts it rather
+ * than killing it — the runner gets to wind down and write its report. The headless
+ * runner has no such affordance, so its process group is signalled instead.
  */
-const stopCycle = (program: string): Action => {
-  const pid = holder(paths().programLock(program));
-  if (pid === null) return { message: `${program} has no cycle running`, redraw: false };
+const stopCycle = async (program: Program): Promise<Action> => {
+  if (program.runner === 'herdr') {
+    try {
+      await interruptAgent(`drovr-${program.name}`.toLowerCase());
+      return { message: `interrupted ${program.name} — it can still wind down cleanly`, redraw: true };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return { message: `could not interrupt ${program.name}: ${detail}`, redraw: false };
+    }
+  }
+
+  const pid = holder(paths().programLock(program.name));
+  if (pid === null) return { message: `${program.name} has no cycle running`, redraw: false };
   try {
     process.kill(-pid, 'SIGTERM');
-    return { message: `sent SIGTERM to ${program} (pid ${pid})`, redraw: true };
+    return { message: `sent SIGTERM to ${program.name} (pid ${pid})`, redraw: true };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    return { message: `could not stop ${program}: ${detail}`, redraw: false };
+    return { message: `could not stop ${program.name}: ${detail}`, redraw: false };
   }
 };
 
-const handle = (key: string, state: State, programs: Program[]): Action => {
+const handle = async (key: string, state: State, programs: Program[]): Promise<Action> => {
   const control = paths().control;
   const selected = programs[state.selected];
   const settings = readControl(control);
@@ -287,7 +300,7 @@ const handle = (key: string, state: State, programs: Program[]): Action => {
     if (key !== 'y') return { message: 'stop cancelled', redraw: true };
     return selected === undefined
       ? { message: 'no program selected', redraw: false }
-      : stopCycle(selected.name);
+      : stopCycle(selected);
   }
 
   if (key === 'j' || key === `${ESC}B`) {
@@ -298,6 +311,7 @@ const handle = (key: string, state: State, programs: Program[]): Action => {
     state.selected = Math.max(0, state.selected - 1);
     return { message: '', redraw: true };
   }
+  if (key === 'r') return { message: 'refreshed', redraw: true };
   if (key === 'm') return cycleMode(control, settings.mode);
   if (key === 'p') return cyclePause(control, settings.pauseUntil);
   if (key === 'P') return extendPause(control, settings.pauseUntil);
@@ -311,7 +325,8 @@ const handle = (key: string, state: State, programs: Program[]): Action => {
   if (key === ']') return nudgePriority(control, selected.name, 1);
   if (key === 'x') {
     state.confirmStop = true;
-    return { message: `stop ${selected.name}? y to confirm, any other key to cancel`, redraw: true };
+    const verb = selected.runner === 'herdr' ? 'interrupt' : 'stop';
+    return { message: `${verb} ${selected.name}? y to confirm, any other key to cancel`, redraw: true };
   }
   return { message: '', redraw: false };
 };
@@ -352,9 +367,12 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
       try {
         const control = readControl(paths().control);
         const programs = byPriority(control.programs, Date.now(), control.deadlineHorizonDays);
-        const action = handle(chunk, state, programs);
-        state.message = action.message;
-        if (action.redraw) draw().catch(die);
+        handle(chunk, state, programs)
+          .then((action) => {
+            state.message = action.message;
+            if (action.redraw) draw().catch(die);
+          })
+          .catch(die);
       } catch (error) {
         state.message = error instanceof Error ? error.message : String(error);
         draw().catch(die);

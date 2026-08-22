@@ -72,7 +72,7 @@ export const COMMANDS: Command[] = [
     summary: 'live view with keyboard controls (default 15s refresh)',
     details: [
       'Interactive and TTY-only. Keys: j/k select, space enable, [ ] priority, m mode, p pause,',
-      'P extend pause, +/- concurrency cap, t tick now, x stop selected cycle, q quit.',
+      'P extend pause, +/- cap, r refresh, t tick now, x interrupt selected cycle, q quit.',
       'Not for agent use — call the individual commands instead.',
     ],
     writes: 'control.json, when a key is pressed',
@@ -84,6 +84,8 @@ export const COMMANDS: Command[] = [
     details: [
       'What launchd runs. Returns in seconds: each admitted program is handed to a detached',
       'run-cycle worker rather than awaited.',
+      'A launched cycle opens as an interactive claude tab in that program’s own herdr workspace,',
+      'so a human can read it and talk to it while it runs. drovr watches it but never kills it.',
     ],
     writes: 'decisions.jsonl, cycles.jsonl, and launches cycle processes',
   },
@@ -94,6 +96,8 @@ export const COMMANDS: Command[] = [
     details: [
       'Normally launched by tick. Blocks for the whole cycle (hours) and holds the program lock,',
       'so a second invocation for the same program is refused.',
+      'It opens the cycle in herdr and then only watches — for the runner’s report file, or for the',
+      'agent to disappear. Killing the runner is never drovr’s decision.',
     ],
     writes: 'cycles.jsonl, the program status page',
   },
