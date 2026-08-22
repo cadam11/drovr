@@ -47,6 +47,8 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `allocation.ts` | Bar segments must derive headroom from the same `Pool` `decide()` uses, or the picture contradicts the verdict printed beneath it. |
 | `tick.ts` | Pace and reservations are **global** (one shared pool); daily caps and stuck detection are **per program**. |
 | `watch.ts` | `setInterval` keeps the event loop alive — do not `unref()` it, and restore the cursor and raw mode on every exit path. |
+| `herdr.ts` | Workspaces are long-lived. One tab per program, reused across cycles — a tab per cycle buries the workspace within days. |
+| `herdr.ts` | If `teamclaude env` yields no proxy settings, refuse to start. Otherwise the pane runs a raw `claude` against Craig's quota with no rotation and no accounting — silent and expensive. |
 
 ## The CLI is read by agents
 

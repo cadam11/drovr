@@ -38,11 +38,22 @@ const herdr = async (args: string[]): Promise<unknown> => {
  */
 export const teamclaudeEnv = async (): Promise<string[]> => {
   const { stdout } = await run('teamclaude', ['env']);
-  return stdout
+  const pairs = stdout
     .split('\n')
     .map((line) => /^export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.trim()))
     .filter((match): match is RegExpExecArray => match !== null)
     .map((match) => `${match[1]}=${match[2]!.replace(/^["']|["']$/g, '')}`);
+
+  // Without this the pane would start a raw claude against Craig's own quota with no
+  // rotation and no accounting — a silent, expensive failure. Refuse instead.
+  const routed = pairs.some((pair) => /^(HTTPS_PROXY|ANTHROPIC_BASE_URL)=/.test(pair));
+  if (!routed) {
+    throw new Error(
+      '`teamclaude env` returned no proxy settings, so a cycle would run un-proxied. ' +
+        'Check the teamclaude server is up (teamclaude status).',
+    );
+  }
+  return pairs;
 };
 
 /** Explicit config wins; otherwise match the workspace by label, then by checkout path. */
@@ -71,20 +82,33 @@ export const resolveWorkspace = async (program: Program): Promise<string> => {
   );
 };
 
-export type StartedCycle = { agentName: string; tabId: string; paneId: string };
+export type StartedCycle = { agentName: string; tabId: string | null; paneId: string; reused: boolean };
+
+const paneExists = async (paneId: string): Promise<boolean> => {
+  try {
+    await herdr(['pane', 'get', paneId]);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /**
- * A tab rather than a split: the cycle owns its own pane for hours, and a tab is
- * what Craig can find and talk to. Never focused — it must not steal his cursor.
+ * Workspaces are long-lived, so one tab per cycle would bury the workspace in
+ * hundreds of them. The program keeps a single cycle tab: the previous agent has
+ * exited, leaving the pane at a shell prompt, which is exactly what `agent start`
+ * wants. Its scrollback carries prior cycles too.
  */
-export const startCycleAgent = async (input: {
+const cyclePane = async (input: {
   program: Program;
   workspaceId: string;
-  prompt: string;
+  remembered: string | null;
   env: string[];
-}): Promise<StartedCycle> => {
-  const { program, workspaceId, prompt, env } = input;
-  const agentName = `drovr-${program.name}`.slice(0, 32).toLowerCase();
+}): Promise<{ paneId: string; tabId: string | null; reused: boolean }> => {
+  const { program, workspaceId, remembered, env } = input;
+  if (remembered !== null && (await paneExists(remembered))) {
+    return { paneId: remembered, tabId: null, reused: true };
+  }
 
   const created = tabCreateShape.safeParse(
     await herdr([
@@ -95,21 +119,35 @@ export const startCycleAgent = async (input: {
       '--cwd',
       program.cwd,
       '--label',
-      `${program.name} cycle`,
+      `${program.name} cycles`,
       '--no-focus',
       ...env.flatMap((pair) => ['--env', pair]),
     ]),
   );
   if (!created.success) throw new Error('herdr tab create was not the expected shape');
+  return {
+    paneId: created.data.result.root_pane.pane_id,
+    tabId: created.data.result.tab.tab_id,
+    reused: false,
+  };
+};
 
-  const paneId = created.data.result.root_pane.pane_id;
-  const tabId = created.data.result.tab.tab_id;
+export const startCycleAgent = async (input: {
+  program: Program;
+  workspaceId: string;
+  prompt: string;
+  env: string[];
+  remembered: string | null;
+}): Promise<StartedCycle> => {
+  const { program, prompt } = input;
+  const agentName = `drovr-${program.name}`.slice(0, 32).toLowerCase();
+  const pane = await cyclePane(input);
 
-  await herdr(['agent', 'start', agentName, '--kind', 'claude', '--pane', paneId]);
+  await herdr(['agent', 'start', agentName, '--kind', 'claude', '--pane', pane.paneId]);
   // No --wait: the cycle runs for hours, and blocking here would defeat the point.
   await herdr(['agent', 'prompt', agentName, prompt]);
 
-  return { agentName, tabId, paneId };
+  return { agentName, ...pane };
 };
 
 export const agentState = async (agentName: string): Promise<string> => {

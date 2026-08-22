@@ -48,6 +48,24 @@ const substitute = (command: string, program: Program, onboarding: boolean): str
 
 export type CycleOutcome = { finished: boolean; detail: string };
 
+const paneShape = z.object({ paneId: z.string() });
+
+/** The cycle tab persists across cycles, so its pane is remembered between them. */
+const rememberedPane = (program: string): string | null => {
+  const path = join(paths().programState(program), 'cycle-pane.json');
+  if (!existsSync(path)) return null;
+  const parsed = paneShape.safeParse(JSON.parse(readFileSync(path, 'utf8')));
+  return parsed.success ? parsed.data.paneId : null;
+};
+
+const rememberPane = (program: string, paneId: string): void => {
+  writeFileSync(
+    join(paths().programState(program), 'cycle-pane.json'),
+    `${JSON.stringify({ paneId }, null, 2)}\n`,
+    'utf8',
+  );
+};
+
 const POLL_MS = 30_000;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,8 +108,10 @@ const runInHerdr = async (
     workspaceId,
     prompt,
     env: await teamclaudeEnv(),
+    remembered: rememberedPane(program.name),
   });
 
+  rememberPane(program.name, started.paneId);
   writeFileSync(
     join(paths().programState(program.name), 'current-cycle.json'),
     `${JSON.stringify({ ...started, workspaceId, prompt, startedAt }, null, 2)}\n`,

@@ -188,10 +188,16 @@ drovr service print       # plist to stdout, writes nothing
 ## Where a cycle actually runs
 
 A cycle is **an interactive claude session in that program's own herdr workspace**, not a headless
-background process. drovr creates a tab (never focused, so it does not steal your cursor), starts a
-`claude` agent named `drovr-<program>` in it, and prompts it with `/project-loop <program>`. You can
-read it, interrupt it, and chat with it like any other session — and the loop agent creates its own
-herdr worktrees from there, which project-loop already knows how to do.
+background process. drovr starts a `claude` agent named `drovr-<program>` in that program's cycle
+tab and prompts it with `/project-loop <program>`. You can read it, interrupt it, and chat with it
+like any other session — and the loop agent creates its own herdr worktrees from there, which
+project-loop already knows how to do.
+
+**One cycle tab per program, reused.** Workspaces are long-lived, so a tab per cycle would bury the
+workspace in hundreds of them. drovr creates the tab once (unfocused, so it never steals your
+cursor), remembers its pane, and reuses it: when a cycle ends the agent exits and leaves the pane at
+a shell prompt, which is exactly what the next `agent start` needs. The scrollback carries prior
+cycles with it. If the tab is closed, the next cycle makes a new one.
 
 The proxy is applied via `teamclaude env`, teamclaude's own documented path for "agent multiplexers
 that spawn claude themselves", so the pane runs a normal interactive `claude` while still rotating
