@@ -78,23 +78,56 @@ export const serviceState = (): ServiceState => {
  * launchd being loaded only proves it is scheduled. Ticks are short-lived, so the
  * honest liveness signal is when one last actually ran.
  */
-export const describeService = (state: ServiceState, lastTickAt: number | null, now: number): string => {
-  if (!state.installed) return 'not installed — run `drovr service install`';
-  if (!state.loaded) return 'installed but not loaded — run the launchctl bootstrap line';
+export const bootstrapCommand = (): string => `launchctl bootstrap gui/$(id -u) ${plistPath()}`;
 
-  const every = state.intervalSeconds === null ? '' : ` every ${state.intervalSeconds}s`;
+export const bootoutCommand = (): string => `launchctl bootout gui/$(id -u)/${LABEL}`;
+
+/**
+ * Every branch says what is wrong and the exact command that fixes it. Referring to
+ * a command some earlier invocation printed is useless to a reader who did not see it.
+ */
+export const describeService = (
+  state: ServiceState,
+  lastTickAt: number | null,
+  now: number,
+): string => {
+  if (!state.installed) {
+    return 'no launchd agent has been written, so nothing runs on a schedule. Fix: drovr service install';
+  }
+  if (!state.loaded) {
+    return `the launchd agent file exists but launchd has not loaded it, so no tick will ever fire. Fix: ${bootstrapCommand()}`;
+  }
+
+  const every = state.intervalSeconds === null ? '' : ` and fires every ${state.intervalSeconds}s`;
   const failed =
     state.lastExitStatus !== null && state.lastExitStatus !== 0
-      ? `, last tick exited ${state.lastExitStatus}`
+      ? `. Warning: the last tick exited with status ${state.lastExitStatus} — check ~/.drovr/logs/drovr.err.log`
       : '';
 
-  if (lastTickAt === null) return `loaded${every}, no tick recorded yet${failed}`;
+  if (lastTickAt === null) {
+    return `loaded${every}, but no tick has recorded a decision yet${failed}`;
+  }
 
   const minutes = Math.round((now - lastTickAt) / 60_000);
-  const ago = minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h${minutes % 60}m ago`;
-  const overdue =
+  const ago = minutes < 60 ? `${minutes} minutes ago` : `${Math.floor(minutes / 60)}h${minutes % 60}m ago`;
+  const stalled =
     state.intervalSeconds !== null && now - lastTickAt > state.intervalSeconds * 3000
-      ? ' — overdue'
+      ? ` — that is overdue for a ${state.intervalSeconds}s interval, so the agent may be stalled`
       : '';
-  return `loaded${every}, last tick ${ago}${overdue}${failed}`;
+  return `loaded${every}. Last tick recorded a decision ${ago}${stalled}${failed}`;
+};
+
+/** The same facts as a discriminated value, for a caller that needs to branch rather than read. */
+export const serviceHealth = (
+  state: ServiceState,
+  lastTickAt: number | null,
+  now: number,
+): 'not-installed' | 'not-loaded' | 'no-ticks-yet' | 'stalled' | 'healthy' => {
+  if (!state.installed) return 'not-installed';
+  if (!state.loaded) return 'not-loaded';
+  if (lastTickAt === null) return 'no-ticks-yet';
+  if (state.intervalSeconds !== null && now - lastTickAt > state.intervalSeconds * 3000) {
+    return 'stalled';
+  }
+  return 'healthy';
 };

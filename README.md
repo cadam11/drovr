@@ -50,6 +50,48 @@ if a program publishes pages.
 > versions with nvm, re-run `service install`.
 
 
+
+## Help, for agents
+
+Help is progressively disclosed, since the usual reader is an LLM working out how to drive this:
+
+```bash
+drovr help                  # overview + one line per command
+drovr help status           # detail for one command
+drovr status --help         # same page
+drovr help --json           # the whole tree, plus vocabulary and state-file locations
+```
+
+Every command page states what it **writes** (or that it is read-only) and whether it **blocks**
+for hours — the two things an agent most needs before calling something.
+
+Every read command accepts `--json`. That output is deliberately *not* minimal: values carry
+their units and meanings next to them, timestamps are ISO rather than epoch millis, and floats
+are rounded, because the consumer has to interpret it rather than just deserialize it.
+
+```json
+{
+  "service": {
+    "health": "not-loaded",
+    "explanation": "the launchd agent file exists but launchd has not loaded it, so no tick will ever fire. Fix: launchctl bootstrap gui/501 ..."
+  },
+  "pool": {
+    "general": 0.6,
+    "resetAt": { "general": "2026-08-23T10:59:59.685Z" },
+    "units": "account-fractions of headroom; one usable account contributes at most 1.0"
+  },
+  "programs": [{
+    "verdict": "WAIT",
+    "verdictMeaning": "transient — a later tick will retry, no action needed",
+    "reason": "session tightest — funds 0.40 cycles, need 1.50, recovers in 2h",
+    "bindingBucket": "session"
+  }]
+}
+```
+
+Every failure message names the fix rather than referring to one printed elsewhere: an unloaded
+service reports the literal `launchctl bootstrap` line, not "run the bootstrap line".
+
 ## Adding a program
 
 ```bash

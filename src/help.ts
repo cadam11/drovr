@@ -1,0 +1,240 @@
+export type Command = {
+  name: string;
+  usage: string;
+  summary: string;
+  details?: string[];
+  flags?: { flag: string; describes: string }[];
+  examples?: string[];
+  /** What the command mutates. Absent means read-only. */
+  writes?: string;
+  /** Runs for hours. Never call one of these from inside a tool loop. */
+  blocking?: true;
+};
+
+export const OVERVIEW = [
+  'drovr decides when a /project-loop cycle may start for each tracked program, based on pooled',
+  'Anthropic quota across teamclaude accounts. It never kills a cycle — cycles run for hours and',
+  'end themselves. All state lives in ~/.drovr (override with DROVR_HOME).',
+].join('\n');
+
+/** This interface is mostly read by agents, so the contract is stated rather than implied. */
+export const AGENT_NOTES = {
+  json: 'Every read command accepts --json. Parse that; never scrape the human output.',
+  exitCodes: '0 success. 1 any failure, with an actionable message on stderr.',
+  stateFiles: {
+    control: '~/.drovr/control.json — source of truth, re-read every tick; safe to edit directly',
+    cycles: '~/.drovr/cycles.jsonl — one record when a cycle starts, one when it ends',
+    decisions: '~/.drovr/decisions.jsonl — every tick, its verdict and reason',
+    logs: '~/.drovr/logs/ — per-cycle stdout',
+  },
+  verdicts: {
+    GO: 'a cycle would launch now',
+    WAIT: 'transient; retry on a later tick, no action needed',
+    STOP: 'needs a human — mode is off, or the program produced no yield for several cycles',
+  },
+  exitReasons: {
+    context: 'the runner hit its context ceiling and wound down — normal and healthy',
+    capacity: 'quota thinned mid-cycle, so it wound down early',
+    seam: 'the milestone completed at a clean boundary — the best outcome',
+    blocked: 'every remaining item is waiting on a human answer',
+    crash: 'the process exited without writing a report — check ~/.drovr/logs/',
+  },
+  gotchas: [
+    'A WAIT reason naming another program means it is queued behind it, not short of quota.',
+    'The three quota buckets bind simultaneously; the reason names whichever is tightest.',
+    'A 5h (session) hold recovers in hours. A weekly hold recovers in days. Read the binding bucket.',
+    'run-cycle blocks for hours. Use tick, which detaches, or read cycles.jsonl to follow progress.',
+  ],
+};
+
+export const COMMANDS: Command[] = [
+  {
+    name: 'status',
+    usage: 'drovr status [--json]',
+    summary: 'pool capacity, cost estimate, and the verdict for every program',
+    details: [
+      'Previews what a tick would do: programs are evaluated in priority order and each admitted',
+      'one reserves capacity, so a program shown as WAIT may be waiting on a program listed above',
+      'it rather than on quota.',
+      'Verdicts are GO (a cycle would launch), WAIT (retry next tick) or STOP (mode off, or the',
+      'program is stuck and needs a human).',
+    ],
+    flags: [
+      {
+        flag: '--json',
+        describes: 'structured output; every value carries its units and meaning alongside it',
+      },
+    ],
+  },
+  {
+    name: 'watch',
+    usage: 'drovr watch [seconds]',
+    summary: 'live view with keyboard controls (default 15s refresh)',
+    details: [
+      'Interactive and TTY-only. Keys: j/k select, space enable, [ ] priority, m mode, p pause,',
+      'P extend pause, +/- concurrency cap, t tick now, x stop selected cycle, q quit.',
+      'Not for agent use — call the individual commands instead.',
+    ],
+    writes: 'control.json, when a key is pressed',
+  },
+  {
+    name: 'tick',
+    usage: 'drovr tick',
+    summary: 'evaluate once and launch cycles where capacity allows',
+    details: [
+      'What launchd runs. Returns in seconds: each admitted program is handed to a detached',
+      'run-cycle worker rather than awaited.',
+    ],
+    writes: 'decisions.jsonl, cycles.jsonl, and launches cycle processes',
+  },
+  {
+    name: 'run-cycle',
+    usage: 'drovr run-cycle <program>',
+    summary: 'run one cycle now, bypassing the capacity check',
+    details: [
+      'Normally launched by tick. Blocks for the whole cycle (hours) and holds the program lock,',
+      'so a second invocation for the same program is refused.',
+    ],
+    writes: 'cycles.jsonl, the program status page',
+  },
+  {
+    name: 'add',
+    usage: 'drovr add <name> <path> [flags]',
+    summary: 'track a new program',
+    flags: [
+      { flag: '--priority <n>', describes: 'lower wins the next capacity slot (default 0)' },
+      { flag: '--deadline <YYYY-MM-DD>', describes: 'promotes one priority step inside the horizon' },
+      { flag: '--asks <page>', describes: 'aice asks page; omit and onboarding creates one' },
+      { flag: '--status-page <page>', describes: 'where drovr publishes status.html' },
+      { flag: '--no-aice', describes: 'the program has no aice install' },
+      { flag: '--no-direnv', describes: 'do not run the cycle through direnv exec' },
+    ],
+    details: [
+      'The path must exist and the name must be unique. The aice install comes from the repo’s',
+      'own .envrc, so a new program usually needs nothing else.',
+      'The first tick afterwards runs an onboarding cycle, which reconstructs state and stops for',
+      'confirmation rather than delivering.',
+    ],
+    examples: ['drovr add mrr ~/code/mrr --priority 3', 'drovr add acme ~/code/acme --deadline 2026-10-01'],
+    writes: 'control.json',
+  },
+  {
+    name: 'rm',
+    usage: 'drovr rm <name>',
+    summary: 'stop tracking a program',
+    details: ['Ledger history and ~/.drovr/programs/<name> are left in place.'],
+    writes: 'control.json',
+  },
+  {
+    name: 'mode',
+    usage: 'drovr mode <off|low|normal|away>',
+    summary: 'set how much of the weekly quota programs may use',
+    details: [
+      'Ceilings cap total usage, so the remainder is always available to Craig: off stops',
+      'everything, low 25%, normal 55%, away 85%.',
+    ],
+    writes: 'control.json',
+  },
+  {
+    name: 'pause',
+    usage: 'drovr pause <30m|3h|2d>',
+    summary: 'hold all cycles for a while',
+    details: ['Does not interrupt a cycle already running; it only stops new ones starting.'],
+    writes: 'control.json',
+  },
+  { name: 'resume', usage: 'drovr resume', summary: 'clear a pause', writes: 'control.json' },
+  {
+    name: 'ledger',
+    usage: 'drovr ledger [n] [--json]',
+    summary: 'recent cycles with their exit reason and yield',
+    details: [
+      'Exit reasons: context (hit the context ceiling), capacity (quota thinned), seam (milestone',
+      'complete), blocked (everything waiting on an ask), crash (exited without a report).',
+    ],
+    flags: [
+      {
+        flag: '--json',
+        describes: 'structured cycle records, with the meaning of each exit reason included',
+      },
+    ],
+  },
+  {
+    name: 'service',
+    usage: 'drovr service <status|install|uninstall|print> [seconds]',
+    summary: 'manage the launchd agent that runs tick',
+    details: [
+      'status reports whether launchd has the agent loaded and when a tick last actually recorded',
+      'a decision — loaded only proves it is scheduled.',
+      'install writes the plist and prints the launchctl line to load it; print emits the plist',
+      'without writing anything.',
+    ],
+    flags: [
+      {
+        flag: '--json',
+        describes: 'structured state, including the exact command that fixes an unhealthy one',
+      },
+    ],
+    writes: 'the launchd plist, for install',
+  },
+  {
+    name: 'init',
+    usage: 'drovr init',
+    summary: 'write a starter control.json',
+    writes: 'control.json',
+  },
+  {
+    name: 'help',
+    usage: 'drovr help [command] [--json]',
+    summary: 'this list, or detail for one command',
+    details: ['--json emits the whole command tree, for an agent discovering the interface.'],
+  },
+];
+
+const pad = (text: string, width: number): string => text.padEnd(width);
+
+export const renderList = (): string => {
+  const width = Math.max(...COMMANDS.map((command) => command.name.length)) + 2;
+  const lines = COMMANDS.map((command) => `  ${pad(command.name, width)}${command.summary}`);
+  return [
+    'drovr — capacity-aware supervisor for long-horizon delivery loops',
+    '',
+    OVERVIEW,
+    '',
+    'Commands:',
+    ...lines,
+    '',
+    'Every read command accepts --json, whose values carry their own units and meanings — parse',
+    'that rather than these columns.',
+    '',
+    'Run `drovr help <command>` for detail, or `drovr help --json` for the whole tree plus the',
+    'verdict vocabulary, exit reasons, and state-file locations.',
+  ].join('\n');
+};
+
+export const renderCommand = (command: Command): string => {
+  const parts = [command.usage, '', `  ${command.summary}`];
+
+  if (command.details !== undefined) parts.push('', ...command.details.map((line) => `  ${line}`));
+
+  if (command.flags !== undefined) {
+    const width = Math.max(...command.flags.map((entry) => entry.flag.length)) + 2;
+    parts.push('', 'Flags:', ...command.flags.map((e) => `  ${pad(e.flag, width)}${e.describes}`));
+  }
+
+  if (command.examples !== undefined) {
+    parts.push('', 'Examples:', ...command.examples.map((line) => `  ${line}`));
+  }
+
+  parts.push('', `Writes: ${command.writes ?? 'nothing — read-only'}`);
+  return parts.join('\n');
+};
+
+export const findCommand = (name: string): Command | undefined =>
+  COMMANDS.find((command) => command.name === name);
+
+export const helpTree = (): unknown => ({
+  tool: 'drovr',
+  overview: OVERVIEW,
+  usingThis: AGENT_NOTES,
+  commands: COMMANDS,
+});

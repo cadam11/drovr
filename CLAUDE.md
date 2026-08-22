@@ -42,6 +42,22 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `tick.ts` | Pace and reservations are **global** (one shared pool); daily caps and stuck detection are **per program**. |
 | `watch.ts` | `setInterval` keeps the event loop alive — do not `unref()` it, and restore the cursor and raw mode on every exit path. |
 
+## The CLI is read by agents
+
+Help lives in `help.ts` as a command registry, not scattered strings. When adding or changing a
+command, update its entry there — `drovr help`, `drovr help <cmd>`, `<cmd> --help` and
+`help --json` all render from it, so they cannot drift apart.
+
+Two rules for anything the CLI prints:
+
+- **Name the fix, not a reference to it.** "run the launchctl bootstrap line" is useless to a
+  reader who never saw it printed. Emit the literal command.
+- **Structured output is not minimal output.** The consumer interprets rather than deserializes,
+  so JSON carries units and meanings inline, ISO timestamps rather than epoch millis, and
+  rounded floats. `AGENT_NOTES` in `help.ts` holds the shared vocabulary.
+
+Never document a flag before implementing it — a help page that lies is worse than a missing one.
+
 ## Conventions
 
 - Node >= 24, TypeScript run directly (no build step). Erasable syntax only — no enums, no

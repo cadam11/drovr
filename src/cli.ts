@@ -13,9 +13,19 @@ import {
   readCycles,
   type CycleRecord,
 } from './ledger.ts';
+import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
 import { holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
-import { describeService, LABEL, plist, plistPath, serviceState } from './service.ts';
+import {
+  bootoutCommand,
+  bootstrapCommand,
+  describeService,
+  LABEL,
+  plist,
+  plistPath,
+  serviceHealth,
+  serviceState,
+} from './service.ts';
 import { readStatus } from './teamclaude.ts';
 import { inFlightCycles, runProgramCycle, tick } from './tick.ts';
 import { watch } from './watch.ts';
@@ -54,6 +64,127 @@ const parseDuration = (input: string): number => {
   return value * ms;
 };
 
+/**
+ * Verdicts are computed in priority order with each admitted program reserving
+ * capacity, so the list reflects what a tick would actually do rather than
+ * evaluating every program against an empty pool.
+ */
+const evaluateAll = (input: {
+  control: ReturnType<typeof readControl>;
+  status: Awaited<ReturnType<typeof readStatus>>;
+  cycles: CycleRecord[];
+  now: number;
+}) => {
+  const { control, status, cycles, now } = input;
+  const projected: CycleRecord[] = [];
+
+  return byPriority(control.programs, now, control.deadlineHorizonDays).map((program) => {
+    const decision = decide({
+      status,
+      control,
+      cycles: [...cycles, ...projected],
+      program: program.name,
+      now,
+    });
+    if (decision.verdict === 'GO' && program.enabled) {
+      projected.push({
+        v: 1,
+        kind: 'delivery',
+        program: program.name,
+        startedAt: new Date(now).toISOString(),
+        endedAt: null,
+        exit: 'running',
+        poolBefore: { fable: 0, general: 0, session: 0 },
+        poolAfter: null,
+        startupTokens: null,
+        yield: null,
+        asksRaised: 0,
+      });
+    }
+    return { program, decision, pid: holder(p.programLock(program.name)) };
+  });
+};
+
+/** Float noise (0.5700000000000001) is technically accurate and unreadable. */
+const round = (value: number): number => Math.round(value * 10_000) / 10_000;
+
+const iso = (at: number | null): string | null => (at === null ? null : new Date(at).toISOString());
+
+const roundCost = (cost: { fable: number; general: number; session: number }) => ({
+  fable: round(cost.fable),
+  general: round(cost.general),
+  session: round(cost.session),
+});
+
+/** Epoch millis are unreadable in a document someone has to interpret; timestamps go out as ISO. */
+const poolPayload = (pool: ReturnType<typeof poolFrom>) => ({
+  ...roundCost(pool),
+  usableAccounts: pool.usableAccounts,
+  resetAt: {
+    fable: iso(pool.resetAt.fable),
+    general: iso(pool.resetAt.general),
+    session: iso(pool.resetAt.session),
+  },
+  earliestRecoveryAt: iso(pool.earliestRecoveryAt),
+  units: 'account-fractions of headroom; one usable account contributes at most 1.0',
+});
+
+const statusPayload = async () => {
+  const control = readControl(p.control);
+  const status = await readStatus();
+  const cycles = readCycles(p.cycles);
+  const now = Date.now();
+  const ceilings = ceilingsFor(control);
+  const state = serviceState();
+  const lastTick = lastDecisionAt(p.decisions);
+
+  return {
+    service: {
+      health: serviceHealth(state, lastTick, now),
+      explanation: describeService(state, lastTick, now),
+      lastTickAt: iso(lastTick),
+    },
+    mode: control.mode,
+    modeMeaning:
+      control.mode === 'off'
+        ? 'no cycles will start'
+        : `programs may use up to ${round((control.ceilings[control.mode]?.weekly ?? 0) * 100)}% of each account's weekly quota; the rest stays available to Craig`,
+    pausedUntil: control.pauseUntil,
+    pool: ceilings === null ? null : poolPayload(poolFrom(status, ceilings, now)),
+    estimatedCycleCost: {
+      ...roundCost(estimateCycleCost(cycles, control.seedCycleCost)),
+      units: 'account-fractions consumed by one typical delivery cycle',
+    },
+    inFlight: inFlightCycles().map((cycle) => ({
+      program: cycle.program,
+      startedAt: cycle.startedAt,
+      kind: cycle.kind,
+    })),
+    concurrencyCap: control.maxConcurrentCycles,
+    programs: evaluateAll({ control, status, cycles, now }).map(({ program, decision, pid }) => ({
+      name: program.name,
+      cwd: program.cwd,
+      enabled: program.enabled,
+      priority: program.priority,
+      effectivePriority: effectivePriority(program, now, control.deadlineHorizonDays),
+      deadline: program.deadline,
+      verdict: decision.verdict,
+      verdictMeaning: VERDICT_MEANING[decision.verdict],
+      reason: decision.reason,
+      bindingBucket: decision.binding,
+      cyclesFundable: decision.cyclesFundable === null ? null : round(decision.cyclesFundable),
+      recoversAt: iso(decision.earliestRecoveryAt),
+      runningPid: pid,
+    })),
+  };
+};
+
+const VERDICT_MEANING: Record<string, string> = {
+  GO: 'a cycle would launch on the next tick',
+  WAIT: 'transient — a later tick will retry, no action needed',
+  STOP: 'needs a human: mode is off, or this program produced no yield for several cycles',
+};
+
 const showStatus = async (): Promise<void> => {
   const control = readControl(p.control);
   const status = await readStatus();
@@ -82,41 +213,20 @@ const showStatus = async (): Promise<void> => {
     `in flight: ${running.length}/${control.maxConcurrentCycles}${running.length === 0 ? '' : ` (${names})`}`,
   );
 
-  // Tick launches in priority order and each launch reserves capacity, so the
-  // preview must accumulate its own hypothetical launches to match reality.
-  const projected: CycleRecord[] = [];
-  for (const program of byPriority(control.programs, now, control.deadlineHorizonDays)) {
-    const decision = decide({
-      status,
-      control,
-      cycles: [...cycles, ...projected],
-      program: program.name,
-      now,
-    });
-    const pid = holder(p.programLock(program.name));
+  for (const { program, decision, pid } of evaluateAll({ control, status, cycles, now })) {
     const shown = effectivePriority(program, now, control.deadlineHorizonDays);
     const flags = `${program.enabled ? '' : ' [disabled]'}${pid === null ? '' : ` [pid ${pid}]`}`;
     console.log(`  [p${shown}] ${program.name}${flags}: ${decision.verdict} — ${decision.reason}`);
-
-    if (decision.verdict !== 'GO' || !program.enabled) continue;
-    projected.push({
-      v: 1,
-      kind: 'delivery',
-      program: program.name,
-      startedAt: new Date(now).toISOString(),
-      endedAt: null,
-      exit: 'running',
-      poolBefore: { fable: 0, general: 0, session: 0 },
-      poolAfter: null,
-      startupTokens: null,
-      yield: null,
-      asksRaised: 0,
-    });
   }
 };
 
-const showLedger = (limit: number): void => {
-  for (const cycle of readCycles(p.cycles).slice(-limit)) {
+const showLedger = (limit: number, json: boolean): void => {
+  const recent = readCycles(p.cycles).slice(-limit);
+  if (json) {
+    console.log(JSON.stringify({ exitReasons: AGENT_NOTES.exitReasons, cycles: recent }, null, 2));
+    return;
+  }
+  for (const cycle of recent) {
     const produced = cycle.yield;
     const total = produced === null ? '—' : produced.ticketsMoved + produced.prsOpened + produced.commits;
     console.log(
@@ -132,7 +242,7 @@ const installService = (intervalSeconds: number): void => {
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, plist({ nodeBin: process.execPath, cliPath, intervalSeconds, logDir: p.logs }), 'utf8');
   console.log(`wrote ${target}`);
-  console.log(`load it with:  launchctl bootstrap gui/$(id -u) ${target}`);
+  console.log(`load it with:  ${bootstrapCommand()}`);
 };
 
 const flag = (rest: string[], name: string): string | undefined => {
@@ -182,9 +292,29 @@ const removeProgram = (name: string | undefined): void => {
   console.log(`removed ${name} (its ledger history and ~/.drovr/programs/${name} are left alone)`);
 };
 
-const showService = (): void => {
+const showService = (json: boolean): void => {
   const state = serviceState();
-  console.log(describeService(state, lastDecisionAt(p.decisions), Date.now()));
+  const lastTick = lastDecisionAt(p.decisions);
+  const now = Date.now();
+  if (json) {
+    console.log(
+      JSON.stringify(
+        {
+          health: serviceHealth(state, lastTick, now),
+          explanation: describeService(state, lastTick, now),
+          lastTickAt: lastTick === null ? null : new Date(lastTick).toISOString(),
+          ...state,
+          plistPath: plistPath(),
+          loadCommand: bootstrapCommand(),
+          unloadCommand: bootoutCommand(),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  console.log(describeService(state, lastTick, now));
   if (state.pid !== null) console.log(`a tick is executing right now (pid ${state.pid})`);
   console.log(`plist: ${plistPath()}`);
   console.log(`logs:  ${p.logs}`);
@@ -196,33 +326,40 @@ const uninstallService = (): void => {
     console.log('not installed');
     return;
   }
-  console.log(`unload it with:  launchctl bootout gui/$(id -u)/${LABEL}`);
+  console.log(`unload it with:  ${bootoutCommand()}`);
   console.log(`then remove:     rm ${target}`);
 };
 
-const usage = `drovr — capacity-aware supervisor for long-horizon delivery loops
-
-  drovr init                 write ~/.drovr/control.json
-  drovr status               pool capacity, cost estimate, per-program verdict\n  drovr watch [seconds]      live allocation + program view (default 15s)
-  drovr tick                 evaluate once; launch cycles where capacity allows
-  drovr run-cycle <program>  run one cycle now (what tick launches)
-  drovr pause <30m|3h|2d>    hold cycles for a while
-  drovr resume               clear a pause
-  drovr mode <off|low|normal|away>
-  drovr ledger [n]           last n cycles (default 20)
-
-  drovr add <name> <path> [--priority n] [--deadline YYYY-MM-DD]
-                          [--asks <page>] [--status-page <page>] [--no-aice] [--no-direnv]
-  drovr rm <name>            stop tracking a program (history is kept)
-
-  drovr service status              is the agent loaded, and did it tick recently
-  drovr service install [seconds]   write the launchd agent (default 600)
-  drovr service uninstall           how to unload and remove it
-  drovr service print               print the plist without writing it
-`;
+const showHelp = (topic: string | undefined, json: boolean): void => {
+  if (json) {
+    console.log(JSON.stringify(topic === undefined ? helpTree() : findCommand(topic), null, 2));
+    return;
+  }
+  if (topic === undefined) {
+    console.log(renderList());
+    return;
+  }
+  const command = findCommand(topic);
+  if (command === undefined) {
+    throw new Error(`no command named "${topic}" — run \`drovr help\` for the list`);
+  }
+  console.log(renderCommand(command));
+};
 
 const main = async (argv: string[]): Promise<void> => {
   const [command, ...rest] = argv;
+  const json = rest.includes('--json');
+
+  // `drovr <cmd> --help` reaches the same detail page as `drovr help <cmd>`.
+  if (command !== undefined && rest.includes('--help') && findCommand(command) !== undefined) {
+    return showHelp(command, json);
+  }
+  if (command === 'help' || command === '--help' || command === '-h') {
+    return showHelp(
+      rest.find((argument) => !argument.startsWith('-')),
+      json,
+    );
+  }
 
   if (command === 'init') return init();
   if (command === 'tick') return tick();
@@ -231,11 +368,20 @@ const main = async (argv: string[]): Promise<void> => {
     if (name === undefined) throw new Error('run-cycle needs a program name');
     return runProgramCycle(name);
   }
-  if (command === 'status') return showStatus();
+  if (command === 'status') {
+    if (json) {
+      console.log(JSON.stringify(await statusPayload(), null, 2));
+      return;
+    }
+    return showStatus();
+  }
   if (command === 'add') return addProgram(rest);
   if (command === 'rm') return removeProgram(rest[0]);
   if (command === 'watch') return watch(Number.parseInt(rest[0] ?? '15', 10));
-  if (command === 'ledger') return showLedger(Number.parseInt(rest[0] ?? '20', 10));
+  if (command === 'ledger') {
+    const limit = Number.parseInt(rest.find((a) => !a.startsWith('-')) ?? '20', 10);
+    return showLedger(limit, json);
+  }
 
   if (command === 'pause') {
     const spec = rest[0];
@@ -263,7 +409,7 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'service') {
     const sub = rest[0];
     const seconds = Number.parseInt(rest[1] ?? '600', 10);
-    if (sub === 'status') return showService();
+    if (sub === 'status') return showService(json);
     if (sub === 'uninstall') return uninstallService();
     if (sub === 'install') return installService(seconds);
     if (sub === 'print') {
@@ -274,8 +420,9 @@ const main = async (argv: string[]): Promise<void> => {
     throw new Error(`unknown service subcommand "${sub ?? ''}" — expected status, install, uninstall or print (label: ${LABEL})`);
   }
 
-  console.log(usage);
-  if (command !== undefined && command !== 'help' && command !== '--help') process.exitCode = 1;
+  console.error(command === undefined ? '' : `unknown command "${command}"\n`);
+  console.log(renderList());
+  if (command !== undefined) process.exitCode = 1;
 };
 
 main(process.argv.slice(2)).catch((error: unknown) => {
