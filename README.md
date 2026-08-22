@@ -163,14 +163,30 @@ a cycle already in flight.
 }
 ```
 
-| mode | weekly ceiling | session ceiling | when |
+| mode | held for you | programs may use | when |
 |---|---|---|---|
-| `off` | — | — | stopped |
-| `low` | 25% | 25% | you need the quota |
-| `normal` | 55% | 40% | default |
-| `away` | 85% | 60% | you're gone for a few days |
+| `off` | everything | — | stopped |
+| `low` | 75% | 25% weekly, 25% per 5h | you need the quota |
+| `normal` | 45% | 55% weekly, 40% per 5h | default |
+| `away` | 15% | 85% weekly, 60% per 5h | you're gone for a few days |
 
-Ceilings cap **total** usage, so `normal` always leaves you ~45% of the week.
+Ceilings cap **total** usage, so the reserve is what's left for you no matter what programs do.
+
+### Adjusting your reserve
+
+```bash
+drovr reserve          # 45% of each account's weekly quota is held for you in mode "normal"
+drovr reserve 60       # normal: 60% held for you — programs up to 40% weekly, 29% per 5h
+```
+
+`reserve` and `mode` are the same setting from opposite ends: a mode is a named reserve level, and
+`reserve` sets it directly. It applies to the **current mode**, so switching modes switches reserve
+levels with it — set `away` to 15% once and `drovr mode away` gets you that every time.
+
+The 5h burst ceiling keeps its ratio to the weekly one, so tightening your reserve can't silently
+widen how hard a single 5-hour window gets hit.
+
+In `drovr watch`, `<` and `>` nudge the reserve by 5%.
 
 ## Commands
 
@@ -319,6 +335,7 @@ through `control.json`, so a launchd tick seconds later sees it even if you clos
 | `p` | pause 1h, or clear an active pause |
 | `P` | extend the pause to the next step (1h → 3h → 8h → 24h) |
 | `+` / `-` | concurrency cap (1–8) |
+| `<` / `>` | reserve held for you, in 5% steps |
 | `r` | redraw now instead of waiting for the timer |
 | `t` | run a tick now, launching cycles if capacity allows |
 | `x` | stop the selected program's cycle (`y` to confirm) |

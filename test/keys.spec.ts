@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { adjustConcurrency, cycleMode, cyclePause, nudgePriority, toggleEnabled } from '../src/keys.ts';
+import {
+  adjustConcurrency,
+  cycleMode,
+  cyclePause,
+  nudgePriority,
+  setReserve,
+  toggleEnabled,
+} from '../src/keys.ts';
 import { parseControl } from '../src/control.ts';
 
 const scratch = (): string => {
@@ -86,4 +93,35 @@ test('every write leaves the file valid for the next launchd tick', () => {
   toggleEnabled(path, 'joinery');
   adjustConcurrency(path, 1);
   assert.doesNotThrow(() => read(path));
+});
+
+test('reserve is the inverse of the ceiling programs may spend to', () => {
+  const path = scratch();
+  setReserve(path, 'normal', 0.6);
+  assert.equal(read(path).ceilings.normal!.weekly.toFixed(2), '0.40');
+});
+
+test('the 5h ceiling keeps its ratio, so a tighter reserve cannot widen bursts', () => {
+  const path = scratch();
+  // Defaults are weekly 0.55 / session 0.40, a ratio of ~0.727.
+  setReserve(path, 'normal', 0.6);
+  const after = read(path).ceilings.normal!;
+  assert.equal((after.session / after.weekly).toFixed(2), '0.73');
+  assert.ok(after.session < 0.4);
+});
+
+test('reserve is clamped, so a held key cannot hand programs everything', () => {
+  const path = scratch();
+  setReserve(path, 'normal', -5);
+  assert.equal(read(path).ceilings.normal!.weekly.toFixed(2), '0.95');
+  setReserve(path, 'normal', 5);
+  assert.equal(read(path).ceilings.normal!.weekly.toFixed(2), '0.05');
+});
+
+test('reserve applies per mode, leaving the others alone', () => {
+  const path = scratch();
+  setReserve(path, 'away', 0.1);
+  const ceilings = read(path).ceilings;
+  assert.equal(ceilings.away!.weekly.toFixed(2), '0.90');
+  assert.equal(ceilings.normal!.weekly.toFixed(2), '0.55');
 });

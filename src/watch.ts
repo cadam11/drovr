@@ -18,6 +18,7 @@ import {
   cyclePause,
   extendPause,
   nudgePriority,
+  setReserve,
   toggleEnabled,
   type Action,
 } from './keys.ts';
@@ -89,6 +90,7 @@ const KEYBAR = [
   'm mode',
   'p pause',
   '+/- cap',
+  '< > reserve',
   'r refresh',
   't tick',
   'x interrupt',
@@ -315,6 +317,14 @@ const handle = async (key: string, state: State, programs: Program[]): Promise<A
   if (key === 'm') return cycleMode(control, settings.mode);
   if (key === 'p') return cyclePause(control, settings.pauseUntil);
   if (key === 'P') return extendPause(control, settings.pauseUntil);
+  if (key === '<' || key === ',') {
+    const weekly = settings.ceilings[settings.mode]?.weekly ?? 0.55;
+    return setReserve(control, settings.mode, 1 - weekly - 0.05);
+  }
+  if (key === '>' || key === '.') {
+    const weekly = settings.ceilings[settings.mode]?.weekly ?? 0.55;
+    return setReserve(control, settings.mode, 1 - weekly + 0.05);
+  }
   if (key === '+' || key === '=') return adjustConcurrency(control, 1);
   if (key === '-' || key === '_') return adjustConcurrency(control, -1);
   if (key === 't') return runTickNow();

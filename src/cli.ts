@@ -14,6 +14,7 @@ import {
   type CycleRecord,
 } from './ledger.ts';
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
+import { setReserve } from './keys.ts';
 import { holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
 import {
@@ -395,6 +396,24 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'resume') {
     mutate((control) => { control.pauseUntil = null; });
     console.log('resumed');
+    return;
+  }
+
+  if (command === 'reserve') {
+    const control = readControl(p.control);
+    if (control.mode === 'off') throw new Error('mode is off — nothing is being spent to reserve against');
+    const ceilings = control.ceilings[control.mode];
+    if (rest[0] === undefined) {
+      const held = 1 - (ceilings?.weekly ?? 0);
+      console.log(
+        `${Math.round(held * 100)}% of each account's weekly quota is held for you in mode "${control.mode}"`,
+      );
+      console.log(`set it with: drovr reserve <percent>`);
+      return;
+    }
+    const percent = Number.parseFloat(rest[0].replace('%', ''));
+    if (!Number.isFinite(percent)) throw new Error(`reserve needs a percentage, e.g. \`drovr reserve 45\``);
+    console.log(setReserve(p.control, control.mode, percent / 100).message);
     return;
   }
 

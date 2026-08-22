@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { parseControl, type Control } from './control.ts';
+import { DEFAULT_CEILINGS, parseControl, type Control } from './control.ts';
 
 const MODES = ['off', 'low', 'normal', 'away'] as const;
 const PAUSES = [
@@ -88,6 +88,34 @@ export const nudgePriority = (path: string, name: string, delta: number): Action
     program.priority = priority;
   });
   return { message: `${name} priority → ${priority}`, redraw: true };
+};
+
+/**
+ * Craig thinks in "space reserved for me", which is the inverse of the ceiling
+ * programs may spend up to. The 5h burst ceiling keeps its ratio to the weekly one,
+ * so tightening the reserve cannot silently widen bursts.
+ */
+export const setReserve = (path: string, mode: string, fraction: number): Action => {
+  const reserve = Math.max(0.05, Math.min(0.95, fraction));
+  const weekly = 1 - reserve;
+  let session = 0;
+
+  mutate(path, (raw) => {
+    // Seed from the defaults: writing back only the edited mode would leave the
+    // others missing, and the next `drovr mode <other>` would have no ceiling.
+    const ceilings = { ...DEFAULT_CEILINGS, ...((raw.ceilings ?? {}) as typeof DEFAULT_CEILINGS) };
+    const current = ceilings[mode] ?? DEFAULT_CEILINGS.normal!;
+    const ratio = current.weekly === 0 ? 1 : current.session / current.weekly;
+    session = Math.max(0.05, Math.min(1, weekly * ratio));
+    ceilings[mode] = { weekly, session };
+    raw.ceilings = ceilings;
+  });
+
+  const pct = (value: number): string => `${Math.round(value * 100)}%`;
+  return {
+    message: `${mode}: ${pct(reserve)} held for you — programs up to ${pct(weekly)} weekly, ${pct(session)} per 5h`,
+    redraw: true,
+  };
 };
 
 export const adjustConcurrency = (path: string, delta: number): Action => {

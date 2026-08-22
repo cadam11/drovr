@@ -132,11 +132,25 @@ export const COMMANDS: Command[] = [
   {
     name: 'mode',
     usage: 'drovr mode <off|low|normal|away>',
-    summary: 'set how much of the weekly quota programs may use',
+    summary: 'switch between preset reserve levels',
     details: [
-      'Ceilings cap total usage, so the remainder is always available to Craig: off stops',
-      'everything, low 25%, normal 55%, away 85%.',
+      'Each mode is a ceiling on total usage, so the remainder is always held for Craig:',
+      'off reserves everything, low 75%, normal 45%, away 15%.',
     ],
+    writes: 'control.json',
+  },
+  {
+    name: 'reserve',
+    usage: 'drovr reserve [percent]',
+    summary: 'how much quota is held for Craig rather than for programs',
+    details: [
+      'With no argument it reports the current reserve. With a percentage it sets one, which is',
+      'the same setting a mode changes — just expressed the way it is usually thought about.',
+      'The 5h burst ceiling keeps its ratio to the weekly one, so tightening the reserve cannot',
+      'silently widen bursts.',
+      'It applies to the current mode, so switching modes switches reserve levels with it.',
+    ],
+    examples: ['drovr reserve', 'drovr reserve 60'],
     writes: 'control.json',
   },
   {

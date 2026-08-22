@@ -4,6 +4,16 @@ import type { Ceilings } from './capacity.ts';
 
 const ceilingsShape = z.object({ weekly: z.number(), session: z.number() });
 
+/**
+ * Exported so an edit to one mode cannot silently drop the others — writing back a
+ * partial ceilings map would leave the next `drovr mode <other>` with no entry.
+ */
+export const DEFAULT_CEILINGS: Record<string, { weekly: number; session: number }> = {
+  low: { weekly: 0.25, session: 0.25 },
+  normal: { weekly: 0.55, session: 0.4 },
+  away: { weekly: 0.85, session: 0.6 },
+};
+
 /** The install itself comes from the repo's .envrc via direnv, not from here. */
 const aiceShape = z.object({
   /** Null until the program has an asks page; the loop creates one on onboarding. */
