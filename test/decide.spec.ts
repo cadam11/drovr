@@ -301,5 +301,31 @@ test('repeated crashes stop the loop, since nothing else catches a crash loop', 
   );
   const decision = run({ cycles: crashes });
   assert.equal(decision.verdict, 'STOP');
-  assert.match(decision.reason, /consecutive cycles crashed/);
+  assert.match(decision.reason, /crashes in the last/);
+});
+
+test('crashes that have aged out stop latching, so a fixed cause resumes on its own', () => {
+  // The whole point: an environment broken for twenty minutes and since fixed must
+  // not keep a program stopped until someone clears it by hand.
+  const old = Array.from({ length: 5 }, (_unused, index) =>
+    cycle({
+      startedAt: new Date(NOW - (index + 3) * HOUR).toISOString(),
+      endedAt: new Date(NOW - (index + 3) * HOUR + 60_000).toISOString(),
+      exit: 'crash',
+      yield: null,
+    }),
+  );
+  assert.equal(run({ cycles: old }).verdict, 'GO');
+});
+
+test('a crash loop still latches while it is actually looping', () => {
+  const recent = Array.from({ length: 3 }, (_unused, index) =>
+    cycle({
+      startedAt: new Date(NOW - (index + 1) * 60_000).toISOString(),
+      endedAt: new Date(NOW - (index + 1) * 60_000 + 1_000).toISOString(),
+      exit: 'crash',
+      yield: null,
+    }),
+  );
+  assert.equal(run({ cycles: recent }).verdict, 'STOP');
 });

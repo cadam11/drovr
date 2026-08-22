@@ -78,6 +78,8 @@ const controlShape = z.object({
   deadlineHorizonDays: z.number().default(21),
   /** Runner winds down at this context size; the hard stop is above it. */
   contextCeilingTokens: z.number().default(250_000),
+  /** Crashes only latch a program while they are recent; older ones age out. */
+  crashWindowMinutes: z.number().default(60),
   /** Consecutive zero-yield cycles before the loop stops and escalates. */
   stuckCycleThreshold: z.number().default(3),
   /** Used until the ledger holds enough delivery cycles to measure real cost. */

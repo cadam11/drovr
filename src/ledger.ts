@@ -178,12 +178,25 @@ export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number
   ).size;
 };
 
-/** A program crash-looping needs a human, and nothing else in the ledger catches it. */
-export const consecutiveCrashes = (cycles: CycleRecord[]): number => {
+/**
+ * A crash loop needs a human, but only while it is still looping. Counting the whole
+ * tail of history latches forever: an environment that was broken for twenty minutes
+ * and has since been fixed would keep a program stopped until someone cleared it by
+ * hand. Only recent crashes count, so a fixed cause resumes on its own and a genuine
+ * loop re-latches on its next attempt.
+ */
+export const consecutiveCrashes = (
+  cycles: CycleRecord[],
+  now = Date.now(),
+  windowMinutes = 60,
+): number => {
+  const cutoff = now - windowMinutes * 60_000;
   const finished = cycles.filter((cycle) => cycle.endedAt !== null);
   let streak = 0;
   for (let index = finished.length - 1; index >= 0; index -= 1) {
-    if (finished[index]!.exit !== 'crash') break;
+    const cycle = finished[index]!;
+    if (cycle.exit !== 'crash') break;
+    if (Date.parse(cycle.endedAt ?? cycle.startedAt) < cutoff) break;
     streak += 1;
   }
   return streak;
