@@ -16,6 +16,7 @@ import { ensureDirs, paths } from './paths.ts';
 import { LABEL, plist, plistPath } from './service.ts';
 import { readStatus } from './teamclaude.ts';
 import { inFlightCycles, runProgramCycle, tick } from './tick.ts';
+import { watch } from './watch.ts';
 
 const p = paths();
 
@@ -134,7 +135,7 @@ const installService = (intervalSeconds: number): void => {
 const usage = `drovr — capacity-aware supervisor for long-horizon delivery loops
 
   drovr init                 write ~/.drovr/control.json
-  drovr status               pool capacity, cost estimate, per-program verdict
+  drovr status               pool capacity, cost estimate, per-program verdict\n  drovr watch [seconds]      live allocation + program view (default 15s)
   drovr tick                 evaluate once; launch cycles where capacity allows
   drovr run-cycle <program>  run one cycle now (what tick launches)
   drovr pause <30m|3h|2d>    hold cycles for a while
@@ -156,6 +157,7 @@ const main = async (argv: string[]): Promise<void> => {
     return runProgramCycle(name);
   }
   if (command === 'status') return showStatus();
+  if (command === 'watch') return watch(Number.parseInt(rest[0] ?? '15', 10));
   if (command === 'ledger') return showLedger(Number.parseInt(rest[0] ?? '20', 10));
 
   if (command === 'pause') {

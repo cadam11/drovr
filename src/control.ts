@@ -5,13 +5,16 @@ import type { Ceilings } from './capacity.ts';
 const ceilingsShape = z.object({ weekly: z.number(), session: z.number() });
 
 /**
- * Programs live on different aice installs (propra vs aice-x), and aice-x
- * publishes need `--agent claude`, so the flags travel with the program.
+ * Every program has its own aice install, selected by AICE_BASE_URL. Token
+ * caches must not share a directory or a login to one clobbers the others.
  */
 const aiceShape = z.object({
-  asksPage: z.string(),
+  baseUrl: z.string(),
+  configDir: z.string().nullable().default(null),
+  /** Null until the program has an asks page; the loop creates one on onboarding. */
+  asksPage: z.string().nullable().default(null),
   statusPage: z.string(),
-  publishArgs: z.array(z.string()).default([]),
+  publishArgs: z.array(z.string()).default(['--agent', 'claude']),
 });
 
 const programShape = z.object({

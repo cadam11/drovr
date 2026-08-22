@@ -136,6 +136,59 @@ in flight: 0/2
   [p2]  joinery: WAIT — 2 cycles in flight, cap is 2
 ```
 
+
+## Watching it
+
+```bash
+drovr watch          # live view, redraws every 15s
+drovr watch 5        # faster
+```
+
+The allocation bars answer "how much is left for me?" directly. Each bucket is one stacked bar
+across all usable accounts, and the five segments always sum to the whole pool:
+
+| Segment | Meaning |
+|---|---|
+| `▓` you spent | usage not attributable to drovr — your own foreground work |
+| `█` programs spent | completed drovr cycles this window, from the ledger |
+| `▒` in flight | claimed by running cycles, not yet visible as usage |
+| `░` free to programs | still spendable before the ceiling |
+| `·` held for you | above the ceiling; drovr never touches it |
+
+Headroom is taken from the same clamped pool `decide()` uses, so the bar can never disagree
+with the verdict printed under it. One account over its ceiling contributes zero — it cannot
+borrow headroom from another account.
+
+```
+  fable   7d ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░···························  you 81%
+  general 7d ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░······················  you 80%
+  session 5h ▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░···········································  you 70%
+```
+
+## aice installs
+
+Each program targets its own aice install, selected by `AICE_BASE_URL`. Token caches must not
+share a directory — a login to one install would clobber the others — so `configDir` sets
+`AICE_CONFIG_DIR` per program. Both are exported into the cycle process too, so the loop agent
+publishes to the right place without knowing any of this.
+
+```json
+"aice": {
+  "baseUrl": "https://sunnyt.aicex.app",
+  "configDir": "~/.config/aice-sunnyt",
+  "asksPage": "craig/asks.html",
+  "statusPage": "craig/drovr-status.html",
+  "publishArgs": ["--agent", "claude"]
+}
+```
+
+`asksPage` may be null for a program that has no asks page yet; onboarding creates one.
+Each install needs a one-time login:
+
+```bash
+AICE_BASE_URL=https://joinery.aicex.app AICE_CONFIG_DIR=~/.config/aice-joinery aice login
+```
+
 ## Telemetry
 
 Two append-only files, written as events happen so a cycle that dies on a quota wall still leaves

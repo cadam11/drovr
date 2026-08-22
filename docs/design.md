@@ -210,6 +210,28 @@ Two pieces of the templating argument survive:
 dies before it could publish. It's tabular anyway, so no judgement is lost — and the status page
 never silently goes stale at exactly the moment Craig would want to know.
 
+
+## Visualising the allocation
+
+Craig needs to see, at a glance, how much capacity is reserved for his own use. Each quota
+bucket divides into five segments that sum to the whole pool (N usable accounts = N.0):
+his spend, program spend, in-flight reservations, free-to-programs, and the slice held above
+the ceiling that drovr can never reach.
+
+The subtle part is where headroom comes from. Computing it as `ceiling × accounts - used`
+looks natural and is wrong: it lets one account's overspend eat another account's headroom.
+With karen at 99% general and craig.adam at 8%, that formula reported 6% free while `decide()`
+admitted cycles against 21% — a visualization contradicting the decision it sits above.
+
+Headroom is therefore taken from the same `Pool` the decision uses, which clamps each account
+at its own ceiling and floors it at zero. `yoursReserved` becomes the remainder
+(`total - used - headroom`), so the bar stacks exactly and stays consistent by construction.
+
+Program spend is carved *out of* observed usage rather than added on top: what the ledger
+claims is subtracted from the bucket total, and the rest is attributed to Craig. A ledger that
+over-reports (an account dropped out of the pool mid-window) is clamped rather than inventing
+usage that is not there.
+
 ## Onboarding
 
 Self-detecting: no `state.json` for the program means this is an onboarding cycle. A flag would be

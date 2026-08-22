@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
+import { aiceEnv } from './publish.ts';
 
 /**
  * Written by the runner before it exits. Its absence after the process ends is
@@ -59,6 +60,7 @@ export const runCycle = async (program: Program, startedAt: string): Promise<num
     const child = spawn(command, {
       cwd: program.cwd,
       shell: true,
+      env: { ...process.env, ...aiceEnv(program), DROVR_PROGRAM: program.name },
       stdio: ['ignore', log, log],
       detached: false,
     });
