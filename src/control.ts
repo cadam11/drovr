@@ -20,6 +20,10 @@ const programShape = z.object({
   /** {program} and {mode} are substituted before spawning. */
   cycleCommand: z.string().default('teamclaude run -- -p "/project-loop {program}"'),
   enabled: z.boolean().default(true),
+  /** Lower wins the next capacity slot, matching teamclaude priority. */
+  priority: z.number().default(0),
+  /** ISO date. Inside the horizon the program is promoted one priority step. */
+  deadline: z.string().nullable().default(null),
   aice: aiceShape.nullable().default(null),
 });
 
@@ -37,6 +41,10 @@ const controlShape = z.object({
   /** Spare cycles the pool must still hold after admitting one, so a cycle can always land. */
   reserveCycles: z.number().default(0.5),
   maxCyclesPerDay: z.number().default(8),
+  /** Concurrent cycles across all programs; each one reserves capacity from the shared pool. */
+  maxConcurrentCycles: z.number().default(2),
+  /** Days before a deadline at which a program is promoted one priority step. */
+  deadlineHorizonDays: z.number().default(21),
   /** Runner winds down at this context size; the hard stop is above it. */
   contextCeilingTokens: z.number().default(250_000),
   /** Consecutive zero-yield cycles before the loop stops and escalates. */
@@ -72,6 +80,28 @@ export const ceilingsFor = (control: Control): Ceilings | null => {
   }
   return ceilings;
 };
+
+/**
+ * A calendar-bound program earns a priority step as its date closes in, and keeps
+ * it while overdue — a deadline that has passed is more urgent, not less.
+ */
+export const effectivePriority = (program: Program, now: number, horizonDays: number): number => {
+  if (program.deadline === null) return program.priority;
+  const at = Date.parse(program.deadline);
+  if (Number.isNaN(at)) {
+    throw new Error(`program "${program.name}" has an invalid deadline: ${program.deadline}`);
+  }
+  const daysAway = (at - now) / 86_400_000;
+  return daysAway <= horizonDays ? program.priority - 1 : program.priority;
+};
+
+/** Priority order, name as a deterministic tie-break. */
+export const byPriority = (programs: Program[], now: number, horizonDays: number): Program[] =>
+  [...programs].sort(
+    (a, b) =>
+      effectivePriority(a, now, horizonDays) - effectivePriority(b, now, horizonDays) ||
+      a.name.localeCompare(b.name),
+  );
 
 export const isPaused = (control: Control, now: number): boolean => {
   if (control.pauseUntil === null) return false;

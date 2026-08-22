@@ -136,6 +136,34 @@ predictably, mostly from subagent verdicts.
 
 Two reserves, not one: context (wind-down must fit) and quota (the cycle must be able to land).
 
+
+## Concurrent programs
+
+Craig runs several independent programs at once — sunnyt (live paid SaaS, calendar-bound),
+aice-x (paid SaaS, pre-revenue), joinery (open source, nice to have). They share one quota pool,
+which forces three things:
+
+**Tick must not await cycles.** An earlier draft held a single global lock and awaited each
+program sequentially, so one hours-long cycle blocked every other program for its whole life.
+Tick now detaches `drovr run-cycle <program>` per admitted program and returns in seconds; the
+child owns that program's lock and writes its own ledger entries.
+
+**In-flight cycles must reserve capacity.** A running cycle has not yet shown up as spent quota,
+so admitting against the raw pool would let every program independently claim all of it.
+Admission subtracts `running × estimatedCost` before testing affordability.
+
+**Scope of each gate differs.** Pace and reservations are global (one pool); daily caps and
+stuck detection are per program (one program going quiet should not stop the others). The daily
+cap doubles as the fairness mechanism — once a high-priority program exhausts its allowance, the
+slot falls to the next one down, so a low-priority program is throttled but never starved.
+
+### Deadline as priority pressure
+
+A static priority number cannot express "needs to be done by September." Rather than a scheduler,
+a program with a `deadline` inside the horizon is promoted one priority step, and keeps the
+promotion while overdue. One number, legible in `drovr status`, and it decays naturally when the
+date stops mattering (by the program being finished or reconfigured).
+
 ## Durability and the human interface
 
 The aice program bundle is not a report. It is the loop's **durable state and its only human

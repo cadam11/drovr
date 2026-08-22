@@ -109,8 +109,27 @@ export const spentSince = (cycles: CycleRecord[], windowStart: number): CycleCos
   };
 };
 
+/**
+ * A cycle is in flight when its start record has no matching end record. Reading
+ * it from the ledger rather than from locks means a decision made in any process
+ * sees every program's running work.
+ */
+export const inFlight = (cycles: CycleRecord[]): CycleRecord[] => {
+  const ended = new Set(
+    cycles.filter((cycle) => cycle.endedAt !== null).map((cycle) => `${cycle.program}|${cycle.startedAt}`),
+  );
+  return cycles.filter(
+    (cycle) => cycle.exit === 'running' && !ended.has(`${cycle.program}|${cycle.startedAt}`),
+  );
+};
+
+/** Start and end share a record shape, so a cycle is counted by its identity, not its rows. */
 export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number =>
-  cycles.filter((cycle) => Date.parse(cycle.startedAt) >= since).length;
+  new Set(
+    cycles
+      .filter((cycle) => Date.parse(cycle.startedAt) >= since)
+      .map((cycle) => `${cycle.program}|${cycle.startedAt}`),
+  ).size;
 
 export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
   const finished = cycles.filter((cycle) => cycle.kind === 'delivery' && cycle.endedAt !== null);

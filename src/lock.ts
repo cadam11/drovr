@@ -12,18 +12,22 @@ const isAlive = (pid: number): boolean => {
   }
 };
 
-/** Returns false when another tick holds the lock; stale locks are reclaimed. */
+export const holder = (path: string): number | null => {
+  if (!existsSync(path)) return null;
+  const pid = Number.parseInt(readFileSync(path, 'utf8').trim(), 10);
+  if (!Number.isFinite(pid)) return null;
+  return isAlive(pid) ? pid : null;
+};
+
+/** Returns false when a live process holds the lock; stale locks are reclaimed. */
 export const acquire = (path: string): boolean => {
-  if (existsSync(path)) {
-    const held = Number.parseInt(readFileSync(path, 'utf8').trim(), 10);
-    if (Number.isFinite(held) && isAlive(held)) return false;
-  }
+  if (holder(path) !== null) return false;
   writeFileSync(path, String(process.pid), 'utf8');
   return true;
 };
 
 export const release = (path: string): void => {
   if (!existsSync(path)) return;
-  const held = Number.parseInt(readFileSync(path, 'utf8').trim(), 10);
-  if (held === process.pid) rmSync(path);
+  const pid = Number.parseInt(readFileSync(path, 'utf8').trim(), 10);
+  if (pid === process.pid) rmSync(path);
 };

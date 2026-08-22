@@ -21,6 +21,7 @@ const cycle = (overrides: Partial<CycleRecord> = {}): CycleRecord => ({
 });
 
 const run = (overrides: {
+  program?: string;
   status?: ReturnType<typeof healthy>;
   control?: ReturnType<typeof control>;
   cycles?: CycleRecord[];
@@ -29,6 +30,7 @@ const run = (overrides: {
     status: overrides.status ?? healthy(),
     control: overrides.control ?? control(),
     cycles: overrides.cycles ?? [],
+    program: overrides.program ?? 'demo',
     now: NOW,
   });
 
@@ -44,14 +46,17 @@ test('mode off stops rather than waits', () => {
 
 test('an active pause holds the loop whatever the capacity', () => {
   const paused = control({ pauseUntil: new Date(NOW + HOUR).toISOString() });
-  const decision = decide({ status: healthy(), control: paused, cycles: [], now: NOW });
+  const decision = decide({ status: healthy(), control: paused, cycles: [], program: 'demo', now: NOW });
   assert.equal(decision.verdict, 'WAIT');
   assert.match(decision.reason, /paused until/);
 });
 
 test('an expired pause no longer holds the loop', () => {
   const stale = control({ pauseUntil: new Date(NOW - HOUR).toISOString() });
-  assert.equal(decide({ status: healthy(), control: stale, cycles: [], now: NOW }).verdict, 'GO');
+  assert.equal(
+    decide({ status: healthy(), control: stale, cycles: [], program: 'demo', now: NOW }).verdict,
+    'GO',
+  );
 });
 
 test('fable headroom without general headroom funds nothing', () => {
@@ -80,7 +85,9 @@ test('the reserve is what separates admitting from refusing a marginal pool', ()
 });
 
 test('the daily cap holds the loop even with capacity to spare', () => {
-  const today = Array.from({ length: 8 }, () => cycle({ startedAt: new Date(NOW - HOUR).toISOString() }));
+  const today = Array.from({ length: 8 }, (_unused, index) =>
+    cycle({ startedAt: new Date(NOW - (index + 1) * 60_000).toISOString() }),
+  );
   const decision = run({ cycles: today, control: control({ maxCyclesPerDay: 8 }) });
   assert.equal(decision.verdict, 'WAIT');
   assert.match(decision.reason, /daily cap/);
@@ -145,4 +152,67 @@ test('cyclesFundable is bound by the scarcest of the three buckets', () => {
 test('a zero-cost bucket does not constrain funding', () => {
   const pool = poolFrom(healthy(), { weekly: 0.55, session: 0.4 }, NOW);
   assert.equal(Number.isFinite(cyclesFundableFrom(pool, { fable: 0, general: 0, session: 0 })), false);
+});
+
+test('a program with a cycle already in flight does not start a second one', () => {
+  const running = cycle({ endedAt: null, exit: 'running', poolAfter: null, yield: null });
+  const decision = run({ cycles: [running] });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /already in flight/);
+});
+
+test('another program in flight reserves capacity from the shared pool', () => {
+  // Without the reservation each program would see the whole pool and all would start.
+  const elsewhere = cycle({ program: 'other', endedAt: null, exit: 'running', poolAfter: null, yield: null });
+  const thin = status([account({ name: 'a', fable: 0.3, general: 0.3, session: 0.0 })]);
+  const alone = run({ status: thin });
+  const shared = run({ status: thin, cycles: [elsewhere] });
+  assert.equal(alone.verdict, 'GO');
+  assert.equal(shared.verdict, 'WAIT');
+  assert.match(shared.reason, /1 in flight/);
+});
+
+test('the concurrency cap holds even when capacity is plentiful', () => {
+  const running = ['x', 'y'].map((name) =>
+    cycle({ program: name, endedAt: null, exit: 'running', poolAfter: null, yield: null }),
+  );
+  const decision = run({ cycles: running, control: control({ maxConcurrentCycles: 2 }) });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /cap is 2/);
+});
+
+test('a finished cycle stops counting as in flight', () => {
+  const startThenEnd = [
+    cycle({ endedAt: null, exit: 'running', poolAfter: null, yield: null }),
+    cycle({ exit: 'seam' }),
+  ];
+  assert.equal(run({ cycles: startThenEnd }).verdict, 'GO');
+});
+
+test('pace counts every program, since they share one quota pool', () => {
+  const heavy = Array.from({ length: 6 }, (_unused, index) =>
+    cycle({
+      program: index % 2 === 0 ? 'demo' : 'other',
+      startedAt: new Date(NOW - (index + 1) * HOUR).toISOString(),
+      poolBefore: { fable: 1.4, general: 1.4, session: 1.2 },
+      poolAfter: { fable: 1.2, general: 1.2, session: 1.0 },
+    }),
+  );
+  const decision = run({ cycles: heavy });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /all programs/);
+});
+
+test('the daily cap counts only this program', () => {
+  const others = Array.from({ length: 8 }, () =>
+    cycle({ program: 'other', startedAt: new Date(NOW - HOUR).toISOString() }),
+  );
+  assert.equal(run({ cycles: others, control: control({ maxCyclesPerDay: 8 }) }).verdict, 'GO');
+});
+
+test('the stuck streak counts only this program', () => {
+  const barren = Array.from({ length: 3 }, () =>
+    cycle({ program: 'other', yield: { ticketsMoved: 0, prsOpened: 0, commits: 0 } }),
+  );
+  assert.equal(run({ cycles: barren }).verdict, 'GO');
 });

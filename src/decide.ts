@@ -4,6 +4,7 @@ import {
   consecutiveZeroYield,
   cyclesStartedSince,
   estimateCycleCost,
+  inFlight,
   snapshot,
   spentSince,
   type CycleCost,
@@ -27,7 +28,9 @@ export type Decision = {
 export type DecideInput = {
   status: TeamclaudeStatus;
   control: Control;
+  /** Every program's cycles: quota is one shared pool, so pace and reservations are global. */
   cycles: CycleRecord[];
+  program: string;
   now: number;
 };
 
@@ -42,9 +45,20 @@ export const cyclesFundableFrom = (pool: Pool, cost: CycleCost): number =>
   );
 
 /**
- * Linear entitlement across the weekly window. Measured against drovr's own
- * ledger rather than the account's total usage, so Craig's foreground work
- * constrains the pool (via the ceiling) without also counting against pace.
+ * Cycles already running have not yet shown up as spent quota, so admitting
+ * against the raw pool would let N concurrent programs each claim all of it.
+ */
+const lessReserved = (pool: Pool, cost: CycleCost, running: number): Pool => ({
+  ...pool,
+  fable: Math.max(0, pool.fable - running * cost.fable),
+  general: Math.max(0, pool.general - running * cost.general),
+  session: Math.max(0, pool.session - running * cost.session),
+});
+
+/**
+ * Linear entitlement across the weekly window, measured against drovr's own
+ * ledger rather than account usage: Craig's foreground work constrains the pool
+ * through the ceiling without also counting against the loop's pace.
  */
 const paceExceeded = (
   input: DecideInput,
@@ -59,13 +73,9 @@ const paceExceeded = (
   const windowStart = input.now - (WEEKLY_WINDOW_HOURS - hoursLeft) * 3_600_000;
   const spent = spentSince(input.cycles, windowStart);
 
-  if (spent.fable > entitlement) {
-    return `ahead of pace on fable (${spent.fable.toFixed(2)} spent vs ${entitlement.toFixed(2)} entitled)`;
-  }
-  if (spent.general > entitlement) {
-    return `ahead of pace on general (${spent.general.toFixed(2)} spent vs ${entitlement.toFixed(2)} entitled)`;
-  }
-  return null;
+  const over = (['fable', 'general'] as const).find((bucket) => spent[bucket] > entitlement);
+  if (over === undefined) return null;
+  return `ahead of pace on ${over} (${spent[over].toFixed(2)} spent vs ${entitlement.toFixed(2)} entitled, all programs)`;
 };
 
 const halt = (reason: string): Decision => ({
@@ -85,11 +95,12 @@ const hold = (reason: string, pool: Pool | null, fundable: number | null): Decis
 });
 
 export const decide = (input: DecideInput): Decision => {
-  const { control, cycles, now } = input;
+  const { control, cycles, program, now } = input;
+  const mine = cycles.filter((cycle) => cycle.program === program);
 
   if (control.mode === 'off') return halt('mode is off');
 
-  const stuck = consecutiveZeroYield(cycles);
+  const stuck = consecutiveZeroYield(mine);
   if (stuck >= control.stuckCycleThreshold) {
     return halt(`${stuck} consecutive cycles produced no yield — escalating instead of looping`);
   }
@@ -102,7 +113,19 @@ export const decide = (input: DecideInput): Decision => {
   const pool = poolFrom(input.status, ceilings, now);
   if (pool.usableAccounts === 0) return hold('no usable accounts', pool, null);
 
-  const today = cyclesStartedSince(cycles, now - DAY_MS);
+  const running = inFlight(cycles);
+  if (running.some((cycle) => cycle.program === program)) {
+    return hold('a cycle for this program is already in flight', pool, null);
+  }
+  if (running.length >= control.maxConcurrentCycles) {
+    return hold(
+      `${running.length} cycles in flight, cap is ${control.maxConcurrentCycles}`,
+      pool,
+      null,
+    );
+  }
+
+  const today = cyclesStartedSince(mine, now - DAY_MS);
   if (today >= control.maxCyclesPerDay) {
     return hold(`daily cap reached (${today}/${control.maxCyclesPerDay})`, pool, null);
   }
@@ -111,11 +134,12 @@ export const decide = (input: DecideInput): Decision => {
   if (offPace !== null) return hold(offPace, pool, null);
 
   const cost = estimateCycleCost(cycles, control.seedCycleCost);
-  const fundable = cyclesFundableFrom(pool, cost);
+  const available = lessReserved(pool, cost, running.length);
+  const fundable = cyclesFundableFrom(available, cost);
   const required = 1 + control.reserveCycles;
   if (fundable < required) {
     return hold(
-      `pool funds ${fundable.toFixed(2)} cycles, need ${required.toFixed(2)}`,
+      `pool funds ${fundable.toFixed(2)} more cycles (${running.length} in flight), need ${required.toFixed(2)}`,
       pool,
       fundable,
     );
@@ -123,7 +147,7 @@ export const decide = (input: DecideInput): Decision => {
 
   return {
     verdict: 'GO',
-    reason: `pool funds ${fundable.toFixed(2)} cycles across ${pool.usableAccounts} accounts`,
+    reason: `pool funds ${fundable.toFixed(2)} more cycles across ${pool.usableAccounts} accounts (${running.length} in flight)`,
     pool,
     cyclesFundable: fundable,
     earliestRecoveryAt: pool.earliestRecoveryAt,

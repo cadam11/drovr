@@ -3,13 +3,19 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { poolFrom } from './capacity.ts';
-import { ceilingsFor, parseControl, readControl } from './control.ts';
+import { byPriority, ceilingsFor, effectivePriority, parseControl, readControl } from './control.ts';
 import { decide } from './decide.ts';
-import { consecutiveZeroYield, estimateCycleCost, readCycles } from './ledger.ts';
+import {
+  consecutiveZeroYield,
+  estimateCycleCost,
+  readCycles,
+  type CycleRecord,
+} from './ledger.ts';
+import { holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { LABEL, plist, plistPath } from './service.ts';
 import { readStatus } from './teamclaude.ts';
-import { tick } from './tick.ts';
+import { inFlightCycles, runProgramCycle, tick } from './tick.ts';
 
 const p = paths();
 
@@ -66,10 +72,42 @@ const showStatus = async (): Promise<void> => {
   }
   console.log(`cycles recorded: ${cycles.length} · zero-yield streak: ${consecutiveZeroYield(cycles)}`);
 
-  for (const program of control.programs) {
-    const scoped = cycles.filter((cycle) => cycle.program === program.name);
-    const decision = decide({ status, control, cycles: scoped, now });
-    console.log(`  ${program.name}: ${decision.verdict} — ${decision.reason}`);
+  const running = inFlightCycles();
+  const names = running.map((cycle) => cycle.program).join(', ');
+  console.log(
+    `in flight: ${running.length}/${control.maxConcurrentCycles}${running.length === 0 ? '' : ` (${names})`}`,
+  );
+
+  // Tick launches in priority order and each launch reserves capacity, so the
+  // preview must accumulate its own hypothetical launches to match reality.
+  const projected: CycleRecord[] = [];
+  for (const program of byPriority(control.programs, now, control.deadlineHorizonDays)) {
+    const decision = decide({
+      status,
+      control,
+      cycles: [...cycles, ...projected],
+      program: program.name,
+      now,
+    });
+    const pid = holder(p.programLock(program.name));
+    const shown = effectivePriority(program, now, control.deadlineHorizonDays);
+    const flags = `${program.enabled ? '' : ' [disabled]'}${pid === null ? '' : ` [pid ${pid}]`}`;
+    console.log(`  [p${shown}] ${program.name}${flags}: ${decision.verdict} — ${decision.reason}`);
+
+    if (decision.verdict !== 'GO' || !program.enabled) continue;
+    projected.push({
+      v: 1,
+      kind: 'delivery',
+      program: program.name,
+      startedAt: new Date(now).toISOString(),
+      endedAt: null,
+      exit: 'running',
+      poolBefore: { fable: 0, general: 0, session: 0 },
+      poolAfter: null,
+      startupTokens: null,
+      yield: null,
+      asksRaised: 0,
+    });
   }
 };
 
@@ -97,7 +135,8 @@ const usage = `drovr — capacity-aware supervisor for long-horizon delivery loo
 
   drovr init                 write ~/.drovr/control.json
   drovr status               pool capacity, cost estimate, per-program verdict
-  drovr tick                 evaluate once; run a cycle if capacity allows
+  drovr tick                 evaluate once; launch cycles where capacity allows
+  drovr run-cycle <program>  run one cycle now (what tick launches)
   drovr pause <30m|3h|2d>    hold cycles for a while
   drovr resume               clear a pause
   drovr mode <off|low|normal|away>
@@ -111,6 +150,11 @@ const main = async (argv: string[]): Promise<void> => {
 
   if (command === 'init') return init();
   if (command === 'tick') return tick();
+  if (command === 'run-cycle') {
+    const name = rest[0];
+    if (name === undefined) throw new Error('run-cycle needs a program name');
+    return runProgramCycle(name);
+  }
   if (command === 'status') return showStatus();
   if (command === 'ledger') return showLedger(Number.parseInt(rest[0] ?? '20', 10));
 

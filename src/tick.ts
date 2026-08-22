@@ -1,10 +1,12 @@
+import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
-import { appendRecord, readCycles, snapshot, type CycleRecord } from './ledger.ts';
+import { fileURLToPath } from 'node:url';
+import { appendRecord, inFlight, readCycles, snapshot, type CycleRecord } from './ledger.ts';
 import { decide, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
 import { poolFrom } from './capacity.ts';
-import { ceilingsFor, readControl, type Control, type Program } from './control.ts';
-import { acquire, release } from './lock.ts';
+import { byPriority, ceilingsFor, readControl, type Program } from './control.ts';
+import { acquire, holder, release } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { readStatus } from './teamclaude.ts';
 import { renderStatus } from './render.ts';
@@ -22,7 +24,13 @@ const logDecision = (program: string, decision: Decision, now: number): void => 
   });
 };
 
-const writeStatusPage = async (program: Program, decision: Decision, cycles: CycleRecord[], now: number, note?: string): Promise<void> => {
+const writeStatusPage = async (
+  program: Program,
+  decision: Decision,
+  cycles: CycleRecord[],
+  now: number,
+  note?: string,
+): Promise<void> => {
   ensureDirs(program.name);
   const html = renderStatus({
     program: program.name,
@@ -36,87 +44,128 @@ const writeStatusPage = async (program: Program, decision: Decision, cycles: Cyc
   await publishStatus(program, file);
 };
 
-/** One cycle, start to finish. The ledger is written before the spawn so a hard kill still leaves a record. */
-const executeCycle = async (program: Program, control: Control, before: CycleRecord['poolBefore']): Promise<void> => {
-  const startedAt = new Date().toISOString();
-  const kind = isOnboarding(program.name) ? 'onboarding' : 'delivery';
-
-  appendRecord(paths().cycles, {
-    v: 1,
-    kind,
-    program: program.name,
-    startedAt,
-    endedAt: null,
-    exit: 'running',
-    poolBefore: before,
-    poolAfter: null,
-    startupTokens: null,
-    yield: null,
-    asksRaised: 0,
+/**
+ * Cycles run for hours, so tick must not await them: it hands each admitted
+ * program to a detached `drovr run-cycle`, which owns that program's lock and
+ * ledger entries. Tick itself returns in seconds so the next launchd firing can
+ * evaluate the other programs.
+ */
+const launch = (program: Program): void => {
+  const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
+  const child = spawn(process.execPath, [cli, 'run-cycle', program.name], {
+    detached: true,
+    stdio: 'ignore',
   });
-
-  const code = await runCycle(program, startedAt);
-  const report = readReport(program.name);
-  const status = await readStatus();
-  const ceilings = ceilingsFor(control);
-  const after = ceilings === null ? null : snapshot(poolFrom(status, ceilings, Date.now()));
-
-  appendRecord(paths().cycles, {
-    v: 1,
-    kind,
-    program: program.name,
-    startedAt,
-    endedAt: new Date().toISOString(),
-    exit: report?.exit ?? 'crash',
-    poolBefore: before,
-    poolAfter: after,
-    startupTokens: report?.startupTokens ?? null,
-    yield: report?.yield ?? null,
-    asksRaised: report?.asksRaised ?? 0,
-  });
-
-  if (report === null) {
-    console.error(`cycle for ${program.name} exited ${code} without a report — recorded as crash`);
-  }
+  child.unref();
+  console.log(`${program.name}: launched cycle (pid ${child.pid})`);
 };
 
 export const tick = async (): Promise<void> => {
   const p = paths();
   ensureDirs();
-  if (!acquire(p.lock)) {
-    console.log('another tick holds the lock — a cycle is in flight');
+  if (!acquire(p.tickLock)) {
+    console.log('another tick is still evaluating');
     return;
   }
 
   try {
     const control = readControl(p.control);
     const status = await readStatus();
-    const cycles = readCycles(p.cycles);
     const now = Date.now();
 
-    for (const program of control.programs.filter((candidate) => candidate.enabled)) {
-      const scoped = cycles.filter((cycle) => cycle.program === program.name);
-      const decision = decide({ status, control, cycles: scoped, now });
+    for (const program of byPriority(control.programs, now, control.deadlineHorizonDays).filter((entry) => entry.enabled)) {
+      const cycles = readCycles(p.cycles);
+      const decision = decide({ status, control, cycles, program: program.name, now });
       logDecision(program.name, decision, now);
       console.log(`${program.name}: ${decision.verdict} — ${decision.reason}`);
 
       if (decision.verdict !== 'GO' || decision.pool === null) {
-        await writeStatusPage(program, decision, scoped, now);
+        const mine = cycles.filter((cycle) => cycle.program === program.name);
+        await writeStatusPage(program, decision, mine, now);
         continue;
       }
+      launch(program);
+    }
+  } finally {
+    release(p.tickLock);
+  }
+};
 
-      await executeCycle(program, control, snapshot(decision.pool));
-      const refreshed = readCycles(p.cycles).filter((cycle) => cycle.program === program.name);
-      const last = refreshed.at(-1);
+/** The detached per-program worker. Holds the program lock for the cycle's whole life. */
+export const runProgramCycle = async (name: string): Promise<void> => {
+  const p = paths();
+  ensureDirs(name);
+  const lock = p.programLock(name);
+  if (!acquire(lock)) {
+    console.error(`a cycle for ${name} is already running (pid ${holder(lock)})`);
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    const control = readControl(p.control);
+    const program = control.programs.find((entry) => entry.name === name);
+    if (program === undefined) throw new Error(`no program named "${name}" in ${p.control}`);
+
+    const ceilings = ceilingsFor(control);
+    if (ceilings === null) throw new Error('mode is off');
+
+    const startedAt = new Date().toISOString();
+    const kind = isOnboarding(name) ? 'onboarding' : 'delivery';
+    const before = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
+
+    const record = (extra: Partial<CycleRecord>): void => {
+      appendRecord(p.cycles, {
+        v: 1,
+        kind,
+        program: name,
+        startedAt,
+        endedAt: null,
+        exit: 'running',
+        poolBefore: before,
+        poolAfter: null,
+        startupTokens: null,
+        yield: null,
+        asksRaised: 0,
+        ...extra,
+      });
+    };
+
+    record({});
+    const code = await runCycle(program, startedAt);
+    const report = readReport(name);
+    const after = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
+
+    record({
+      endedAt: new Date().toISOString(),
+      exit: report?.exit ?? 'crash',
+      poolAfter: after,
+      startupTokens: report?.startupTokens ?? null,
+      yield: report?.yield ?? null,
+      asksRaised: report?.asksRaised ?? 0,
+    });
+
+    if (report === null) {
+      console.error(`cycle for ${name} exited ${code} without a report — recorded as crash`);
+      const cycles = readCycles(p.cycles).filter((cycle) => cycle.program === name);
+      const decision = decide({
+        status: await readStatus(),
+        control,
+        cycles: readCycles(p.cycles),
+        program: name,
+        now: Date.now(),
+      });
       await writeStatusPage(
         program,
         decision,
-        refreshed,
+        cycles,
         Date.now(),
-        last?.exit === 'crash' ? 'Last cycle ended without a report — treated as a crash.' : undefined,
+        'Last cycle ended without a report — treated as a crash.',
       );
     }
   } finally {
-    release(p.lock);
+    release(lock);
   }
 };
+
+export const inFlightCycles = (): CycleRecord[] => inFlight(readCycles(paths().cycles));
