@@ -49,6 +49,51 @@ if a program publishes pages.
 > The generated plist pins the absolute `node` path from `process.execPath`. If you switch Node
 > versions with nvm, re-run `service install`.
 
+
+## Adding a program
+
+```bash
+drovr add <name> <path> [--priority n] [--deadline YYYY-MM-DD]
+                        [--asks <page>] [--status-page <page>]
+                        [--no-aice] [--no-direnv]
+drovr rm <name>          # stops tracking; ledger history is kept
+```
+
+Example:
+
+```bash
+drovr add mrr ~/code/mrr --priority 3 --asks craig/asks.html
+```
+
+The path must exist and the name must be unique; the whole control file is validated before the
+change lands. Since the aice install comes from the repo's own `.envrc`, a new program usually
+needs nothing else — use `--no-aice` for one with no aice install at all, and `--asks` only once
+the program has an asks page (leave it unset and onboarding creates one).
+
+The first tick after adding runs an **onboarding cycle**: it reconstructs state from tickets,
+git, docs and any existing aice pages, publishes the program bundle, raises one ask describing
+what it found and what it could not determine, then stops. It does not roll into delivery —
+confirm or correct the reconstruction in the page notes and the next cycle proceeds on its own.
+
+You can also edit `~/.drovr/control.json` directly; every tick re-reads it.
+
+## Is it running?
+
+```bash
+drovr service status
+```
+
+```
+loaded every 600s, last tick 4m ago
+```
+
+launchd being loaded only proves it is *scheduled*. Ticks are short-lived, so the honest liveness
+signal is when one last actually ran — read from `decisions.jsonl`. A gap of more than a few
+intervals is reported as `overdue`, and a non-zero exit from the last tick is shown too.
+
+`drovr watch` carries the same line in its header with a green or red dot, so a dead service is
+visible at a glance rather than looking like a quiet one.
+
 ## Control
 
 `~/.drovr/control.json` is re-read every tick — edits take effect immediately, and never interrupt

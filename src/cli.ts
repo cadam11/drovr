@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { poolFrom } from './capacity.ts';
@@ -8,12 +9,13 @@ import { decide } from './decide.ts';
 import {
   consecutiveZeroYield,
   estimateCycleCost,
+  lastDecisionAt,
   readCycles,
   type CycleRecord,
 } from './ledger.ts';
 import { holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
-import { LABEL, plist, plistPath } from './service.ts';
+import { describeService, LABEL, plist, plistPath, serviceState } from './service.ts';
 import { readStatus } from './teamclaude.ts';
 import { inFlightCycles, runProgramCycle, tick } from './tick.ts';
 import { watch } from './watch.ts';
@@ -59,6 +61,7 @@ const showStatus = async (): Promise<void> => {
   const now = Date.now();
   const ceilings = ceilingsFor(control);
 
+  console.log(`service: ${describeService(serviceState(), lastDecisionAt(p.decisions), now)}`);
   console.log(`mode: ${control.mode}${control.pauseUntil === null ? '' : ` (paused until ${control.pauseUntil})`}`);
   if (ceilings !== null) {
     const pool = poolFrom(status, ceilings, now);
@@ -132,6 +135,71 @@ const installService = (intervalSeconds: number): void => {
   console.log(`load it with:  launchctl bootstrap gui/$(id -u) ${target}`);
 };
 
+const flag = (rest: string[], name: string): string | undefined => {
+  const index = rest.indexOf(`--${name}`);
+  return index === -1 ? undefined : rest[index + 1];
+};
+
+/** Appends a program, validating the whole file before it lands. */
+const addProgram = (rest: string[]): void => {
+  const [name, cwd] = rest;
+  if (name === undefined || cwd === undefined) {
+    throw new Error('usage: drovr add <name> <path> [--priority n] [--deadline YYYY-MM-DD] ...');
+  }
+  const absolute = resolve(cwd.replace(/^~(?=$|\/)/, homedir()));
+  if (!existsSync(absolute)) throw new Error(`${absolute} does not exist`);
+
+  const statusPage = flag(rest, 'status-page') ?? `craig/drovr-status.html`;
+  const asksPage = flag(rest, 'asks') ?? null;
+
+  mutate((control) => {
+    const programs = Array.isArray(control.programs) ? control.programs : [];
+    if (programs.some((entry) => (entry as { name?: unknown }).name === name)) {
+      throw new Error(`a program named "${name}" already exists`);
+    }
+    programs.push({
+      name,
+      cwd: absolute,
+      priority: Number.parseInt(flag(rest, 'priority') ?? '0', 10),
+      deadline: flag(rest, 'deadline') ?? null,
+      ...(rest.includes('--no-direnv') ? { useDirenv: false } : {}),
+      ...(rest.includes('--no-aice') ? { aice: null } : { aice: { asksPage, statusPage } }),
+    });
+    control.programs = programs;
+  });
+  console.log(`added ${name} → ${absolute}`);
+  console.log('first tick will onboard it: reconstruct state, publish, raise one ask, then stop');
+};
+
+const removeProgram = (name: string | undefined): void => {
+  if (name === undefined) throw new Error('usage: drovr rm <name>');
+  mutate((control) => {
+    const programs = Array.isArray(control.programs) ? control.programs : [];
+    const kept = programs.filter((entry) => (entry as { name?: unknown }).name !== name);
+    if (kept.length === programs.length) throw new Error(`no program named "${name}"`);
+    control.programs = kept;
+  });
+  console.log(`removed ${name} (its ledger history and ~/.drovr/programs/${name} are left alone)`);
+};
+
+const showService = (): void => {
+  const state = serviceState();
+  console.log(describeService(state, lastDecisionAt(p.decisions), Date.now()));
+  if (state.pid !== null) console.log(`a tick is executing right now (pid ${state.pid})`);
+  console.log(`plist: ${plistPath()}`);
+  console.log(`logs:  ${p.logs}`);
+};
+
+const uninstallService = (): void => {
+  const target = plistPath();
+  if (!existsSync(target)) {
+    console.log('not installed');
+    return;
+  }
+  console.log(`unload it with:  launchctl bootout gui/$(id -u)/${LABEL}`);
+  console.log(`then remove:     rm ${target}`);
+};
+
 const usage = `drovr — capacity-aware supervisor for long-horizon delivery loops
 
   drovr init                 write ~/.drovr/control.json
@@ -142,7 +210,14 @@ const usage = `drovr — capacity-aware supervisor for long-horizon delivery loo
   drovr resume               clear a pause
   drovr mode <off|low|normal|away>
   drovr ledger [n]           last n cycles (default 20)
+
+  drovr add <name> <path> [--priority n] [--deadline YYYY-MM-DD]
+                          [--asks <page>] [--status-page <page>] [--no-aice] [--no-direnv]
+  drovr rm <name>            stop tracking a program (history is kept)
+
+  drovr service status              is the agent loaded, and did it tick recently
   drovr service install [seconds]   write the launchd agent (default 600)
+  drovr service uninstall           how to unload and remove it
   drovr service print               print the plist without writing it
 `;
 
@@ -157,6 +232,8 @@ const main = async (argv: string[]): Promise<void> => {
     return runProgramCycle(name);
   }
   if (command === 'status') return showStatus();
+  if (command === 'add') return addProgram(rest);
+  if (command === 'rm') return removeProgram(rest[0]);
   if (command === 'watch') return watch(Number.parseInt(rest[0] ?? '15', 10));
   if (command === 'ledger') return showLedger(Number.parseInt(rest[0] ?? '20', 10));
 
@@ -186,13 +263,15 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'service') {
     const sub = rest[0];
     const seconds = Number.parseInt(rest[1] ?? '600', 10);
+    if (sub === 'status') return showService();
+    if (sub === 'uninstall') return uninstallService();
     if (sub === 'install') return installService(seconds);
     if (sub === 'print') {
       const cliPath = resolve(fileURLToPath(new URL('./cli.ts', import.meta.url)));
       console.log(plist({ nodeBin: process.execPath, cliPath, intervalSeconds: seconds, logDir: p.logs }));
       return;
     }
-    throw new Error(`unknown service subcommand "${sub ?? ''}" — expected install or print (label: ${LABEL})`);
+    throw new Error(`unknown service subcommand "${sub ?? ''}" — expected status, install, uninstall or print (label: ${LABEL})`);
   }
 
   console.log(usage);

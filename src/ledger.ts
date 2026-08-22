@@ -168,3 +168,15 @@ export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
   }
   return streak;
 };
+
+/** When a tick last recorded a decision — the real proof the service is firing. */
+export const lastDecisionAt = (path: string): number | null => {
+  if (!existsSync(path)) return null;
+  const lines = readFileSync(path, 'utf8').split('\n').filter((line) => line.trim() !== '');
+  const last = lines.at(-1);
+  if (last === undefined) return null;
+  const parsed = decisionShape.safeParse(JSON.parse(last));
+  if (!parsed.success) return null;
+  const at = Date.parse(parsed.data.at);
+  return Number.isNaN(at) ? null : at;
+};

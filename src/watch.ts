@@ -4,7 +4,14 @@ import { allocationFor, type Allocation, type BucketName } from './allocation.ts
 import { hoursToWeeklyReset, poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, effectivePriority, readControl, type Program } from './control.ts';
 import { decide } from './decide.ts';
-import { estimateCycleCost, inFlight, readCycles, spentSince, type CycleRecord } from './ledger.ts';
+import {
+  estimateCycleCost,
+  inFlight,
+  lastDecisionAt,
+  readCycles,
+  spentSince,
+  type CycleRecord,
+} from './ledger.ts';
 import {
   adjustConcurrency,
   cycleMode,
@@ -16,6 +23,7 @@ import {
 } from './keys.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
+import { describeService, serviceState } from './service.ts';
 import { readStatus, type TeamclaudeStatus } from './teamclaude.ts';
 
 const ESC = '\x1b[';
@@ -207,9 +215,13 @@ const frame = async (state: State): Promise<string> => {
       ? paint(33, ` paused until ${control.pauseUntil.slice(11, 16)}`)
       : '';
 
+  const service = describeService(serviceState(), lastDecisionAt(p.decisions), now);
+  const healthy = service.startsWith('loaded') && !service.includes('overdue');
+
   const lines = [
     `${bold('drovr')}  ${dim(`mode ${control.mode}`)}${held}  ` +
       dim(new Date(now).toTimeString().slice(0, 8)),
+    `  ${paint(healthy ? 32 : 31, '●')} ${dim(service)}`,
   ];
 
   lines.push(
