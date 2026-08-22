@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import { explainSpawn } from './exec.ts';
 
 const run = promisify(execFile);
 
@@ -42,6 +43,10 @@ export const parseStatus = (raw: unknown): TeamclaudeStatus => {
 };
 
 export const readStatus = async (bin = 'teamclaude'): Promise<TeamclaudeStatus> => {
-  const { stdout } = await run(bin, ['status', '--json'], { maxBuffer: 8 * 1024 * 1024 });
-  return parseStatus(JSON.parse(stdout));
+  try {
+    const { stdout } = await run(bin, ['status', '--json'], { maxBuffer: 8 * 1024 * 1024 });
+    return parseStatus(JSON.parse(stdout));
+  } catch (error) {
+    throw explainSpawn(bin, error);
+  }
 };

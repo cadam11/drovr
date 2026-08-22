@@ -20,6 +20,7 @@ import { ensureDirs, paths } from './paths.ts';
 import {
   bootoutCommand,
   bootstrapCommand,
+  agentPath,
   describeService,
   LABEL,
   plist,
@@ -241,7 +242,7 @@ const installService = (intervalSeconds: number): void => {
   const cliPath = resolve(fileURLToPath(new URL('./cli.ts', import.meta.url)));
   const target = plistPath();
   mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, plist({ nodeBin: process.execPath, cliPath, intervalSeconds, logDir: p.logs }), 'utf8');
+  writeFileSync(target, plist({ nodeBin: process.execPath, cliPath, intervalSeconds, logDir: p.logs, path: agentPath() }), 'utf8');
   console.log(`wrote ${target}`);
   console.log(`load it with:  ${bootstrapCommand()}`);
 };
@@ -434,7 +435,7 @@ const main = async (argv: string[]): Promise<void> => {
     if (sub === 'install') return installService(seconds);
     if (sub === 'print') {
       const cliPath = resolve(fileURLToPath(new URL('./cli.ts', import.meta.url)));
-      console.log(plist({ nodeBin: process.execPath, cliPath, intervalSeconds: seconds, logDir: p.logs }));
+      console.log(plist({ nodeBin: process.execPath, cliPath, intervalSeconds: seconds, logDir: p.logs, path: agentPath() }));
       return;
     }
     throw new Error(`unknown service subcommand "${sub ?? ''}" — expected status, install, uninstall or print (label: ${LABEL})`);

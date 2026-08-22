@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { openSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, readCycles, snapshot, type CycleRecord } from './ledger.ts';
 import { decide, type Decision } from './decide.ts';
@@ -52,12 +53,42 @@ const writeStatusPage = async (
  */
 const launch = (program: Program): void => {
   const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
+  // Not 'ignore': a worker that fails to start its cycle has its only explanation
+  // on stderr, and discarding it leaves a crash record with no cause.
+  const logPath = join(paths().logs, `${program.name}-worker.log`);
+  const log = openSync(logPath, 'a');
   const child = spawn(process.execPath, [cli, 'run-cycle', program.name], {
     detached: true,
-    stdio: 'ignore',
+    stdio: ['ignore', log, log],
   });
   child.unref();
-  console.log(`${program.name}: launched cycle (pid ${child.pid})`);
+  console.log(`${program.name}: launched cycle (pid ${child.pid}, log ${logPath})`);
+};
+
+/**
+ * A worker takes its program lock before writing its start record, so an in-flight
+ * cycle whose lock no longer has a live holder is definitively over — its worker was
+ * killed before it could write an end record. Closing those out here means a crash
+ * never leaves a program blocked behind a phantom cycle.
+ */
+const reconcileAbandoned = (now: number): number => {
+  const p = paths();
+  const abandoned = inFlight(readCycles(p.cycles), now).filter(
+    (cycle) => holder(p.programLock(cycle.program)) === null,
+  );
+
+  for (const cycle of abandoned) {
+    appendRecord(p.cycles, {
+      ...cycle,
+      endedAt: new Date(now).toISOString(),
+      exit: 'crash',
+      poolAfter: cycle.poolBefore,
+    });
+    console.error(
+      `${cycle.program}: cycle started ${cycle.startedAt} had no running worker — closed as crashed`,
+    );
+  }
+  return abandoned.length;
 };
 
 export const tick = async (): Promise<void> => {
@@ -72,9 +103,18 @@ export const tick = async (): Promise<void> => {
     const control = readControl(p.control);
     const status = await readStatus();
     const now = Date.now();
+    reconcileAbandoned(now);
 
-    for (const program of byPriority(control.programs, now, control.deadlineHorizonDays).filter((entry) => entry.enabled)) {
-      const cycles = readCycles(p.cycles);
+    // Workers write their own start record, so within one tick the earlier launches
+    // are not yet visible in the ledger. Without tracking them here the concurrency
+    // cap and capacity reservations would not apply until the next tick, and every
+    // program would be admitted at once.
+    const launched: CycleRecord[] = [];
+
+    for (const program of byPriority(control.programs, now, control.deadlineHorizonDays).filter(
+      (entry) => entry.enabled,
+    )) {
+      const cycles = [...readCycles(p.cycles), ...launched];
       const decision = decide({ status, control, cycles, program: program.name, now });
       logDecision(program.name, decision, now);
       console.log(`${program.name}: ${decision.verdict} — ${decision.reason}`);
@@ -85,6 +125,19 @@ export const tick = async (): Promise<void> => {
         continue;
       }
       launch(program);
+      launched.push({
+        v: 1,
+        kind: 'delivery',
+        program: program.name,
+        startedAt: new Date(now).toISOString(),
+        endedAt: null,
+        exit: 'running',
+        poolBefore: snapshot(decision.pool),
+        poolAfter: null,
+        startupTokens: null,
+        yield: null,
+        asksRaised: 0,
+      });
     }
   } finally {
     release(p.tickLock);
@@ -132,7 +185,18 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     };
 
     record({});
-    const outcome = await runCycle(program, startedAt, control.maxCycleHours);
+
+    // Anything between the start record and the end record can throw — a missing
+    // binary, a herdr error, a lost workspace. Without an end record the cycle stays
+    // "in flight" forever, blocking its own program and holding a concurrency slot.
+    const outcome = await runCycle(program, startedAt, control.maxCycleHours).catch(
+      (error: unknown) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error(`cycle for ${name} failed to run: ${detail}`);
+        return { finished: true, detail };
+      },
+    );
+
     const report = readReport(name);
     const after = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 

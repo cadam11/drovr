@@ -8,8 +8,25 @@ export const LABEL = 'tech.propra.drovr';
 export const plistPath = (): string =>
   join(homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
 
+/**
+ * launchd starts with a bare PATH that does not include tool dirs like
+ * ~/Library/pnpm, where teamclaude lives. Baking in the installing shell's PATH
+ * is what makes teamclaude, herdr, aice and direnv resolvable from a tick.
+ */
+export const agentPath = (): string => {
+  const standard = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
+  const inherited = (process.env.PATH ?? '').split(':').filter((entry) => entry !== '');
+  return [...new Set([...inherited, ...standard])].join(':');
+};
+
 /** StartInterval, not a long-lived daemon: every tick is a fresh, crash-isolated process. */
-export const plist = (input: { nodeBin: string; cliPath: string; intervalSeconds: number; logDir: string }): string =>
+export const plist = (input: {
+  nodeBin: string;
+  cliPath: string;
+  intervalSeconds: number;
+  logDir: string;
+  path: string;
+}): string =>
   `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -26,7 +43,7 @@ export const plist = (input: { nodeBin: string; cliPath: string; intervalSeconds
   <key>StandardOutPath</key><string>${join(input.logDir, 'drovr.out.log')}</string>
   <key>StandardErrorPath</key><string>${join(input.logDir, 'drovr.err.log')}</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+  <dict><key>PATH</key><string>${input.path}</string></dict>
 </dict>
 </plist>
 `;
@@ -99,9 +116,14 @@ export const describeService = (
   }
 
   const every = state.intervalSeconds === null ? '' : ` and fires every ${state.intervalSeconds}s`;
+  // launchd reports the raw wait() status, so a plain exit 1 shows up as 256.
+  const exitCode =
+    state.lastExitStatus === null || state.lastExitStatus < 256
+      ? state.lastExitStatus
+      : state.lastExitStatus >> 8;
   const failed =
-    state.lastExitStatus !== null && state.lastExitStatus !== 0
-      ? `. Warning: the last tick exited with status ${state.lastExitStatus} — check ~/.drovr/logs/drovr.err.log`
+    exitCode !== null && exitCode !== 0
+      ? `. Warning: the last tick failed (exit ${exitCode}) — check ${join(homedir(), '.drovr/logs/drovr.err.log')}`
       : '';
 
   if (lastTickAt === null) {

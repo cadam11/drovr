@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cyclesFundableFrom, decide } from '../src/decide.ts';
 import { poolFrom } from '../src/capacity.ts';
-import type { CycleRecord } from '../src/ledger.ts';
+import { inFlight, type CycleRecord } from '../src/ledger.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
 
 const cycle = (overrides: Partial<CycleRecord> = {}): CycleRecord => ({
@@ -241,4 +241,29 @@ test('recovery time comes from the binding bucket, not the soonest reset overall
   assert.equal(decision.binding, 'general');
   assert.equal(decision.earliestRecoveryAt, NOW + 90 * HOUR);
   assert.match(decision.reason, /recovers in 90h/);
+});
+
+test('an in-flight cycle older than the watch window stops blocking its program', () => {
+  // A SIGKILLed worker never writes an end record; without an age cutoff the
+  // program would be blocked behind a phantom cycle forever.
+  const abandoned = cycle({
+    startedAt: new Date(NOW - 30 * HOUR).toISOString(),
+    endedAt: null,
+    exit: 'running',
+    poolAfter: null,
+    yield: null,
+  });
+  assert.equal(inFlight([abandoned], NOW, 24).length, 0);
+  assert.equal(run({ cycles: [abandoned] }).verdict, 'GO');
+});
+
+test('a recent in-flight cycle is still counted', () => {
+  const live = cycle({
+    startedAt: new Date(NOW - 2 * HOUR).toISOString(),
+    endedAt: null,
+    exit: 'running',
+    poolAfter: null,
+    yield: null,
+  });
+  assert.equal(inFlight([live], NOW, 24).length, 1);
 });

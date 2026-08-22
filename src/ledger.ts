@@ -140,12 +140,23 @@ export const spentSince = (cycles: CycleRecord[], windowStart: number): CycleCos
  * it from the ledger rather than from locks means a decision made in any process
  * sees every program's running work.
  */
-export const inFlight = (cycles: CycleRecord[]): CycleRecord[] => {
+export const inFlight = (
+  cycles: CycleRecord[],
+  now = Date.now(),
+  maxHours = 24,
+): CycleRecord[] => {
   const ended = new Set(
     cycles.filter((cycle) => cycle.endedAt !== null).map((cycle) => `${cycle.program}|${cycle.startedAt}`),
   );
+  // A SIGKILLed worker never writes its end record. Without this the cycle would
+  // block its program and hold a concurrency slot forever, and only a hand-edit of
+  // the ledger would clear it.
+  const cutoff = now - maxHours * 3_600_000;
   return cycles.filter(
-    (cycle) => cycle.exit === 'running' && !ended.has(`${cycle.program}|${cycle.startedAt}`),
+    (cycle) =>
+      cycle.exit === 'running' &&
+      !ended.has(`${cycle.program}|${cycle.startedAt}`) &&
+      Date.parse(cycle.startedAt) >= cutoff,
   );
 };
 

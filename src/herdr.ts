@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { Program } from './control.ts';
+import { explainSpawn } from './exec.ts';
 
 const run = promisify(execFile);
 
@@ -27,8 +28,23 @@ const agentShape = z.object({
 });
 
 const herdr = async (args: string[]): Promise<unknown> => {
-  const { stdout } = await run('herdr', args, { maxBuffer: 8 * 1024 * 1024 });
-  return JSON.parse(stdout);
+  const shown = `herdr ${args.join(' ')}`;
+  const { stdout } = await run('herdr', args, { maxBuffer: 8 * 1024 * 1024 }).catch(
+    (error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw explainSpawn('herdr', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`${shown} failed: ${detail}`);
+    },
+  );
+
+  // Not every herdr command answers with JSON; say which one surprised us rather
+  // than surfacing a bare "Unexpected end of JSON input".
+  if (stdout.trim() === '') return {};
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    throw new Error(`${shown} did not return JSON. It printed: ${stdout.slice(0, 300)}`);
+  }
 };
 
 /**
@@ -37,7 +53,9 @@ const herdr = async (args: string[]): Promise<unknown> => {
  * `claude` that Craig can talk to while still routing through the proxy.
  */
 export const teamclaudeEnv = async (): Promise<string[]> => {
-  const { stdout } = await run('teamclaude', ['env']);
+  const { stdout } = await run('teamclaude', ['env']).catch((error: unknown) => {
+    throw explainSpawn('teamclaude', error);
+  });
   const pairs = stdout
     .split('\n')
     .map((line) => /^export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.trim()))
