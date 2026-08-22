@@ -94,6 +94,27 @@ const paneExists = async (paneId: string): Promise<boolean> => {
 };
 
 /**
+ * A herdr server restart brings panes back as fresh shells in their saved cwd —
+ * layout and cwd survive, environment does not. Worse, `resume_agents_on_restore`
+ * is on by default, so a restored cycle pane re-runs `claude --resume` with no
+ * proxy settings and would bill Craig's quota directly with no rotation. Re-assert
+ * the environment in the shell before every start, reused pane or not.
+ */
+const assertProxyEnv = async (paneId: string): Promise<void> => {
+  await herdr(['pane', 'send-text', paneId, 'eval "$(teamclaude env)"\r']);
+};
+
+/** An occupied pane means a previous agent is still there — very likely a restored cycle. */
+export const paneOccupant = async (paneId: string): Promise<string | null> => {
+  try {
+    const parsed = agentShape.safeParse(await herdr(['agent', 'get', paneId]));
+    return parsed.success ? (parsed.data.result?.agent?.state ?? 'unknown') : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Workspaces are long-lived, so one tab per cycle would bury the workspace in
  * hundreds of them. The program keeps a single cycle tab: the previous agent has
  * exited, leaving the pane at a shell prompt, which is exactly what `agent start`
@@ -142,6 +163,18 @@ export const startCycleAgent = async (input: {
   const { program, prompt } = input;
   const agentName = `drovr-${program.name}`.slice(0, 32).toLowerCase();
   const pane = await cyclePane(input);
+
+  if (pane.reused) {
+    const occupant = await paneOccupant(pane.paneId);
+    if (occupant !== null) {
+      throw new Error(
+        `pane ${pane.paneId} for ${program.name} is already occupied by an agent (${occupant}). ` +
+          'A herdr restart may have resumed a previous cycle there, and that resumed session is ' +
+          'not proxied through teamclaude. Inspect it and close or finish it before starting a new cycle.',
+      );
+    }
+    await assertProxyEnv(pane.paneId);
+  }
 
   await herdr(['agent', 'start', agentName, '--kind', 'claude', '--pane', pane.paneId]);
   // No --wait: the cycle runs for hours, and blocking here would defeat the point.

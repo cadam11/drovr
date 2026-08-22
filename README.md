@@ -214,6 +214,29 @@ the cycle, leaving the tab in place for you to inspect.
 Set `"runner": "headless"` on a program for the old behaviour — `claude -p` to a log file, with
 nothing to talk to.
 
+### After a herdr restart
+
+Snapshot restore brings panes back as **fresh shells** — workspace, tab, pane, cwd, layout and
+focus survive, environment variables do not. Herdr's native agent restore is on by default and
+re-runs `claude --resume <id>`, so a restored cycle pane would otherwise be a raw, un-proxied
+`claude` billing your quota with no rotation.
+
+drovr handles both halves:
+
+- Before starting an agent in a **reused** pane it re-asserts `eval "$(teamclaude env)"` in that
+  shell, so the environment does not depend on having survived.
+- If the pane already has an **occupant** — a cycle herdr resumed on its own — drovr refuses to
+  start and says so, rather than stacking a second agent on top or killing the first.
+
+For everything outside drovr, install the alias so a bare `claude` can never run un-proxied:
+
+```bash
+teamclaude alias --install     # alias claude='teamclaude run --'
+```
+
+That covers what you type interactively. It does not cover herdr's own resume command, which is
+why drovr re-asserts the environment itself.
+
 ## Multiple programs
 
 Programs are independent and run concurrently, up to `maxConcurrentCycles` (default 2). Each
