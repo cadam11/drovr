@@ -1,6 +1,7 @@
 import { hoursToWeeklyReset, poolFrom, type Pool } from './capacity.ts';
 import { ceilingsFor, isPaused, type Control } from './control.ts';
 import {
+  consecutiveCrashes,
   consecutiveZeroYield,
   cyclesStartedSince,
   estimateCycleCost,
@@ -118,9 +119,21 @@ export const decide = (input: DecideInput): Decision => {
 
   if (control.mode === 'off') return halt('mode is off');
 
+  // Tick skips disabled programs, so reporting anything but STOP here would promise
+  // a cycle that is never going to start.
+  const entry = control.programs.find((candidate) => candidate.name === program);
+  if (entry !== undefined && !entry.enabled) {
+    return halt('disabled — enable it to let cycles start');
+  }
+
   const stuck = consecutiveZeroYield(mine);
   if (stuck >= control.stuckCycleThreshold) {
     return halt(`${stuck} consecutive cycles produced no yield — escalating instead of looping`);
+  }
+
+  const crashes = consecutiveCrashes(mine);
+  if (crashes >= control.stuckCycleThreshold) {
+    return halt(`${crashes} consecutive cycles crashed — check ~/.drovr/logs/${program}-worker.log`);
   }
 
   const ceilings = ceilingsFor(control);
@@ -137,7 +150,7 @@ export const decide = (input: DecideInput): Decision => {
   }
   if (running.length >= control.maxConcurrentCycles) {
     return hold(
-      `${running.length} cycles in flight, cap is ${control.maxConcurrentCycles}`,
+      `${running.length} cycles ahead of it, cap is ${control.maxConcurrentCycles}`,
       pool,
       null,
     );
@@ -160,7 +173,7 @@ export const decide = (input: DecideInput): Decision => {
     const when = recovers === null ? 'unknown' : `${Math.round((recovers - now) / 3_600_000)}h`;
     return hold(
       `${funding.binding} tightest — funds ${funding.cycles.toFixed(2)} cycles ` +
-        `(${running.length} in flight), need ${required.toFixed(2)}, recovers in ${when}`,
+        `(${running.length} ahead of it), need ${required.toFixed(2)}, recovers in ${when}`,
       pool,
       funding,
     );
@@ -170,7 +183,7 @@ export const decide = (input: DecideInput): Decision => {
     verdict: 'GO',
     reason:
       `funds ${funding.cycles.toFixed(2)} more cycles across ${pool.usableAccounts} accounts ` +
-      `(${running.length} in flight, ${funding.binding} tightest)`,
+      `(${running.length} ahead of it, ${funding.binding} tightest)`,
     pool,
     cyclesFundable: funding.cycles,
     binding: funding.binding,

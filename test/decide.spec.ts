@@ -173,7 +173,7 @@ test('another program in flight reserves capacity from the shared pool', () => {
   const shared = run({ status: thin, cycles: [elsewhere] });
   assert.equal(alone.verdict, 'GO');
   assert.equal(shared.verdict, 'WAIT');
-  assert.match(shared.reason, /1 in flight/);
+  assert.match(shared.reason, /1 ahead of it/);
 });
 
 test('the concurrency cap holds even when capacity is plentiful', () => {
@@ -266,4 +266,40 @@ test('a recent in-flight cycle is still counted', () => {
     yield: null,
   });
   assert.equal(inFlight([live], NOW, 24).length, 1);
+});
+
+test('a disabled program reports STOP, since tick will never launch it', () => {
+  const off = control({ programs: [{ name: 'demo', cwd: '/tmp/demo', enabled: false }] });
+  const decision = decide({ status: healthy(), control: off, cycles: [], program: 'demo', now: NOW });
+  assert.equal(decision.verdict, 'STOP');
+  assert.match(decision.reason, /disabled/);
+});
+
+test('crashed cycles do not burn the daily cap', () => {
+  // A burst of cycles that died on a broken PATH should not cost a program its day.
+  const crashes = Array.from({ length: 8 }, (_unused, index) =>
+    cycle({
+      startedAt: new Date(NOW - (index + 1) * 60_000).toISOString(),
+      exit: 'crash',
+      yield: null,
+    }),
+  );
+  assert.equal(run({ cycles: crashes, control: control({ maxCyclesPerDay: 8 }) }).verdict, 'STOP');
+  assert.equal(
+    run({ cycles: crashes.slice(0, 2), control: control({ maxCyclesPerDay: 8 }) }).verdict,
+    'GO',
+  );
+});
+
+test('repeated crashes stop the loop, since nothing else catches a crash loop', () => {
+  const crashes = Array.from({ length: 3 }, (_unused, index) =>
+    cycle({
+      startedAt: new Date(NOW - (index + 1) * 60_000).toISOString(),
+      exit: 'crash',
+      yield: null,
+    }),
+  );
+  const decision = run({ cycles: crashes });
+  assert.equal(decision.verdict, 'STOP');
+  assert.match(decision.reason, /consecutive cycles crashed/);
 });

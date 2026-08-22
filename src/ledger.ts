@@ -160,13 +160,34 @@ export const inFlight = (
   );
 };
 
-/** Start and end share a record shape, so a cycle is counted by its identity, not its rows. */
-export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number =>
-  new Set(
+/**
+ * Start and end share a record shape, so a cycle is counted by its identity, not
+ * its rows. Crashes are excluded: the daily cap limits how much real work a program
+ * may do, and a burst of cycles that died on a broken PATH should not burn the day.
+ * Repeated crashing is caught by consecutiveCrashes instead.
+ */
+export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number => {
+  const crashed = new Set(
+    cycles.filter((cycle) => cycle.exit === 'crash').map((cycle) => `${cycle.program}|${cycle.startedAt}`),
+  );
+  return new Set(
     cycles
       .filter((cycle) => Date.parse(cycle.startedAt) >= since)
-      .map((cycle) => `${cycle.program}|${cycle.startedAt}`),
+      .map((cycle) => `${cycle.program}|${cycle.startedAt}`)
+      .filter((identity) => !crashed.has(identity)),
   ).size;
+};
+
+/** A program crash-looping needs a human, and nothing else in the ledger catches it. */
+export const consecutiveCrashes = (cycles: CycleRecord[]): number => {
+  const finished = cycles.filter((cycle) => cycle.endedAt !== null);
+  let streak = 0;
+  for (let index = finished.length - 1; index >= 0; index -= 1) {
+    if (finished[index]!.exit !== 'crash') break;
+    streak += 1;
+  }
+  return streak;
+};
 
 export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
   const finished = cycles.filter((cycle) => cycle.kind === 'delivery' && cycle.endedAt !== null);
