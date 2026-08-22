@@ -266,6 +266,29 @@ export const agentState = async (agentName: string): Promise<string> => {
   }
 };
 
+/**
+ * An interactive claude session cannot exit itself — it finishes its turn and idles
+ * at the prompt forever. Once the runner has written its report the cycle has
+ * declared itself done, so releasing the pane is cleanup, not a kill. Without this
+ * the pane stays occupied and the next cycle for that program is refused.
+ */
+export const releaseAgent = async (agentName: string, paneId: string): Promise<boolean> => {
+  const settled = ['idle', 'done', 'unknown', 'gone'];
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const state = await agentState(agentName);
+    if (state === 'gone') return true;
+    if (settled.includes(state)) break;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+
+  await herdr(['pane', 'send-text', paneId, '/exit\r']).catch(() => ({}));
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    if ((await agentState(agentName)) === 'gone') return true;
+  }
+  return false;
+};
+
 export const interruptAgent = async (agentName: string): Promise<void> => {
   await herdr(['agent', 'send-keys', agentName, 'esc']);
 };

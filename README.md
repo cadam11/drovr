@@ -232,6 +232,11 @@ separately. Override per program with `"model"` if a program should run on somet
 The workspace is matched by label, then by checkout path. Pin it with `herdrWorkspace` on the
 program if neither is right.
 
+**A finished cycle is released, not killed.** An interactive claude session cannot exit itself, so
+once the report file appears drovr waits for the agent to settle, sends it `/exit`, and frees the
+pane for the next cycle. If it will not go, the cycle is still recorded and the next one refuses
+rather than stacking a second agent on the pane.
+
 **drovr never kills a cycle.** It watches for the runner's own report file, or for the agent to
 disappear. `x` in the watch view sends an interrupt, not a kill, so the runner still gets to wind
 down and make its work durable. After `maxCycleHours` (default 12) drovr stops watching and records

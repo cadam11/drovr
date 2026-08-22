@@ -8,6 +8,7 @@ import { wrap } from './publish.ts';
 import {
   agentState,
   resolveWorkspace,
+  releaseAgent,
   startCycleAgent,
   teamclaudeEnv,
   tidyCycleTabs,
@@ -140,7 +141,13 @@ const runInHerdr = async (
   while (Date.now() < deadline) {
     await sleep(POLL_MS);
     if (readReport(program.name) !== null) {
-      return { finished: true, detail: `runner reported in as agent ${started.agentName}` };
+      const released = await releaseAgent(started.agentName, started.paneId).catch(() => false);
+      return {
+        finished: true,
+        detail: released
+          ? `runner reported in and its pane was released for the next cycle`
+          : `runner reported in but agent ${started.agentName} is still holding pane ${started.paneId} — the next cycle will refuse until it is closed`,
+      };
     }
     const state = await agentState(started.agentName);
     if (state === 'gone') {
