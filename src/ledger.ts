@@ -202,8 +202,15 @@ export const consecutiveCrashes = (
   return streak;
 };
 
+/**
+ * Cycles that ran and achieved nothing while *not* blocked. A blocked cycle is
+ * waiting on a human answer, which is a different condition entirely — counting it
+ * as stuck reports a malfunction when the truth is that someone owes it a reply.
+ */
 export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
-  const finished = cycles.filter((cycle) => cycle.kind === 'delivery' && cycle.endedAt !== null);
+  const finished = cycles.filter(
+    (cycle) => cycle.kind === 'delivery' && cycle.endedAt !== null && cycle.exit !== 'blocked',
+  );
   let streak = 0;
   for (let index = finished.length - 1; index >= 0; index -= 1) {
     const produced = finished[index]!.yield;
@@ -213,6 +220,10 @@ export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
   }
   return streak;
 };
+
+/** The most recently finished cycle, whatever it was. */
+export const lastFinished = (cycles: CycleRecord[]): CycleRecord | null =>
+  cycles.filter((cycle) => cycle.endedAt !== null).at(-1) ?? null;
 
 /** When a tick last recorded a decision — the real proof the service is firing. */
 export const lastDecisionAt = (path: string): number | null => {

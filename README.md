@@ -192,6 +192,10 @@ widen how hard a single 5-hour window gets hit.
 
 In `drovr watch`, `<` and `>` nudge the reserve by 5%.
 
+The watch view runs on the alternate screen and adapts to the terminal width, so it stays readable
+over mosh on a phone: short bucket labels, the reason on its own line, and a wrapped keybar below
+~72 columns.
+
 ## Commands
 
 ```bash

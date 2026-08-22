@@ -45,6 +45,30 @@ const asksLinks = new Map<string, string>();
 
 const asksUrl = (program: Program): string | null => asksLinks.get(program.name) ?? null;
 
+/** Escape sequences occupy no columns, so width has to be measured without them. */
+export const visibleLength = (text: string): number =>
+  text.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').length;
+
+/** Clip to the terminal width so nothing soft-wraps and pushes the frame around. */
+export const clip = (text: string, width: number): string => {
+  if (visibleLength(text) <= width) return text;
+  let out = '';
+  let shown = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\x1b') {
+      const end = text.indexOf('m', index);
+      const stop = end === -1 ? text.length : end;
+      out += text.slice(index, stop + 1);
+      index = stop;
+      continue;
+    }
+    if (shown >= width - 1) break;
+    out += text[index];
+    shown += 1;
+  }
+  return `${out}${ESC}0m…`;
+};
+
 const VERDICT_COLOUR: Record<string, number> = { GO: 32, WAIT: 33, STOP: 31, RUN: 36 };
 
 const SEGMENTS: { key: keyof Allocation; char: string; colour: number; label: string }[] = [
@@ -55,10 +79,10 @@ const SEGMENTS: { key: keyof Allocation; char: string; colour: number; label: st
   { key: 'yoursReserved', char: '·', colour: 35, label: 'held for you' },
 ];
 
-const BUCKETS: { name: BucketName; label: string }[] = [
-  { name: 'fable', label: 'fable   7d' },
-  { name: 'general', label: 'general 7d' },
-  { name: 'session', label: 'session 5h' },
+const BUCKETS: { name: BucketName; label: string; short: string }[] = [
+  { name: 'fable', label: 'fable   7d', short: 'fab' },
+  { name: 'general', label: 'general 7d', short: 'gen' },
+  { name: 'session', label: 'session 5h', short: '5h' },
 ];
 
 const SEED_COST = { fable: 0.1, general: 0.08, session: 0.25 };
@@ -92,7 +116,7 @@ const elapsed = (since: string, now: number): string => {
     : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`;
 };
 
-const KEYBAR = [
+const KEYS = [
   'j/k select',
   'space enable',
   '[ ] priority',
@@ -102,10 +126,28 @@ const KEYBAR = [
   '< > reserve',
   'r refresh',
   't tick',
-  'o asks page',
+  'o asks',
   'x interrupt',
   'q quit',
-].join(dim(' · '));
+];
+
+/** Wrapped rather than clipped: a key you cannot see is a key you do not have. */
+export const keybarLines = (width: number, narrow: boolean): string[] => {
+  const keys = narrow ? KEYS.map((key) => key.split(' ')[0]!) : KEYS;
+  const rows: string[][] = [[]];
+  let used = 0;
+
+  for (const key of keys) {
+    const cost = key.length + 3;
+    if (used + cost > width - 4 && rows[rows.length - 1]!.length > 0) {
+      rows.push([]);
+      used = 0;
+    }
+    rows[rows.length - 1]!.push(key);
+    used += cost;
+  }
+  return rows.map((row) => `  ${row.join(dim(' · '))}`);
+};
 
 type State = { selected: number; message: string; confirmStop: boolean };
 
@@ -129,8 +171,9 @@ const allocationLines = (input: {
   ceilings: { weekly: number; session: number };
   now: number;
   barWidth: number;
+  narrow: boolean;
 }): string[] => {
-  const { status, cycles, ceilings, now, barWidth } = input;
+  const { status, cycles, ceilings, now, barWidth, narrow } = input;
   const pool = poolFrom(status, ceilings, now);
   const cost = estimateCycleCost(cycles, SEED_COST);
   const running = inFlight(cycles);
@@ -150,7 +193,7 @@ const allocationLines = (input: {
     });
     const yours = allocation.yoursSpent + allocation.yoursReserved;
     return (
-      `  ${bucket.label.padEnd(11)}${bar(allocation, barWidth)} ` +
+      `  ${(narrow ? bucket.short : bucket.label).padEnd(narrow ? 4 : 11)}${bar(allocation, barWidth)} ` +
       `${dim(`you ${percent(yours, allocation.total).padStart(4)}`)}`
     );
   });
@@ -172,8 +215,9 @@ const programLines = (input: {
   cycles: CycleRecord[];
   now: number;
   state: State;
+  narrow: boolean;
 }): string[] => {
-  const { programs, status, control, cycles, now, state } = input;
+  const { programs, status, control, cycles, now, state, narrow } = input;
   const running = inFlight(cycles);
   const nameWidth = Math.max(8, ...programs.map((program) => program.name.length)) + 6;
   const projected: CycleRecord[] = [];
@@ -208,12 +252,13 @@ const programLines = (input: {
     const row =
       ` ${selected ? paint(36, '▸') : ' '}${dim(`p${String(priority).padStart(2)}`)} ` +
       `${selected ? invert(label) : label} ` +
-      `${paint(VERDICT_COLOUR[verdict] ?? 37, verdict.padEnd(4))}  ${dim(detail)}`;
+      `${paint(VERDICT_COLOUR[verdict] ?? 37, verdict.padEnd(4))}${narrow ? '' : `  ${dim(detail)}`}`;
 
     const asks = asksUrl(program);
-    return asks === null
-      ? row
-      : `${row}\n${' '.repeat(6)}${dim('asks')} ${osc8(asks, asks.replace(/^https:\/\//, ''))}`;
+    const askLine = asks === null ? [] : [`${' '.repeat(6)}${osc8(asks, narrow ? 'asks ›' : asks.replace(/^https:\/\//, ''))}`];
+    // On a phone the reason never fits beside the row, so give it its own line.
+    const reasonLine = narrow ? [`${' '.repeat(6)}${dim(detail)}`] : [];
+    return [row, ...reasonLine, ...askLine].join('\n');
   });
 };
 
@@ -223,7 +268,8 @@ const frame = async (state: State): Promise<string> => {
   const control = readControl(p.control);
   const cycles = readCycles(p.cycles);
   const now = Date.now();
-  const width = Math.max(60, Math.min(process.stdout.columns ?? 100, 120));
+  const width = Math.max(24, Math.min(process.stdout.columns ?? 100, 120));
+  const narrow = width < 72;
   const ceilings = ceilingsFor(control);
   const programs = byPriority(control.programs, now, control.deadlineHorizonDays);
   await Promise.all(
@@ -252,13 +298,20 @@ const frame = async (state: State): Promise<string> => {
   lines.push(
     ...(ceilings === null
       ? ['', paint(31, '  mode is off — press m to cycle modes')]
-      : allocationLines({ status, cycles, ceilings, now, barWidth: width - 28 })),
+      : allocationLines({
+          status,
+          cycles,
+          ceilings,
+          now,
+          barWidth: Math.max(8, width - (narrow ? 16 : 28)),
+          narrow,
+        })),
   );
 
   lines.push(
     '',
     `  ${bold('PROGRAMS')}  ${dim(`${running.length}/${control.maxConcurrentCycles} in flight`)}`,
-    ...programLines({ programs, status, control, cycles, now, state }),
+    ...programLines({ programs, status, control, cycles, now, state, narrow }),
   );
 
   const recent = cycles.filter((cycle) => cycle.endedAt !== null).slice(-5).reverse();
@@ -274,8 +327,10 @@ const frame = async (state: State): Promise<string> => {
     );
   }
 
-  lines.push('', state.message === '' ? '  ' : paint(36, `  ${state.message}`), `  ${KEYBAR}`);
-  return lines.join('\n');
+  lines.push('', state.message === '' ? '  ' : paint(36, `  ${state.message}`));
+  lines.push(...keybarLines(width, narrow));
+  // Clip last: any single over-long line would soft-wrap and shove the frame upward.
+  return lines.flatMap((line) => line.split('\n')).map((line) => clip(line, width)).join('\n');
 };
 
 const cliPath = (): string => fileURLToPath(new URL('./cli.ts', import.meta.url));
@@ -374,11 +429,11 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
 
   const restore = (): void => {
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
-    process.stdout.write(`${ESC}?25h`);
+    // Leave the alternate screen last, so the shell's own scrollback comes back intact.
+    process.stdout.write(`${ESC}?25h${ESC}?1049l`);
   };
   const leave = (): never => {
     restore();
-    process.stdout.write('\n');
     process.exit(0);
   };
   const die = (error: unknown): never => {
@@ -387,13 +442,26 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
     process.exit(1);
   };
 
+  /**
+   * Home the cursor and clear each line as it is written, rather than clearing the
+   * whole screen first: a full clear flickers, and a trailing newline on a frame that
+   * fills the terminal scrolls the top away one row per redraw. Content is clamped to
+   * the terminal height so it can never scroll at all.
+   */
   const draw = async (): Promise<void> => {
-    process.stdout.write(`${ESC}2J${ESC}H${await frame(state)}\n`);
+    const rows = Math.max(6, process.stdout.rows ?? 40);
+    const lines = (await frame(state)).split('\n').slice(0, rows - 1);
+    const painted = lines.map((line) => `${line}${ESC}K`).join('\r\n');
+    process.stdout.write(`${ESC}H${painted}${ESC}0J`);
   };
 
-  process.stdout.write(`${ESC}?25l`);
+  // The alternate screen is what keeps frames out of the shell's scrollback.
+  process.stdout.write(`${ESC}?1049h${ESC}?25l`);
   process.on('SIGINT', leave);
   process.on('uncaughtException', die);
+  process.stdout.on('resize', () => {
+    draw().catch(die);
+  });
 
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);

@@ -6,6 +6,7 @@ import {
   cyclesStartedSince,
   estimateCycleCost,
   inFlight,
+  lastFinished,
   snapshot,
   spentSince,
   type CycleCost,
@@ -145,6 +146,23 @@ export const decide = (input: DecideInput): Decision => {
   if (ceilings === null) return halt('mode is off');
 
   if (isPaused(control, now)) return hold(`paused until ${control.pauseUntil}`, null, null);
+
+  // A blocked cycle means every remaining item is waiting on a human answer, so
+  // starting another straight away only pays to rediscover that. Back off instead of
+  // burning a cycle every tick, and say plainly that it is waiting on Craig.
+  const last = lastFinished(mine);
+  if (last?.exit === 'blocked' && last.endedAt !== null) {
+    const retryAt = Date.parse(last.endedAt) + control.blockedBackoffMinutes * 60_000;
+    if (retryAt > now) {
+      const mins = Math.ceil((retryAt - now) / 60_000);
+      return hold(
+        `waiting on you — the last cycle was blocked on unanswered asks. Retries in ${mins}m, ` +
+          `or answer them and run "drovr run-cycle ${program}"`,
+        null,
+        null,
+      );
+    }
+  }
 
   const pool = poolFrom(input.status, ceilings, now);
   if (pool.usableAccounts === 0) return hold('no usable accounts', pool, null);
