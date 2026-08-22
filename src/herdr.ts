@@ -23,6 +23,10 @@ const tabCreateShape = z.object({
   }),
 });
 
+const workspaceCreateShape = z.object({
+  result: z.object({ workspace: z.object({ workspace_id: z.string() }) }),
+});
+
 const agentShape = z.object({
   result: z.object({ agent: z.object({ state: z.string() }).partial() }).partial(),
 });
@@ -74,6 +78,25 @@ export const teamclaudeEnv = async (): Promise<string[]> => {
   return pairs;
 };
 
+const baseUrlCache = new Map<string, string | null>();
+
+/**
+ * The aice install lives in the program repo's .envrc, so the only honest source is
+ * direnv. Cached per process: a watch frame redraws every few seconds and must not
+ * shell out per program each time.
+ */
+export const aiceBaseUrl = async (program: Program): Promise<string | null> => {
+  const cached = baseUrlCache.get(program.name);
+  if (cached !== undefined) return cached;
+
+  const resolved = await run('direnv', ['exec', program.cwd, 'sh', '-c', 'printf %s "$AICE_BASE_URL"'])
+    .then(({ stdout }) => (stdout.trim() === '' ? null : stdout.trim()))
+    .catch(() => null);
+
+  baseUrlCache.set(program.name, resolved);
+  return resolved;
+};
+
 /** Explicit config wins; otherwise match the workspace by label, then by checkout path. */
 export const resolveWorkspace = async (program: Program): Promise<string> => {
   const parsed = workspaceListShape.safeParse(await herdr(['workspace', 'list']));
@@ -94,10 +117,30 @@ export const resolveWorkspace = async (program: Program): Promise<string> => {
   const byPath = workspaces.find((entry) => entry.worktree?.checkout_path === program.cwd);
   if (byPath !== undefined) return byPath.workspace_id;
 
-  throw new Error(
-    `no herdr workspace matches program "${program.name}" by label or by cwd ${program.cwd}. ` +
-      `Create one, or set "herdrWorkspace" on the program in control.json.`,
+  // drovr knows the program's directory, so a missing workspace is something it can
+  // fix rather than refuse over. Closing a workspace should not strand a program.
+  const created = workspaceCreateShape.safeParse(
+    await herdr([
+      'workspace',
+      'create',
+      '--cwd',
+      program.cwd,
+      '--label',
+      program.name,
+      '--no-focus',
+    ]),
   );
+  if (!created.success) {
+    throw new Error(
+      `no herdr workspace matches program "${program.name}" by label or by cwd ${program.cwd}, ` +
+        `and creating one did not return the expected shape. Create it by hand, or set ` +
+        `"herdrWorkspace" on the program in control.json.`,
+    );
+  }
+  console.log(
+    `created herdr workspace ${created.data.result.workspace.workspace_id} for ${program.name}`,
+  );
+  return created.data.result.workspace.workspace_id;
 };
 
 export type StartedCycle = { agentName: string; tabId: string | null; paneId: string; reused: boolean };
@@ -175,6 +218,7 @@ export const startCycleAgent = async (input: {
   program: Program;
   workspaceId: string;
   prompt: string;
+  sessionName: string;
   env: string[];
   remembered: string | null;
 }): Promise<StartedCycle> => {
@@ -195,7 +239,8 @@ export const startCycleAgent = async (input: {
   }
 
   // Args after `--` reach claude itself. --model sets the model for this session
-  // only, so the runner is always Fable without touching Craig's default.
+  // only, so the runner is always Fable without touching Craig's default; --name
+  // makes it obvious in the prompt box and /resume which program a session belongs to.
   await herdr([
     'agent',
     'start',
@@ -207,6 +252,8 @@ export const startCycleAgent = async (input: {
     '--',
     '--model',
     program.model,
+    '--name',
+    input.sessionName,
   ]);
   // No --wait: the cycle runs for hours, and blocking here would defeat the point.
   await herdr(['agent', 'prompt', agentName, prompt]);

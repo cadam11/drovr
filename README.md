@@ -229,8 +229,12 @@ other `claude` you start is unaffected. The coordinator being Fable is the point
 Opus/Sonnet/Haiku subagents itself, which is why the Fable and general quota buckets are tracked
 separately. Override per program with `"model"` if a program should run on something else.
 
-The workspace is matched by label, then by checkout path. Pin it with `herdrWorkspace` on the
-program if neither is right.
+The workspace is matched by label, then by checkout path, and **created if neither matches** —
+drovr knows the program directory, so closing a workspace should not strand a program. Pin it with
+`herdrWorkspace` to override.
+
+Each session is named `<program> program runner` (`sessionName`, via claude `--name`), so it is
+obvious in the prompt box and in `/resume` which program a session belongs to.
 
 **A finished cycle is released, not killed.** An interactive claude session cannot exit itself, so
 once the report file appears drovr waits for the agent to settle, sends it `/exit`, and frees the
@@ -367,6 +371,7 @@ through `control.json`, so a launchd tick seconds later sees it even if you clos
 | `+` / `-` | concurrency cap (1–8) |
 | `<` / `>` | reserve held for you, in 5% steps |
 | `r` | redraw now instead of waiting for the timer |
+| `o` | open the selected program asks page in a browser |
 | `t` | run a tick now, launching cycles if capacity allows |
 | `x` | stop the selected program's cycle (`y` to confirm) |
 | `q` / ctrl-c | quit |

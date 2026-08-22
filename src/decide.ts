@@ -131,9 +131,14 @@ export const decide = (input: DecideInput): Decision => {
     return halt(`${stuck} consecutive cycles produced no yield — escalating instead of looping`);
   }
 
+  // A latch, not a timeout: a crash loop needs a human, and a cycle cannot prove the
+  // cause is fixed without running. `drovr run-cycle` bypasses this, so say so.
   const crashes = consecutiveCrashes(mine);
   if (crashes >= control.stuckCycleThreshold) {
-    return halt(`${crashes} consecutive cycles crashed — check ~/.drovr/logs/${program}-worker.log`);
+    return halt(
+      `${crashes} consecutive cycles crashed. Read ~/.drovr/logs/${program}-worker.log, ` +
+        `fix the cause, then clear this with: drovr run-cycle ${program}`,
+    );
   }
 
   const ceilings = ceilingsFor(control);

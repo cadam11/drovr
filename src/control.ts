@@ -47,6 +47,8 @@ const programShape = z.object({
   /** Prompt sent to the runner. {program} is substituted.
    *  Only used by the headless runner as a full shell command. */
   cyclePrompt: z.string().default('/project-loop {program}'),
+  /** Shown in the runner's prompt box and /resume list. {program} is substituted. */
+  sessionName: z.string().default('{program} program runner'),
   /** Lower wins the next capacity slot, matching teamclaude priority. */
   priority: z.number().default(0),
   /** ISO date. Inside the horizon the program is promoted one priority step. */

@@ -115,6 +115,7 @@ const runInHerdr = async (
     program,
     workspaceId,
     prompt,
+    sessionName: substitute(program.sessionName, program, isOnboarding(program.name)),
     env: await teamclaudeEnv(),
     remembered: rememberedPane(program.name),
   });

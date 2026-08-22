@@ -72,7 +72,8 @@ export const COMMANDS: Command[] = [
     summary: 'live view with keyboard controls (default 15s refresh)',
     details: [
       'Interactive and TTY-only. Keys: j/k select, space enable, [ ] priority, m mode, p pause,',
-      'P extend pause, +/- cap, r refresh, t tick now, x interrupt selected cycle, q quit.',
+      'P extend pause, +/- cap, < > reserve, r refresh, t tick now, o open its asks page,',
+      'x interrupt selected cycle, q quit.',
       'Not for agent use — call the individual commands instead.',
     ],
     writes: 'control.json, when a key is pressed',

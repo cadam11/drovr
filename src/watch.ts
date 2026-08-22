@@ -22,7 +22,7 @@ import {
   toggleEnabled,
   type Action,
 } from './keys.ts';
-import { interruptAgent } from './herdr.ts';
+import { aiceBaseUrl, interruptAgent } from './herdr.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import { describeService, serviceState } from './service.ts';
@@ -35,6 +35,15 @@ const dim = (text: string): string => `${ESC}2m${text}${ESC}0m`;
 const bold = (text: string): string => `${ESC}1m${text}${ESC}0m`;
 const paint = (code: number, text: string): string => `${ESC}${code}m${text}${ESC}0m`;
 const invert = (text: string): string => `${ESC}7m${text}${ESC}0m`;
+
+/** OSC 8 hyperlink: clickable in Ghostty and friends, plain text everywhere else. */
+const osc8 = (url: string, text: string): string =>
+  `\x1b]8;;${url}\x1b\\${paint(36, text)}\x1b]8;;\x1b\\`;
+
+// Resolved once per process by herdr.aiceBaseUrl; a frame must not shell out per program.
+const asksLinks = new Map<string, string>();
+
+const asksUrl = (program: Program): string | null => asksLinks.get(program.name) ?? null;
 
 const VERDICT_COLOUR: Record<string, number> = { GO: 32, WAIT: 33, STOP: 31, RUN: 36 };
 
@@ -93,6 +102,7 @@ const KEYBAR = [
   '< > reserve',
   'r refresh',
   't tick',
+  'o asks page',
   'x interrupt',
   'q quit',
 ].join(dim(' · '));
@@ -195,11 +205,15 @@ const programLines = (input: {
     const label = `${program.name}${program.enabled ? '' : ' (off)'}`.padEnd(nameWidth);
     const selected = index === state.selected;
 
-    return (
+    const row =
       ` ${selected ? paint(36, '▸') : ' '}${dim(`p${String(priority).padStart(2)}`)} ` +
       `${selected ? invert(label) : label} ` +
-      `${paint(VERDICT_COLOUR[verdict] ?? 37, verdict.padEnd(4))}  ${dim(detail)}`
-    );
+      `${paint(VERDICT_COLOUR[verdict] ?? 37, verdict.padEnd(4))}  ${dim(detail)}`;
+
+    const asks = asksUrl(program);
+    return asks === null
+      ? row
+      : `${row}\n${' '.repeat(6)}${dim('asks')} ${osc8(asks, asks.replace(/^https:\/\//, ''))}`;
   });
 };
 
@@ -212,6 +226,13 @@ const frame = async (state: State): Promise<string> => {
   const width = Math.max(60, Math.min(process.stdout.columns ?? 100, 120));
   const ceilings = ceilingsFor(control);
   const programs = byPriority(control.programs, now, control.deadlineHorizonDays);
+  await Promise.all(
+    programs.map(async (program) => {
+      if (program.aice?.asksPage == null || asksLinks.has(program.name)) return;
+      const base = await aiceBaseUrl(program);
+      if (base !== null) asksLinks.set(program.name, `${base}/${program.aice.asksPage}`);
+    }),
+  );
   const running = inFlight(cycles);
 
   const held =
@@ -330,6 +351,12 @@ const handle = async (key: string, state: State, programs: Program[]): Promise<A
   if (key === 't') return runTickNow();
 
   if (selected === undefined) return { message: 'no programs configured', redraw: false };
+  if (key === 'o') {
+    const url = asksUrl(selected);
+    if (url === null) return { message: `${selected.name} has no asks page configured`, redraw: false };
+    spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    return { message: `opened ${url}`, redraw: true };
+  }
   if (key === ' ' || key === 'e') return toggleEnabled(control, selected.name);
   if (key === '[') return nudgePriority(control, selected.name, -1);
   if (key === ']') return nudgePriority(control, selected.name, 1);
