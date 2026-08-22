@@ -39,15 +39,19 @@ natural seam, or everything blocked) and writes a report before exiting.
 cd ~/code/drovr && pnpm install
 node src/cli.ts init
 $EDITOR ~/.drovr/control.json     # add a program
-node src/cli.ts service install   # writes ~/Library/LaunchAgents/tech.propra.drovr.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/tech.propra.drovr.plist
+node src/cli.ts service install   # writes the launchd plist and loads it
 ```
 
 Requires Node >= 24 (runs TypeScript directly, no build step), `teamclaude` on PATH, and `aice`
 if a program publishes pages.
 
-> The generated plist pins the absolute `node` path from `process.execPath`. If you switch Node
-> versions with nvm, re-run `service install`.
+`service install` bakes in the PATH of the shell that runs it, since launchd starts with a bare
+one that lacks `~/Library/pnpm` and similar. It also **reloads** an already-loaded agent —
+launchd holds the plist it loaded, not the file, so rewriting alone would keep running the old
+definition.
+
+> The plist also pins the absolute `node` path from `process.execPath`. Re-run `service install`
+> after switching Node versions with nvm, or after any change to your PATH that matters.
 
 
 

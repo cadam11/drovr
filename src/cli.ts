@@ -21,6 +21,7 @@ import { ensureDirs, paths } from './paths.ts';
 import {
   bootoutCommand,
   bootstrapCommand,
+  reloadAgent,
   agentPath,
   describeService,
   LABEL,
@@ -245,7 +246,14 @@ const installService = (intervalSeconds: number): void => {
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, plist({ nodeBin: process.execPath, cliPath, intervalSeconds, logDir: p.logs, path: agentPath() }), 'utf8');
   console.log(`wrote ${target}`);
-  console.log(`load it with:  ${bootstrapCommand()}`);
+
+  const outcome = reloadAgent();
+  if (outcome === 'reloaded') console.log('reloaded the running agent so it picks up this plist');
+  if (outcome === 'loaded') console.log('loaded the agent — ticks start on the next interval');
+  if (outcome === 'failed') {
+    console.error(`could not load the agent automatically. Run: ${bootstrapCommand()}`);
+    process.exitCode = 1;
+  }
 };
 
 const flag = (rest: string[], name: string): string | undefined => {

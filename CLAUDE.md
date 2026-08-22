@@ -47,6 +47,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `allocation.ts` | Bar segments must derive headroom from the same `Pool` `decide()` uses, or the picture contradicts the verdict printed beneath it. |
 | `tick.ts` | Pace and reservations are **global** (one shared pool); daily caps and stuck detection are **per program**. |
 | `watch.ts` | `setInterval` keeps the event loop alive — do not `unref()` it, and restore the cursor and raw mode on every exit path. |
+| `service.ts` | launchd holds the plist it loaded, not the file on disk. Rewriting the plist changes nothing until the agent is booted out and back in — that is how a stale PATH survived being fixed. `service install` reloads. |
 | `herdr.ts` | Workspaces are long-lived. One tab per program, reused across cycles — a tab per cycle buries the workspace within days. |
 | `herdr.ts` | If `teamclaude env` yields no proxy settings, refuse to start. Otherwise the pane runs a raw `claude` against Craig's quota with no rotation and no accounting — silent and expensive. |
 | `herdr.ts` | A herdr server restart restores panes as **fresh shells** — cwd and layout survive, environment does not. `resume_agents_on_restore` is on by default and re-runs `claude --resume`, so a restored cycle is un-proxied. Re-assert the env in any reused pane, and refuse to start into a pane that already has an occupant. |

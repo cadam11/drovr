@@ -99,6 +99,30 @@ export const bootstrapCommand = (): string => `launchctl bootstrap gui/$(id -u) 
 
 export const bootoutCommand = (): string => `launchctl bootout gui/$(id -u)/${LABEL}`;
 
+const launchctl = (args: string[]): boolean => {
+  try {
+    execFileSync('launchctl', args, { stdio: ['ignore', 'ignore', 'ignore'] });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * launchd holds the plist it loaded, not the file on disk, so rewriting the file
+ * changes nothing until the agent is booted out and back in. Installing over a
+ * loaded agent without reloading looks like it worked and silently keeps running
+ * the old definition — which is exactly how a stale PATH survived a fix.
+ */
+export const reloadAgent = (): 'reloaded' | 'loaded' | 'failed' => {
+  const domain = `gui/${process.getuid?.() ?? ''}`;
+  const wasLoaded = launchctlList() !== null;
+  if (wasLoaded) launchctl(['bootout', `${domain}/${LABEL}`]);
+  const ok = launchctl(['bootstrap', domain, plistPath()]);
+  if (!ok) return 'failed';
+  return wasLoaded ? 'reloaded' : 'loaded';
+};
+
 /**
  * Every branch says what is wrong and the exact command that fixes it. Referring to
  * a command some earlier invocation printed is useless to a reader who did not see it.
