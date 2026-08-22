@@ -124,6 +124,17 @@ export const COMMANDS: Command[] = [
     writes: 'control.json',
   },
   {
+    name: 'tidy',
+    usage: 'drovr tidy',
+    summary: 'close empty cycle tabs drovr left behind',
+    details: [
+      'Only tabs drovr itself labelled, only in that program own workspace, and only when every',
+      'pane in them has no agent. A program with a cycle in flight is skipped entirely.',
+      'Cycle starts tidy automatically; this is for when nothing is running.',
+    ],
+    writes: 'closes herdr tabs',
+  },
+  {
     name: 'rm',
     usage: 'drovr rm <name>',
     summary: 'stop tracking a program',

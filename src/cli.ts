@@ -14,6 +14,7 @@ import {
   type CycleRecord,
 } from './ledger.ts';
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
+import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
@@ -398,6 +399,29 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'resume') {
     mutate((control) => { control.pauseUntil = null; });
     console.log('resumed');
+    return;
+  }
+
+  if (command === 'tidy') {
+    const control = readControl(p.control);
+    const running = new Set(inFlightCycles().map((cycle) => cycle.program));
+    for (const program of control.programs) {
+      if (running.has(program.name)) {
+        console.log(`${program.name}: cycle in flight, left alone`);
+        continue;
+      }
+      const workspaceId = await resolveWorkspace(program).catch(() => null);
+      if (workspaceId === null) {
+        console.log(`${program.name}: no herdr workspace, nothing to tidy`);
+        continue;
+      }
+      const closed = await tidyCycleTabs({ program: program.name, workspaceId, keepTabId: null });
+      console.log(
+        closed.length === 0
+          ? `${program.name}: no empty cycle tabs`
+          : `${program.name}: closed ${closed.join(', ')}`,
+      );
+    }
     return;
   }
 

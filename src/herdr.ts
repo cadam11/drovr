@@ -158,7 +158,7 @@ const cyclePane = async (input: {
       '--cwd',
       program.cwd,
       '--label',
-      `${program.name} cycles`,
+      cycleTabLabel(program.name),
       '--no-focus',
       ...env.flatMap((pair) => ['--env', pair]),
     ]),
@@ -212,6 +212,48 @@ export const startCycleAgent = async (input: {
   await herdr(['agent', 'prompt', agentName, prompt]);
 
   return { agentName, ...pane };
+};
+
+const tabListShape = z.object({
+  result: z.object({
+    tabs: z.array(z.object({ tab_id: z.string(), label: z.string().optional() })),
+  }),
+});
+
+const paneListShape = z.object({
+  result: z.object({
+    panes: z.array(z.object({ pane_id: z.string(), tab_id: z.string(), agent: z.string().optional() })),
+  }),
+});
+
+export const cycleTabLabel = (program: string): string => `${program} cycles`;
+
+/**
+ * Only tabs drovr itself labelled, only in that program's workspace, and only when
+ * every pane in them is free of an agent. A tab still holding a session is left
+ * alone whatever its age — a stray empty tab is untidy, a closed live one is lost work.
+ */
+export const tidyCycleTabs = async (input: {
+  program: string;
+  workspaceId: string;
+  keepTabId: string | null;
+}): Promise<string[]> => {
+  const { program, workspaceId, keepTabId } = input;
+  const tabs = tabListShape.safeParse(await herdr(['tab', 'list', '--workspace', workspaceId]));
+  const panes = paneListShape.safeParse(await herdr(['pane', 'list', '--workspace', workspaceId]));
+  if (!tabs.success || !panes.success) return [];
+
+  const label = cycleTabLabel(program);
+  const closed: string[] = [];
+
+  for (const tab of tabs.data.result.tabs) {
+    if (tab.label !== label || tab.tab_id === keepTabId) continue;
+    const own = panes.data.result.panes.filter((pane) => pane.tab_id === tab.tab_id);
+    if (own.length === 0 || own.some((pane) => pane.agent !== undefined)) continue;
+    await herdr(['tab', 'close', tab.tab_id]);
+    closed.push(tab.tab_id);
+  }
+  return closed;
 };
 
 export const agentState = async (agentName: string): Promise<string> => {

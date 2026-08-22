@@ -236,6 +236,21 @@ the cycle, leaving the tab in place for you to inspect.
 Set `"runner": "headless"` on a program for the old behaviour — `claude -p` to a log file, with
 nothing to talk to.
 
+### Tidying up
+
+A cycle whose pane was lost leaves its old tab behind. Cycle starts clean those up
+automatically, and `drovr tidy` does it on demand when nothing is running:
+
+```bash
+drovr tidy
+# sunnyt: closed w64:t7
+# aice-x: no empty cycle tabs
+```
+
+It only touches tabs drovr itself labelled (`<program> cycles`), only in that program own
+workspace, and only when every pane in them is free of an agent. A program with a cycle in
+flight is skipped entirely — a stray empty tab is untidy, a closed live one is lost work.
+
 ### After a herdr restart
 
 Snapshot restore brings panes back as **fresh shells** — workspace, tab, pane, cwd, layout and

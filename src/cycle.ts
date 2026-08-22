@@ -5,7 +5,13 @@ import { z } from 'zod';
 import type { Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { wrap } from './publish.ts';
-import { agentState, resolveWorkspace, startCycleAgent, teamclaudeEnv } from './herdr.ts';
+import {
+  agentState,
+  resolveWorkspace,
+  startCycleAgent,
+  teamclaudeEnv,
+  tidyCycleTabs,
+} from './herdr.ts';
 
 /**
  * Written by the runner before it exits. Its absence after the process ends is
@@ -113,6 +119,16 @@ const runInHerdr = async (
   });
 
   rememberPane(program.name, started.paneId);
+
+  // Earlier cycles can leave empty tabs behind when a pane was lost and a new one
+  // had to be made. Tidy them once the replacement is up, never before.
+  const closed = await tidyCycleTabs({
+    program: program.name,
+    workspaceId,
+    keepTabId: started.tabId,
+  }).catch(() => []);
+  if (closed.length > 0) console.log(`closed ${closed.length} empty cycle tab(s): ${closed.join(', ')}`);
+
   writeFileSync(
     join(paths().programState(program.name), 'current-cycle.json'),
     `${JSON.stringify({ ...started, workspaceId, prompt, startedAt }, null, 2)}\n`,
