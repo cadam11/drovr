@@ -112,6 +112,7 @@ export const COMMANDS: Command[] = [
       { flag: '--status-page <page>', describes: 'where drovr publishes status.html' },
       { flag: '--no-aice', describes: 'the program has no aice install' },
       { flag: '--no-direnv', describes: 'do not run the cycle through direnv exec' },
+      { flag: '--model <alias>', describes: 'runner model for this program (default fable)' },
     ],
     details: [
       'The path must exist and the name must be unique. The aice install comes from the repo’s',

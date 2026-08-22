@@ -26,8 +26,15 @@ const programShape = z.object({
   name: z.string(),
   cwd: z.string(),
   /** {program} and {mode} are substituted before spawning. */
-  cycleCommand: z.string().default('teamclaude run -- -p "/project-loop {program}"'),
+  cycleCommand: z
+    .string()
+    .default('teamclaude run -- --model {model} -p "/project-loop {program}"'),
   enabled: z.boolean().default(true),
+  /**
+   * The coordinator is always Fable; it spawns Opus/Sonnet/Haiku subagents itself.
+   * Passed per session with claude's --model, never as Craig's default.
+   */
+  model: z.string().default('fable'),
   /** Run the cycle through direnv so the repo's own .envrc supplies its environment. */
   useDirenv: z.boolean().default(true),
   /**

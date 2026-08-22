@@ -273,6 +273,7 @@ const addProgram = (rest: string[]): void => {
       cwd: absolute,
       priority: Number.parseInt(flag(rest, 'priority') ?? '0', 10),
       deadline: flag(rest, 'deadline') ?? null,
+      ...(flag(rest, 'model') === undefined ? {} : { model: flag(rest, 'model') }),
       ...(rest.includes('--no-direnv') ? { useDirenv: false } : {}),
       ...(rest.includes('--no-aice') ? { aice: null } : { aice: { asksPage, statusPage } }),
     });

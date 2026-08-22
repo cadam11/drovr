@@ -44,6 +44,7 @@ export const isOnboarding = (program: string): boolean =>
 const substitute = (command: string, program: Program, onboarding: boolean): string =>
   command
     .replaceAll('{program}', program.name)
+    .replaceAll('{model}', program.model)
     .replaceAll('{mode}', onboarding ? 'onboard' : 'deliver');
 
 export type CycleOutcome = { finished: boolean; detail: string };

@@ -176,7 +176,20 @@ export const startCycleAgent = async (input: {
     await assertProxyEnv(pane.paneId);
   }
 
-  await herdr(['agent', 'start', agentName, '--kind', 'claude', '--pane', pane.paneId]);
+  // Args after `--` reach claude itself. --model sets the model for this session
+  // only, so the runner is always Fable without touching Craig's default.
+  await herdr([
+    'agent',
+    'start',
+    agentName,
+    '--kind',
+    'claude',
+    '--pane',
+    pane.paneId,
+    '--',
+    '--model',
+    program.model,
+  ]);
   // No --wait: the cycle runs for hours, and blocking here would defeat the point.
   await herdr(['agent', 'prompt', agentName, prompt]);
 

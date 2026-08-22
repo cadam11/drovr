@@ -219,6 +219,12 @@ The proxy is applied via `teamclaude env`, teamclaude's own documented path for 
 that spawn claude themselves", so the pane runs a normal interactive `claude` while still rotating
 across accounts.
 
+**The runner is always Fable.** drovr passes `--model fable` to that session only — claude's
+`--model` is documented as "model for the current session", so your default is untouched and every
+other `claude` you start is unaffected. The coordinator being Fable is the point: it spawns
+Opus/Sonnet/Haiku subagents itself, which is why the Fable and general quota buckets are tracked
+separately. Override per program with `"model"` if a program should run on something else.
+
 The workspace is matched by label, then by checkout path. Pin it with `herdrWorkspace` on the
 program if neither is right.
 
