@@ -29,9 +29,10 @@ Programs run **concurrently**, each in its own detached process holding its own 
 in-flight cycle reserves its estimated cost from the shared pool, so N programs cannot each
 claim the whole budget.
 
-Each cycle is a **fresh headless Claude process**. Context clearing is process exit, so nothing
-accumulates across cycles. The cycle decides its own end (context ceiling, thinning capacity, a
-natural seam, or everything blocked) and writes a report before exiting.
+Each cycle is a **fresh interactive Claude session** in that program's herdr workspace — one you can
+read and talk to while it runs. Context clearing is session exit, so nothing accumulates across
+cycles. The cycle decides its own end (context ceiling, thinning capacity, a natural seam, or
+everything blocked) and writes a report, which is the signal that tells drovr it has finished.
 
 ## Install
 

@@ -76,6 +76,23 @@ Two rules for anything the CLI prints:
 
 Never document a flag before implementing it — a help page that lies is worse than a missing one.
 
+## Not yet observed working
+
+Written and type-checked, never seen to fire. Unproven, not done:
+
+- **The SMS nudge** (`nudge.ts`) — never triggered, because the asks were answered before the
+  threshold. The `aws sns publish --profile dev` call is unverified end to end.
+- **`releaseAgent` sending `/exit`** — every cycle so far ended by other means. If `/exit` does not
+  close a Claude Code session, the pane stays occupied and the next cycle defers indefinitely.
+- **A full ask → answer → auto-resume round trip.** Both halves have been seen separately.
+- **`headless` runner mode** — a fallback, exercised once early, untouched since the herdr runner
+  landed.
+
+## The repo is local-only
+
+There is no git remote, so losing the disk loses drovr. Craig has not asked for it to be pushed
+anywhere; do not create one unprompted, but say so if the subject arises.
+
 ## Conventions
 
 - Node >= 24, TypeScript run directly (no build step). Erasable syntax only — no enums, no
