@@ -53,19 +53,19 @@ const writeStatusPage = async (
  * ledger entries. Tick itself returns in seconds so the next launchd firing can
  * evaluate the other programs.
  */
-const launch = (program: Program): void => {
+export const launchDetached = (name: string): void => {
   const cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
-  // Not 'ignore': a worker that fails to start its cycle has its only explanation
-  // on stderr, and discarding it leaves a crash record with no cause.
-  const logPath = join(paths().logs, `${program.name}-worker.log`);
+  const logPath = join(paths().logs, `${name}-worker.log`);
   const log = openSync(logPath, 'a');
-  const child = spawn(process.execPath, [cli, 'run-cycle', program.name], {
+  const child = spawn(process.execPath, [cli, 'run-cycle', name], {
     detached: true,
     stdio: ['ignore', log, log],
   });
   child.unref();
-  console.log(`${program.name}: launched cycle (pid ${child.pid}, log ${logPath})`);
+  console.log(`${name}: launched cycle (pid ${child.pid}, log ${logPath})`);
 };
+
+const launch = (program: Program): void => launchDetached(program.name);
 
 /**
  * A worker takes its program lock before writing its start record, so an in-flight

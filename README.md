@@ -291,6 +291,28 @@ teamclaude alias --install     # alias claude='teamclaude run --'
 That covers what you type interactively. It does not cover herdr's own resume command, which is
 why drovr re-asserts the environment itself.
 
+## The daily cap
+
+```bash
+drovr cap                    # global cap and any per-program overrides
+drovr cap 12                 # raise the global
+drovr cap aice-x 20          # override one program
+drovr cap aice-x global      # drop the override
+```
+
+Only cycles that **did work** count against it. Crashes never ran, deferrals never started, and
+a cycle that came back blocked only rediscovered an unanswered ask — none of those should cost a
+program its day. The blocked backoff is what bounds those instead.
+
+## Kicking one off by hand
+
+```bash
+drovr start <program>        # ignores every capacity check, returns immediately
+```
+
+Use it to clear a crash latch once the cause is fixed, or to run something out of turn. Unlike
+`run-cycle`, which blocks for the whole cycle, `start` detaches like a tick would.
+
 ## Multiple programs
 
 Programs are independent and run concurrently, up to `maxConcurrentCycles` (default 2). Each

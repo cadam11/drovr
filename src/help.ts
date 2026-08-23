@@ -136,6 +136,28 @@ export const COMMANDS: Command[] = [
     writes: 'closes herdr tabs',
   },
   {
+    name: 'cap',
+    usage: 'drovr cap [program] [n|global]',
+    summary: 'how many working cycles a program may run per day',
+    details: [
+      'With no argument it reports the global cap and any per-program overrides.',
+      'Only cycles that did work count: crashes, deferrals and cycles that came back blocked on',
+      'unanswered asks are all free, so a bad afternoon does not cost a program its day.',
+    ],
+    examples: ['drovr cap', 'drovr cap 12', 'drovr cap aice-x 20', 'drovr cap aice-x global'],
+    writes: 'control.json',
+  },
+  {
+    name: 'start',
+    usage: 'drovr start <program>',
+    summary: 'launch a cycle now, ignoring every capacity check',
+    details: [
+      'Detached, so it returns immediately — unlike run-cycle, which blocks for the whole cycle.',
+      'Use it to clear a crash latch once the cause is fixed, or to run something out of turn.',
+    ],
+    writes: 'cycles.jsonl, and launches a cycle',
+  },
+  {
     name: 'rm',
     usage: 'drovr rm <name>',
     summary: 'stop tracking a program',

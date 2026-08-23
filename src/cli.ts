@@ -31,7 +31,7 @@ import {
   serviceState,
 } from './service.ts';
 import { readStatus } from './teamclaude.ts';
-import { inFlightCycles, runProgramCycle, tick } from './tick.ts';
+import { inFlightCycles, launchDetached, runProgramCycle, tick } from './tick.ts';
 import { watch } from './watch.ts';
 
 const p = paths();
@@ -407,6 +407,52 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'resume') {
     mutate((control) => { control.pauseUntil = null; });
     console.log('resumed');
+    return;
+  }
+
+  if (command === 'cap') {
+    const [name, value] = rest;
+    const control = readControl(p.control);
+    if (name === undefined) {
+      console.log(`global daily cap: ${control.maxCyclesPerDay}`);
+      for (const program of control.programs) {
+        const own = program.maxCyclesPerDay;
+        console.log(`  ${program.name}: ${own === null ? `${control.maxCyclesPerDay} (global)` : own}`);
+      }
+      console.log('set with: drovr cap <n>  |  drovr cap <program> <n>  |  drovr cap <program> global');
+      return;
+    }
+
+    // `drovr cap 12` sets the global; `drovr cap aice-x 12` overrides one program.
+    const globalOnly = value === undefined && Number.isFinite(Number.parseInt(name, 10));
+    mutate((raw) => {
+      if (globalOnly) {
+        raw.maxCyclesPerDay = Number.parseInt(name, 10);
+        return;
+      }
+      const programs = Array.isArray(raw.programs) ? raw.programs : [];
+      const found = programs.find(
+        (entry): entry is Record<string, unknown> =>
+          typeof entry === 'object' && entry !== null && (entry as { name?: unknown }).name === name,
+      );
+      if (found === undefined) throw new Error(`no program named "${name}"`);
+      found.maxCyclesPerDay = value === 'global' ? null : Number.parseInt(value ?? '', 10);
+      if (value !== 'global' && !Number.isFinite(found.maxCyclesPerDay)) {
+        throw new Error('usage: drovr cap <program> <n|global>');
+      }
+    });
+    console.log(globalOnly ? `global daily cap → ${name}` : `${name} daily cap → ${value}`);
+    return;
+  }
+
+  if (command === 'start') {
+    const name = rest[0];
+    if (name === undefined) throw new Error('usage: drovr start <program>');
+    const control = readControl(p.control);
+    const program = control.programs.find((entry) => entry.name === name);
+    if (program === undefined) throw new Error(`no program named "${name}"`);
+    // Detached, like tick does, so it does not hold the terminal for the whole cycle.
+    launchDetached(program.name);
     return;
   }
 

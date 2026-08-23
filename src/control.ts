@@ -49,6 +49,8 @@ const programShape = z.object({
   cyclePrompt: z.string().default('/project-loop {program}'),
   /** Shown in the runner's prompt box and /resume list. {program} is substituted. */
   sessionName: z.string().default('{program} program runner'),
+  /** Overrides the global daily cap for this program only. */
+  maxCyclesPerDay: z.number().nullable().default(null),
   /** Lower wins the next capacity slot, matching teamclaude priority. */
   priority: z.number().default(0),
   /** ISO date. Inside the horizon the program is promoted one priority step. */

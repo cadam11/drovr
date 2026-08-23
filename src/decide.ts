@@ -180,9 +180,15 @@ export const decide = (input: DecideInput): Decision => {
     );
   }
 
+  const cap = entry?.maxCyclesPerDay ?? control.maxCyclesPerDay;
   const today = cyclesStartedSince(mine, now - DAY_MS);
-  if (today >= control.maxCyclesPerDay) {
-    return hold(`daily cap reached (${today}/${control.maxCyclesPerDay})`, pool, null);
+  if (today >= cap) {
+    return hold(
+      `daily cap reached (${today}/${cap} cycles that did work). Raise it with ` +
+        `\"drovr cap ${program} <n>\"`,
+      pool,
+      null,
+    );
   }
 
   // Last, because everything above is a harder constraint. A program otherwise ready

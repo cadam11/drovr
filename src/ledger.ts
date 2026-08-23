@@ -167,10 +167,13 @@ export const inFlight = (
  * Repeated crashing is caught by consecutiveCrashes instead.
  */
 export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number => {
-  // Neither a crash nor a deferral did any work, so neither should cost a program its day.
+  // None of these did any work, so none should cost a program its day: a crash never
+  // ran, a deferral never started, and a blocked cycle only rediscovered that someone
+  // owes it an answer. The blocked backoff is what bounds those instead.
+  const idle = new Set(['crash', 'deferred', 'blocked']);
   const unspent = new Set(
     cycles
-      .filter((cycle) => cycle.exit === 'crash' || cycle.exit === 'deferred')
+      .filter((cycle) => idle.has(cycle.exit))
       .map((cycle) => `${cycle.program}|${cycle.startedAt}`),
   );
   return new Set(

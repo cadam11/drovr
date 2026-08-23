@@ -128,6 +128,7 @@ const KEYS = [
   't tick',
   'o asks',
   'x interrupt',
+  '? help',
   'q quit',
 ];
 
@@ -149,7 +150,41 @@ export const keybarLines = (width: number, narrow: boolean): string[] => {
   return rows.map((row) => `  ${row.join(dim(' · '))}`);
 };
 
-type State = { selected: number; message: string; confirmStop: boolean };
+type State = { selected: number; message: string; confirmStop: boolean; help: boolean };
+
+/** Explains what the view means, not only which key does what — modes especially. */
+const helpLines = (): string[] => [
+  `  ${bold('drovr watch')}`,
+  '',
+  `  ${bold('Mode')} — how much of each account's weekly quota programs may spend.`,
+  '  Whatever is left is held for you, no matter what they do.',
+  `    ${paint(31, 'off')}     nothing runs`,
+  `    ${paint(33, 'low')}     programs 25%, you keep 75%`,
+  `    ${paint(32, 'normal')}  programs 55%, you keep 45%`,
+  `    ${paint(36, 'away')}    programs 85%, you keep 15% — for when you are gone`,
+  `  ${dim('< and > adjust the current mode by 5%.')}`,
+  '',
+  `  ${bold('Verdicts')}`,
+  `    ${paint(32, 'GO')}    starts on the next tick`,
+  `    ${paint(36, 'RUN')}   running now — open its tab to read or talk to it`,
+  `    ${paint(33, 'WAIT')}  transient; it retries by itself`,
+  `    ${paint(31, 'STOP')}  needs you — the reason says what`,
+  '',
+  `  ${bold('Bars')} — one per quota bucket, each summing to the whole pool.`,
+  ...SEGMENTS.map((segment) => `    ${paint(segment.colour, segment.char)} ${segment.label}`),
+  `  ${dim('fable = the runner; general = subagents it spawns; 5h = the burst window.')}`,
+  `  ${dim('All three bind at once; the tightest decides.')}`,
+  '',
+  `  ${bold('Keys')}`,
+  '    j k    select            space  enable/disable',
+  '    [ ]    priority          o      open asks page',
+  '    m      mode              < >    your reserve',
+  '    p P    pause / extend    + -    concurrency cap',
+  '    t      tick now          r      redraw',
+  '    x      interrupt cycle   q      quit',
+  '',
+  `  ${dim('? or esc closes this')}`,
+];
 
 const RUNNING_PLACEHOLDER: CycleRecord = {
   v: 1,
@@ -263,6 +298,7 @@ const programLines = (input: {
 };
 
 const frame = async (state: State): Promise<string> => {
+  if (state.help) return helpLines().join('\n');
   const p = paths();
   const status = await readStatus();
   const control = readControl(p.control);
@@ -389,6 +425,11 @@ const handle = async (key: string, state: State, programs: Program[]): Promise<A
     state.selected = Math.max(0, state.selected - 1);
     return { message: '', redraw: true };
   }
+  if (key === '?' || (state.help && key === '\x1b')) {
+    state.help = !state.help;
+    return { message: '', redraw: true };
+  }
+  if (state.help) return { message: '', redraw: false };
   if (key === 'r') return { message: 'refreshed', redraw: true };
   if (key === 'm') return cycleMode(control, settings.mode);
   if (key === 'p') return cyclePause(control, settings.pauseUntil);
@@ -425,7 +466,7 @@ const handle = async (key: string, state: State, programs: Program[]): Promise<A
 
 /** Runs until interrupted; the terminal is restored on every exit path. */
 export const watch = async (intervalSeconds: number): Promise<void> => {
-  const state: State = { selected: 0, message: '', confirmStop: false };
+  const state: State = { selected: 0, message: '', confirmStop: false, help: false };
 
   const restore = (): void => {
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
