@@ -82,6 +82,9 @@ const controlShape = z.object({
   contextCeilingTokens: z.number().default(250_000),
   /** Crashes only latch a program while they are recent; older ones age out. */
   crashWindowMinutes: z.number().default(60),
+  /** Texted when a program has been blocked on asks this long. Null disables it. */
+  phoneNumber: z.string().nullable().default(null),
+  nudgeAfterMinutes: z.number().default(240),
   /** How long to leave a blocked program alone before trying again. */
   blockedBackoffMinutes: z.number().default(60),
   /** Consecutive zero-yield cycles before the loop stops and escalates. */

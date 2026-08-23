@@ -38,6 +38,10 @@ export type DecideInput = {
   cycles: CycleRecord[];
   program: string;
   now: number;
+  /** Most recent activity on this program’s asks page, if drovr could read it. */
+  answeredAt?: number | null;
+  /** False when shared notes are off, which is what stops drovr seeing an answer. */
+  asksShared?: boolean | null;
 };
 
 const ratio = (available: number, cost: number): number =>
@@ -153,12 +157,20 @@ export const decide = (input: DecideInput): Decision => {
   // burning a cycle every tick, and say plainly that it is waiting on Craig.
   const last = lastFinished(mine);
   if (last?.exit === 'blocked' && last.endedAt !== null) {
+    // An answer on the asks page ends the wait immediately: that is the event the
+    // backoff was standing in for.
+    const answered = (input.answeredAt ?? 0) > Date.parse(last.endedAt);
     const retryAt = Date.parse(last.endedAt) + control.blockedBackoffMinutes * 60_000;
-    if (retryAt > now) {
+    if (!answered && retryAt > now) {
       const mins = Math.ceil((retryAt - now) / 60_000);
+      // Shared notes being off is the reason an answer goes unnoticed, so name it.
+      const unnoticed =
+        input.asksShared === false
+          ? '. Shared notes are off on that page, so drovr cannot see your reply'
+          : '';
       return hold(
         `waiting on you — the last cycle was blocked on unanswered asks. Retries in ${mins}m, ` +
-          `or answer them and run "drovr run-cycle ${program}"`,
+          `or answer them and run "drovr start ${program}"${unnoticed}`,
         null,
         null,
       );
@@ -198,7 +210,10 @@ export const decide = (input: DecideInput): Decision => {
   if (owed !== null) {
     return hold(
       `waiting on you — ${owed.asks} ask(s) raised ${Math.round((now - owed.at) / 60_000)}m ago ` +
-        'and every cycle since has come back blocked',
+        'and every cycle since has come back blocked' +
+        (input.asksShared === false
+          ? '. Shared notes are off on that page, so answer and run \"drovr start ' + program + '\"'
+          : ''),
       pool,
       null,
     );

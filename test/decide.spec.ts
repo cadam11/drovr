@@ -385,3 +385,67 @@ test('unanswered asks are named rather than whichever check happened to fire', (
 test('a program that is simply idle is not reported as waiting on anyone', () => {
   assert.equal(run({ cycles: [cycle({ exit: 'seam', asksRaised: 0 })] }).verdict, 'GO');
 });
+
+test('an answer on the asks page ends the blocked wait immediately', () => {
+  // The backoff is a stand-in for "Craig replied"; when the real event is visible
+  // there is no reason to keep waiting for a timer.
+  const blocked = cycle({
+    startedAt: new Date(NOW - 10 * 60_000).toISOString(),
+    endedAt: new Date(NOW - 9 * 60_000).toISOString(),
+    exit: 'blocked',
+    yield: { ticketsMoved: 0, prsOpened: 0, commits: 0 },
+  });
+  const waiting = decide({
+    status: healthy(),
+    control: control(),
+    cycles: [blocked],
+    program: 'demo',
+    now: NOW,
+  });
+  const answered = decide({
+    status: healthy(),
+    control: control(),
+    cycles: [blocked],
+    program: 'demo',
+    now: NOW,
+    answeredAt: NOW - 60_000,
+  });
+  assert.equal(waiting.verdict, 'WAIT');
+  assert.equal(answered.verdict, 'GO');
+});
+
+test('an answer older than the blocked cycle does not count as a reply', () => {
+  const blocked = cycle({
+    startedAt: new Date(NOW - 10 * 60_000).toISOString(),
+    endedAt: new Date(NOW - 9 * 60_000).toISOString(),
+    exit: 'blocked',
+    yield: { ticketsMoved: 0, prsOpened: 0, commits: 0 },
+  });
+  const stale = decide({
+    status: healthy(),
+    control: control(),
+    cycles: [blocked],
+    program: 'demo',
+    now: NOW,
+    answeredAt: NOW - 30 * 60_000,
+  });
+  assert.equal(stale.verdict, 'WAIT');
+});
+
+test('when shared notes are off the message says so, since that is the blocker', () => {
+  const blocked = cycle({
+    startedAt: new Date(NOW - 10 * 60_000).toISOString(),
+    endedAt: new Date(NOW - 9 * 60_000).toISOString(),
+    exit: 'blocked',
+    yield: { ticketsMoved: 0, prsOpened: 0, commits: 0 },
+  });
+  const decision = decide({
+    status: healthy(),
+    control: control(),
+    cycles: [blocked],
+    program: 'demo',
+    now: NOW,
+    asksShared: false,
+  });
+  assert.match(decision.reason, /shared notes/i);
+});

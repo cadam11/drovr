@@ -6,6 +6,9 @@ import { appendRecord, inFlight, readCycles, snapshot, type CycleRecord } from '
 import { decide, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
 import { PaneBusy } from './herdr.ts';
+import { readAsks } from './asks.ts';
+import { nudgeIfNeglected } from './nudge.ts';
+import { unansweredAsks } from './ledger.ts';
 
 import { poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, readControl, type Program } from './control.ts';
@@ -117,7 +120,32 @@ export const tick = async (): Promise<void> => {
       (entry) => entry.enabled,
     )) {
       const cycles = [...readCycles(p.cycles), ...launched];
-      const decision = decide({ status, control, cycles, program: program.name, now });
+      const mine = cycles.filter((cycle) => cycle.program === program.name);
+      const owed = unansweredAsks(mine);
+
+      // Only poll the asks page for a program that is actually waiting on one.
+      const asks = owed === null ? null : await readAsks(program);
+      if (owed !== null) {
+        await nudgeIfNeglected({
+          program: program.name,
+          asks: owed.asks,
+          askedAt: owed.at,
+          now,
+          afterMinutes: control.nudgeAfterMinutes,
+          phoneNumber: control.phoneNumber,
+          asksUrl: null,
+        });
+      }
+
+      const decision = decide({
+        status,
+        control,
+        cycles,
+        program: program.name,
+        now,
+        answeredAt: asks?.latestAt ?? null,
+        asksShared: asks?.shared ?? null,
+      });
       logDecision(program.name, decision, now);
       console.log(`${program.name}: ${decision.verdict} — ${decision.reason}`);
 

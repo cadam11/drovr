@@ -304,6 +304,20 @@ Only cycles that **did work** count against it. Crashes never ran, deferrals nev
 a cycle that came back blocked only rediscovered an unanswered ask — none of those should cost a
 program its day. The blocked backoff is what bounds those instead.
 
+## When a program is waiting on you
+
+A cycle that exits `blocked` has nothing left it can do without an answer. drovr then:
+
+- **Backs off** rather than burning a cycle every tick to rediscover the same question.
+- **Polls the asks page** for a reply. Any note newer than the blocked cycle ends the wait at
+  once — no command needed.
+- **Texts you** (`phoneNumber`) once the asks have gone unanswered for `nudgeAfterMinutes`
+  (default 4h). One text per ask, never one per tick.
+
+> Polling needs **shared notes turned on** for that page — it is owner-only, from the page own
+> notes widget. Until it is on, `aice notes list` returns nothing whatever you write, and the
+> status line says so. Answer and run `drovr start <program>` in the meantime.
+
 ## Kicking one off by hand
 
 ```bash
