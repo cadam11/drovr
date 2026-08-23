@@ -49,8 +49,23 @@ export const splitPage = (asksPage: string): { page: string; prefix: string | nu
   return { page: asksPage.slice(cut + 1), prefix: asksPage.slice(0, cut) };
 };
 
-/** Reads through direnv so the program's own aice install and login apply. */
-export const readAsks = async (program: Program): Promise<AsksState | null> => {
+const cache = new Map<string, { at: number; state: AsksState | null }>();
+const TTL_MS = 60_000;
+
+/**
+ * Reads through direnv so the program's own aice install and login apply. Cached
+ * briefly: a watch frame redraws every few seconds and must not shell out per
+ * program each time.
+ */
+export const readAsks = async (program: Program, now = Date.now()): Promise<AsksState | null> => {
+  const cached = cache.get(program.name);
+  if (cached !== undefined && now - cached.at < TTL_MS) return cached.state;
+  const state = await readAsksUncached(program);
+  cache.set(program.name, { at: now, state });
+  return state;
+};
+
+const readAsksUncached = async (program: Program): Promise<AsksState | null> => {
   if (program.aice?.asksPage == null) return null;
 
   const { page, prefix } = splitPage(program.aice.asksPage);

@@ -14,6 +14,7 @@ import {
   type CycleRecord,
 } from './ledger.ts';
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
+import { readAsks } from './asks.ts';
 import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { holder } from './lock.ts';
@@ -73,7 +74,7 @@ const parseDuration = (input: string): number => {
  * capacity, so the list reflects what a tick would actually do rather than
  * evaluating every program against an empty pool.
  */
-const evaluateAll = (input: {
+const evaluateAll = async (input: {
   control: ReturnType<typeof readControl>;
   status: Awaited<ReturnType<typeof readStatus>>;
   cycles: CycleRecord[];
@@ -81,14 +82,22 @@ const evaluateAll = (input: {
 }) => {
   const { control, status, cycles, now } = input;
   const projected: CycleRecord[] = [];
+  const ordered = byPriority(control.programs, now, control.deadlineHorizonDays);
+  const asks = new Map(
+    await Promise.all(
+      ordered.map(async (program) => [program.name, await readAsks(program, now)] as const),
+    ),
+  );
 
-  return byPriority(control.programs, now, control.deadlineHorizonDays).map((program) => {
+  return ordered.map((program) => {
     const decision = decide({
       status,
       control,
       cycles: [...cycles, ...projected],
       program: program.name,
       now,
+      answeredAt: asks.get(program.name)?.latestAt ?? null,
+      asksShared: asks.get(program.name)?.shared ?? null,
     });
     if (decision.verdict === 'GO' && program.enabled) {
       projected.push({
@@ -165,7 +174,7 @@ const statusPayload = async () => {
       kind: cycle.kind,
     })),
     concurrencyCap: control.maxConcurrentCycles,
-    programs: evaluateAll({ control, status, cycles, now }).map(({ program, decision, pid }) => ({
+    programs: (await evaluateAll({ control, status, cycles, now })).map(({ program, decision, pid }) => ({
       name: program.name,
       cwd: program.cwd,
       enabled: program.enabled,
@@ -217,7 +226,7 @@ const showStatus = async (): Promise<void> => {
     `in flight: ${running.length}/${control.maxConcurrentCycles}${running.length === 0 ? '' : ` (${names})`}`,
   );
 
-  for (const { program, decision, pid } of evaluateAll({ control, status, cycles, now })) {
+  for (const { program, decision, pid } of await evaluateAll({ control, status, cycles, now })) {
     const shown = effectivePriority(program, now, control.deadlineHorizonDays);
     const flags = `${program.enabled ? '' : ' [disabled]'}${pid === null ? '' : ` [pid ${pid}]`}`;
     console.log(`  [p${shown}] ${program.name}${flags}: ${decision.verdict} — ${decision.reason}`);

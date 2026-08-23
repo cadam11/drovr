@@ -207,7 +207,7 @@ export const decide = (input: DecideInput): Decision => {
   // to run and sitting on unanswered asks is waiting on Craig, and saying so is more
   // use than naming whichever check happened to fire.
   const owed = unansweredAsks(mine);
-  if (owed !== null) {
+  if (owed !== null && (input.answeredAt ?? 0) <= owed.at) {
     return hold(
       `waiting on you — ${owed.asks} ask(s) raised ${Math.round((now - owed.at) / 60_000)}m ago ` +
         'and every cycle since has come back blocked' +
