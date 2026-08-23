@@ -329,3 +329,59 @@ test('a crash loop still latches while it is actually looping', () => {
   );
   assert.equal(run({ cycles: recent }).verdict, 'STOP');
 });
+
+test('a deferred cycle costs the program nothing', () => {
+  // A pane busy with a live session means the cycle never started: it must not
+  // burn the daily cap, and it must not look like a crash.
+  const deferrals = Array.from({ length: 8 }, (_unused, index) =>
+    cycle({
+      startedAt: new Date(NOW - (index + 1) * 60_000).toISOString(),
+      endedAt: new Date(NOW - (index + 1) * 60_000 + 1_000).toISOString(),
+      exit: 'deferred',
+      yield: null,
+    }),
+  );
+  assert.equal(run({ cycles: deferrals, control: control({ maxCyclesPerDay: 8 }) }).verdict, 'GO');
+});
+
+test('deferrals between crashes neither extend nor break the crash streak', () => {
+  const mixed = [
+    cycle({ startedAt: new Date(NOW - 3 * 60_000).toISOString(), endedAt: new Date(NOW - 3 * 60_000).toISOString(), exit: 'crash', yield: null }),
+    cycle({ startedAt: new Date(NOW - 2 * 60_000).toISOString(), endedAt: new Date(NOW - 2 * 60_000).toISOString(), exit: 'deferred', yield: null }),
+    cycle({ startedAt: new Date(NOW - 60_000).toISOString(), endedAt: new Date(NOW - 60_000).toISOString(), exit: 'crash', yield: null }),
+  ];
+  // Two real crashes, one deferral ignored: below the threshold of three.
+  assert.equal(run({ cycles: mixed }).verdict, 'GO');
+});
+
+test('unanswered asks are named rather than whichever check happened to fire', () => {
+  // A seam that raised asks, then nothing but blocked cycles: the program is owed a
+  // reply, and saying "daily cap" would hide that.
+  const history = [
+    cycle({
+      startedAt: new Date(NOW - 5 * HOUR).toISOString(),
+      endedAt: new Date(NOW - 5 * HOUR).toISOString(),
+      exit: 'seam',
+      asksRaised: 2,
+    }),
+    cycle({
+      startedAt: new Date(NOW - 4 * HOUR).toISOString(),
+      endedAt: new Date(NOW - 4 * HOUR).toISOString(),
+      exit: 'blocked',
+      yield: { ticketsMoved: 0, prsOpened: 0, commits: 0 },
+    }),
+    cycle({
+      startedAt: new Date(NOW - 3 * HOUR).toISOString(),
+      endedAt: new Date(NOW - 3 * HOUR).toISOString(),
+      exit: 'blocked',
+      yield: { ticketsMoved: 0, prsOpened: 0, commits: 0 },
+    }),
+  ];
+  const decision = run({ cycles: history });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /waiting on you — 2 ask\(s\)/);
+});
+
+test('a program that is simply idle is not reported as waiting on anyone', () => {
+  assert.equal(run({ cycles: [cycle({ exit: 'seam', asksRaised: 0 })] }).verdict, 'GO');
+});

@@ -145,6 +145,13 @@ export const resolveWorkspace = async (program: Program): Promise<string> => {
 
 export type StartedCycle = { agentName: string; tabId: string | null; paneId: string; reused: boolean };
 
+/**
+ * The pane holds a session that is not ours to end. Distinct from a crash: nothing
+ * went wrong, the cycle simply did not start, and the next tick should try again
+ * without it counting against the program.
+ */
+export class PaneBusy extends Error {}
+
 const paneExists = async (paneId: string): Promise<boolean> => {
   try {
     await herdr(['pane', 'get', paneId]);
@@ -227,13 +234,21 @@ export const startCycleAgent = async (input: {
   const pane = await cyclePane(input);
 
   if (pane.reused) {
+    // A live session in the pane is an ordinary state, not a fault: the previous
+    // runner may not have been released yet, or Craig may be talking to it. Try to
+    // release our own finished runner; anything else is left strictly alone.
     const occupant = await paneOccupant(pane.paneId);
     if (occupant !== null) {
-      throw new Error(
-        `pane ${pane.paneId} for ${program.name} is already occupied by an agent (${occupant}). ` +
-          'A herdr restart may have resumed a previous cycle there, and that resumed session is ' +
-          'not proxied through teamclaude. Inspect it and close or finish it before starting a new cycle.',
-      );
+      const freed =
+        occupant === 'idle' || occupant === 'done'
+          ? await releaseAgent(agentName, pane.paneId).catch(() => false)
+          : false;
+      if (!freed) {
+        throw new PaneBusy(
+          `${program.name} already has a live session in pane ${pane.paneId} (${occupant}). ` +
+            'Leaving it alone — it is either still working or being used. The next tick tries again.',
+        );
+      }
     }
     await assertProxyEnv(pane.paneId);
   }

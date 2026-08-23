@@ -9,6 +9,7 @@ import {
   lastFinished,
   snapshot,
   spentSince,
+  unansweredAsks,
   type CycleCost,
   type CycleRecord,
 } from './ledger.ts';
@@ -167,7 +168,7 @@ export const decide = (input: DecideInput): Decision => {
   const pool = poolFrom(input.status, ceilings, now);
   if (pool.usableAccounts === 0) return hold('no usable accounts', pool, null);
 
-  const running = inFlight(cycles);
+  const running = inFlight(cycles, now, control.maxCycleHours);
   if (running.some((cycle) => cycle.program === program)) {
     return hold('a cycle for this program is already in flight', pool, null);
   }
@@ -182,6 +183,19 @@ export const decide = (input: DecideInput): Decision => {
   const today = cyclesStartedSince(mine, now - DAY_MS);
   if (today >= control.maxCyclesPerDay) {
     return hold(`daily cap reached (${today}/${control.maxCyclesPerDay})`, pool, null);
+  }
+
+  // Last, because everything above is a harder constraint. A program otherwise ready
+  // to run and sitting on unanswered asks is waiting on Craig, and saying so is more
+  // use than naming whichever check happened to fire.
+  const owed = unansweredAsks(mine);
+  if (owed !== null) {
+    return hold(
+      `waiting on you — ${owed.asks} ask(s) raised ${Math.round((now - owed.at) / 60_000)}m ago ` +
+        'and every cycle since has come back blocked',
+      pool,
+      null,
+    );
   }
 
   const offPace = paceExceeded(input, ceilings.weekly, pool.usableAccounts);

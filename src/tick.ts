@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, readCycles, snapshot, type CycleRecord } from './ledger.ts';
 import { decide, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
+import { PaneBusy } from './herdr.ts';
+
 import { poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, readControl, type Program } from './control.ts';
 import { acquire, holder, release } from './lock.ts';
@@ -192,24 +194,31 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     const outcome = await runCycle(program, startedAt, control.maxCycleHours).catch(
       (error: unknown) => {
         const detail = error instanceof Error ? error.message : String(error);
+        // A busy pane is not a failure: the cycle never started and nothing is wrong.
+        if (error instanceof PaneBusy) {
+          console.log(`${name}: ${detail}`);
+          return { finished: false, detail, deferred: true as const };
+        }
         console.error(`cycle for ${name} failed to run: ${detail}`);
         return { finished: true, detail };
       },
     );
+
+    const deferred = 'deferred' in outcome && outcome.deferred === true;
 
     const report = readReport(name);
     const after = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 
     record({
       endedAt: new Date().toISOString(),
-      exit: report?.exit ?? 'crash',
+      exit: report?.exit ?? (deferred ? 'deferred' : 'crash'),
       poolAfter: after,
       startupTokens: report?.startupTokens ?? null,
       yield: report?.yield ?? null,
       asksRaised: report?.asksRaised ?? 0,
     });
 
-    if (report === null) {
+    if (report === null && !deferred) {
       console.error(
         `cycle for ${name} produced no report — recorded as crash. ${outcome.detail}`,
       );

@@ -11,7 +11,7 @@ export const cycleShape = z.object({
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   /** Why the cycle stopped — the main input for tuning the context ceiling. */
-  exit: z.enum(['context', 'capacity', 'seam', 'blocked', 'crash', 'running']),
+  exit: z.enum(['context', 'capacity', 'seam', 'blocked', 'crash', 'deferred', 'running']),
   poolBefore: poolSnapshot,
   poolAfter: poolSnapshot.nullable(),
   /** Tokens consumed before the first productive action: the re-onboarding tax. */
@@ -108,7 +108,7 @@ export const estimateCycleCost = (
   minSamples = 3,
 ): CycleCost => {
   const costs = cycles
-    .filter((cycle) => cycle.kind === 'delivery' && cycle.exit !== 'crash')
+    .filter((cycle) => cycle.kind === 'delivery' && cycle.exit !== 'crash' && cycle.exit !== 'deferred')
     .map(costOf)
     .filter((cost): cost is PartialCost => cost !== null);
 
@@ -167,14 +167,17 @@ export const inFlight = (
  * Repeated crashing is caught by consecutiveCrashes instead.
  */
 export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number => {
-  const crashed = new Set(
-    cycles.filter((cycle) => cycle.exit === 'crash').map((cycle) => `${cycle.program}|${cycle.startedAt}`),
+  // Neither a crash nor a deferral did any work, so neither should cost a program its day.
+  const unspent = new Set(
+    cycles
+      .filter((cycle) => cycle.exit === 'crash' || cycle.exit === 'deferred')
+      .map((cycle) => `${cycle.program}|${cycle.startedAt}`),
   );
   return new Set(
     cycles
       .filter((cycle) => Date.parse(cycle.startedAt) >= since)
       .map((cycle) => `${cycle.program}|${cycle.startedAt}`)
-      .filter((identity) => !crashed.has(identity)),
+      .filter((identity) => !unspent.has(identity)),
   ).size;
 };
 
@@ -195,6 +198,7 @@ export const consecutiveCrashes = (
   let streak = 0;
   for (let index = finished.length - 1; index >= 0; index -= 1) {
     const cycle = finished[index]!;
+    if (cycle.exit === 'deferred') continue;
     if (cycle.exit !== 'crash') break;
     if (Date.parse(cycle.endedAt ?? cycle.startedAt) < cutoff) break;
     streak += 1;
@@ -224,6 +228,23 @@ export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
 /** The most recently finished cycle, whatever it was. */
 export const lastFinished = (cycles: CycleRecord[]): CycleRecord | null =>
   cycles.filter((cycle) => cycle.endedAt !== null).at(-1) ?? null;
+
+/**
+ * Asks raised by the last productive cycle, where every cycle since came back
+ * blocked. That pattern means nobody has answered them — the program is not stalled
+ * or broken, it is owed a reply.
+ */
+export const unansweredAsks = (cycles: CycleRecord[]): { asks: number; at: number } | null => {
+  const finished = cycles.filter(
+    (cycle) => cycle.endedAt !== null && cycle.exit !== 'deferred' && cycle.exit !== 'crash',
+  );
+  const blockedTail = [...finished].reverse().findIndex((cycle) => cycle.exit !== 'blocked');
+  if (blockedTail <= 0) return null;
+
+  const raiser = finished[finished.length - 1 - blockedTail];
+  if (raiser === undefined || raiser.asksRaised === 0) return null;
+  return { asks: raiser.asksRaised, at: Date.parse(raiser.endedAt ?? raiser.startedAt) };
+};
 
 /** When a tick last recorded a decision — the real proof the service is firing. */
 export const lastDecisionAt = (path: string): number | null => {
