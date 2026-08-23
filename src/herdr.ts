@@ -221,6 +221,17 @@ const cyclePane = async (input: {
   };
 };
 
+/** Bounded wait for an agent to become promptable after a blocked startup. */
+const waitForIdle = async (agentName: string, attempts = 20): Promise<boolean> => {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const state = await agentState(agentName);
+    if (state === 'idle' || state === 'done') return true;
+    if (state === 'gone') return false;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+  return false;
+};
+
 export const startCycleAgent = async (input: {
   program: Program;
   workspaceId: string;
@@ -256,7 +267,11 @@ export const startCycleAgent = async (input: {
   // Args after `--` reach claude itself. --model sets the model for this session
   // only, so the runner is always Fable without touching Craig's default; --name
   // makes it obvious in the prompt box and /resume which program a session belongs to.
-  await herdr([
+  // `agent start` exits non-zero with agent_not_ready when claude comes up behind a
+  // dialog — a trust prompt, a permission question. The agent is running and named;
+  // it simply cannot take input yet. Treating that as fatal leaves a live session
+  // sitting there having never been told what to do.
+  const started = await herdr([
     'agent',
     'start',
     agentName,
@@ -269,7 +284,22 @@ export const startCycleAgent = async (input: {
     program.model,
     '--name',
     input.sessionName,
-  ]);
+  ]).catch((error: unknown) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (!detail.includes('agent_not_ready')) throw error;
+    return { notReady: true };
+  });
+
+  if (typeof started === 'object' && started !== null && 'notReady' in started) {
+    const ready = await waitForIdle(agentName);
+    if (!ready) {
+      throw new PaneBusy(
+        `${program.name} started but is waiting on a dialog in pane ${pane.paneId} — ` +
+          'answer it there and the next tick will prompt it.',
+      );
+    }
+  }
+
   // No --wait: the cycle runs for hours, and blocking here would defeat the point.
   await herdr(['agent', 'prompt', agentName, prompt]);
 

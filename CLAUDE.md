@@ -56,6 +56,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `herdr.ts` | Workspaces are long-lived. One tab per program, reused across cycles — a tab per cycle buries the workspace within days. |
 | `herdr.ts` | If `teamclaude env` yields no proxy settings, refuse to start. Otherwise the pane runs a raw `claude` against Craig's quota with no rotation and no accounting — silent and expensive. |
 | `herdr.ts` | A herdr server restart restores panes as **fresh shells** — cwd and layout survive, environment does not. `resume_agents_on_restore` is on by default and re-runs `claude --resume`, so a restored cycle is un-proxied. Re-assert the env in any reused pane, and refuse to start into a pane that already has an occupant. |
+| `herdr.ts` | `agent start` exits non-zero with `agent_not_ready` when claude comes up behind a dialog (a trust prompt, a malformed settings.json). The agent is live and named — wait for idle and prompt it, never treat it as fatal, or a session sits there forever having never been told what to do. |
 | `herdr.ts` | Only ever close a tab drovr labelled, in that program own workspace, with no agent in any of its panes. A stray empty tab is untidy; a closed live one is lost work. |
 | `herdr.ts` | The runner must be Fable, but Craig's default model must not change. Pass `-- --model fable` to `agent start` (per-session) — never `/model`, a settings file, or an env default. |
 
