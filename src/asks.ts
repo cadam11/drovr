@@ -38,11 +38,32 @@ const timestamps = (thread: z.infer<typeof threadShape>): number[] =>
     .map((value) => Date.parse(value))
     .filter((value) => !Number.isNaN(value));
 
+/**
+ * `notes list` takes a page relative to a prefix, defaulting to the caller's own
+ * slug — passing "craig/loop-asks.html" whole looks under <yourslug>/craig/... and
+ * quietly reports an unshared, empty page rather than failing.
+ */
+export const splitPage = (asksPage: string): { page: string; prefix: string | null } => {
+  const cut = asksPage.indexOf('/');
+  if (cut === -1) return { page: asksPage, prefix: null };
+  return { page: asksPage.slice(cut + 1), prefix: asksPage.slice(0, cut) };
+};
+
 /** Reads through direnv so the program's own aice install and login apply. */
 export const readAsks = async (program: Program): Promise<AsksState | null> => {
   if (program.aice?.asksPage == null) return null;
 
-  const argv = ['exec', program.cwd, 'aice', 'notes', 'list', program.aice.asksPage, '--json'];
+  const { page, prefix } = splitPage(program.aice.asksPage);
+  const argv = [
+    'exec',
+    program.cwd,
+    'aice',
+    'notes',
+    'list',
+    page,
+    ...(prefix === null ? [] : ['--prefix', prefix]),
+    '--json',
+  ];
   const parsed = await run('direnv', argv, { cwd: program.cwd })
     .then(({ stdout }) => notesShape.safeParse(JSON.parse(stdout)))
     .catch(() => null);
