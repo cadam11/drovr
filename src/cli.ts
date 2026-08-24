@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { poolFrom } from './capacity.ts';
@@ -15,6 +15,7 @@ import {
 } from './ledger.ts';
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
 import { readAsks } from './asks.ts';
+import { textCraig } from './nudge.ts';
 import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { holder } from './lock.ts';
@@ -462,6 +463,50 @@ const main = async (argv: string[]): Promise<void> => {
     if (program === undefined) throw new Error(`no program named "${name}"`);
     // Detached, like tick does, so it does not hold the terminal for the whole cycle.
     launchDetached(program.name);
+    return;
+  }
+
+  if (command === 'notify') {
+    const control = readControl(p.control);
+    const wanted = rest.filter((arg) => arg !== '--json');
+    const message =
+      wanted.length > 0
+        ? wanted.join(' ')
+        : `drovr: notification test from ${hostname()} at ${new Date().toISOString()}`;
+
+    if (control.phoneNumber === null) {
+      console.error('no phoneNumber in ~/.drovr/control.json, so drovr cannot text anyone.');
+      process.exitCode = 1;
+      return;
+    }
+
+    const sent = await textCraig(control.phoneNumber, message, control.originationNumber);
+    const from = control.originationNumber ?? 'whichever number SNS picks';
+    if (json) {
+      console.log(
+        JSON.stringify(
+          {
+            accepted: sent,
+            to: control.phoneNumber,
+            from,
+            message,
+            note: 'accepted means SNS took the message; it is not proof a handset received it',
+            usingThis: AGENT_NOTES,
+          },
+          null,
+          2,
+        ),
+      );
+      if (!sent) process.exitCode = 1;
+      return;
+    }
+    if (!sent) {
+      console.error('SNS did not accept the message — the reason is logged above.');
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`sent to ${control.phoneNumber} from ${from}`);
+    console.log('SNS accepted it. That is not proof a handset received it — check the phone.');
     return;
   }
 

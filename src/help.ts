@@ -128,6 +128,22 @@ export const COMMANDS: Command[] = [
     writes: 'control.json',
   },
   {
+    name: 'notify',
+    usage: 'drovr notify [message] [--json]',
+    summary: 'text Craig now, or send a test to prove the alert path works',
+    details: [
+      'With no message, sends a canned test naming the host and time. With one, sends that text.',
+      'Reads phoneNumber and originationNumber from control.json; fails if phoneNumber is unset.',
+      'Sends on the DEFAULT aws profile deliberately — the named profiles are SSO-backed and',
+      'expire, which is exactly the state an unattended overnight supervisor finds them in.',
+      'A success means SNS accepted the message. It is not proof a handset received it, so a',
+      'test that reports sent and never arrives is a delivery problem, not a drovr problem.',
+    ],
+    flags: [{ flag: '--json', describes: 'whether SNS accepted it, the to/from numbers, and the message' }],
+    examples: ['drovr notify', 'drovr notify "stage deploy finished"'],
+    writes: 'sends an SMS',
+  },
+  {
     name: 'tidy',
     usage: 'drovr tidy',
     summary: 'close empty cycle tabs drovr left behind',

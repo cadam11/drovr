@@ -64,6 +64,8 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `cycle.ts` | An idle runner with no report is **stalled**, not finished — an interactive session that lost its turn to a 529, or answered Craig and stopped, sits at the prompt forever. The watch loop only ever asked *report yet?* and *agent gone?*, so both held a slot until `maxCycleHours`. Nudge the live session (cheap, keeps its context), bounded, then give up and free the pane. |
 | `cycle.ts` | Never nudge a `blocked` agent. It is waiting on a dialog only Craig can answer, and a prompt queues up behind it rather than clearing it. |
 | `ledger.ts` | `stalled` counts toward the failure latch alongside `crash`, and toward nothing else. Leave it out and a program that stalls every cycle loops start → nudge×3 → stalled → start forever, paying full onboarding each round. |
+| `nudge.ts` | SMS sends on the **default** aws profile, with no `--profile`. The named profiles are SSO-backed and their sessions expire — exactly the state an unattended overnight supervisor finds them in, which is how the alert path sat broken. The default profile is a static IAM user and still works at 4am. |
+| `nudge.ts` | SNS accepting a message is not proof a handset got it. Say "accepted", never "delivered", and never build anything that assumes the text arrived — `textCraig` is best-effort on every path. |
 
 ## The CLI is read by agents
 
@@ -85,14 +87,17 @@ Never document a flag before implementing it — a help page that lies is worse 
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
-- **The SMS nudge** (`nudge.ts`) — still never delivered. The send path was exercised on
-  2026-08-24 and failed: the `dev` profile is SSO-backed and its session had expired, which is
-  exactly the state an unattended overnight supervisor finds it in. `textCraig` degrades
-  correctly (logs the fix, returns false, never takes down a tick), so every caller is
-  best-effort — do not build anything that assumes the text arrived.
 - **A full ask → answer → auto-resume round trip.** Both halves have been seen separately.
 - **`headless` runner mode** — a fallback, exercised once early, untouched since the herdr runner
   landed.
+
+## Notifications
+
+`drovr notify` texts Craig and is the way to prove the alert path before trusting it. Verified
+end to end on 2026-08-24: three messages sent and received. `originationNumber` in
+`control.json` picks the number they come *from*; left null, SNS chooses one per send.
+All four numbers in the account belong to sunnyt — do not borrow one, because their two-way
+channels route replies into sunnyt's own inbound topics.
 
 ## The repo is local-only
 

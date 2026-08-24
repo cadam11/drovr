@@ -8,30 +8,50 @@ import { ensureDirs, paths } from './paths.ts';
 const run = promisify(execFile);
 
 /**
- * The one place drovr sends SMS. Best-effort by design: a phone that cannot be
- * reached must never take down a tick or a cycle, so failure is logged and reported
- * rather than thrown. Returns whether the message actually went out.
+ * SNS names this attribute `AWS.MM.SMS.OriginationNumber`; it must match a number
+ * already provisioned in the account for the destination country. Omitting it is
+ * valid — SNS then picks one per send — so an unset number yields no argument
+ * rather than an empty one.
  */
-export const textCraig = async (phoneNumber: string | null, message: string): Promise<boolean> => {
+export const originationArgs = (originationNumber: string | null): string[] => {
+  if (originationNumber === null) return [];
+  const attributes = {
+    'AWS.MM.SMS.OriginationNumber': { DataType: 'String', StringValue: originationNumber },
+  };
+  return ['--message-attributes', JSON.stringify(attributes)];
+};
+
+/**
+ * The one place drovr sends SMS. Deliberately on the *default* AWS profile: the
+ * named profiles here are SSO-backed and their sessions expire, which is precisely
+ * the state an unattended overnight supervisor finds them in. The default profile
+ * is a static IAM user, so it still works at 4am. Do not add --profile.
+ *
+ * Best-effort by design: a phone that cannot be reached must never take down a tick
+ * or a cycle, so failure is logged and reported rather than thrown. Returns whether
+ * SNS accepted the message — which is not proof a handset received it.
+ */
+export const textCraig = async (
+  phoneNumber: string | null,
+  message: string,
+  originationNumber: string | null = null,
+): Promise<boolean> => {
   if (phoneNumber === null) return false;
   try {
     await run('aws', [
       'sns',
       'publish',
-      '--profile',
-      'dev',
       '--phone-number',
       phoneNumber,
       '--message',
       message,
+      ...originationArgs(originationNumber),
     ]);
     return true;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    // The dev profile is SSO-backed and its session expires, which is precisely the
-    // state an unattended overnight supervisor finds it in. Name the command.
-    const hint = /sso session|expired|invalid/i.test(detail)
-      ? ' Refresh it with: aws sso login --profile dev'
+    const hint = /credential|expired|invalid|token/i.test(detail)
+      ? ' Check the default profile with: aws sts get-caller-identity'
       : '';
     console.error(`could not text: ${detail}${hint}`);
     return false;

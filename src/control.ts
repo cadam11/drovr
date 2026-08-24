@@ -84,6 +84,12 @@ const controlShape = z.object({
   crashWindowMinutes: z.number().default(60),
   /** Texted when a program has been blocked on asks this long. Null disables it. */
   phoneNumber: z.string().nullable().default(null),
+  /**
+   * E.164 number drovr's texts are sent *from*. Null lets SNS pick one per send,
+   * which works but means the alerts arrive from no fixed number. Set it to a
+   * dedicated long code so they are recognisable and replies land somewhere sane.
+   */
+  originationNumber: z.string().nullable().default(null),
   nudgeAfterMinutes: z.number().default(240),
   /** How long to leave a blocked program alone before trying again. */
   blockedBackoffMinutes: z.number().default(60),
