@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { Program } from './control.ts';
 import { explainSpawn } from './exec.ts';
+import { parsePreview, type Preview } from './preview.ts';
 
 const run = promisify(execFile);
 
@@ -423,4 +424,23 @@ export const promptAgent = async (agentName: string, prompt: string): Promise<vo
 
 export const interruptAgent = async (agentName: string): Promise<void> => {
   await herdr(['agent', 'send-keys', agentName, 'esc']);
+};
+
+/**
+ * Best-effort by design: a program with no live pane, a herdr that is down, or a
+ * claude whose TUI changed all mean "no preview", never a failed tick.
+ */
+export const readPreview = async (agentName: string): Promise<Preview | null> => {
+  try {
+    const { stdout } = await run('herdr', [
+      'agent', 'read', agentName,
+      '--source', 'recent-unwrapped',
+      '--lines', '40',
+      '--format', 'text',
+    ], { maxBuffer: 1024 * 1024 });
+    return parsePreview(stdout);
+  } catch (error) {
+    console.error(`preview unavailable for ${agentName}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 };
