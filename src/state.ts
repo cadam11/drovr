@@ -225,7 +225,7 @@ export const buildState = (input: StateInput): DrovrState => {
 };
 
 /** herdr registered the agent under this truncated, lowercased name — see herdr.ts startCycleAgent. */
-const agentNameFor = (programName: string): string => `drovr-${programName}`.slice(0, 32).toLowerCase();
+export const agentNameFor = (programName: string): string => `drovr-${programName}`.slice(0, 32).toLowerCase();
 
 /** The only I/O. Previews are read concurrently and never allowed to reject. */
 export const collectState = async (
