@@ -33,15 +33,15 @@
 
       <div class="ml-auto flex items-center gap-x-4">
         <p class="flex items-center gap-x-1.5 text-base text-zinc-500 sm:text-sm dark:text-zinc-400">
-          <span class="size-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true"></span>
-          <span class="max-sm:hidden">supervisor</span> up
+          <span id="supervisor-dot" class="size-1.5 shrink-0 rounded-full bg-zinc-400" aria-hidden="true"></span>
+          <span class="max-sm:hidden">supervisor</span> <span id="supervisor-status">…</span>
         </p>
         <p class="flex items-center gap-x-1.5 text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">
           <span class="relative flex size-1.5 shrink-0" aria-hidden="true">
-            <span class="absolute inline-flex size-full animate-ping rounded-full bg-teal-500 opacity-75"></span>
-            <span class="relative inline-flex size-1.5 rounded-full bg-teal-500"></span>
+            <span id="freshness-ping" class="absolute inline-flex size-full rounded-full bg-zinc-400 opacity-75"></span>
+            <span id="freshness-dot" class="relative inline-flex size-1.5 rounded-full bg-zinc-400"></span>
           </span>
-          4s ago
+          <span id="freshness-age">…</span>
         </p>
       </div>
     </div>
@@ -79,14 +79,10 @@
     <section class="border-b border-zinc-950/5 py-8 dark:border-white/10">
       <div class="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
         <div class="min-w-0">
-          <h2 class="max-w-[24ch] text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-            <span class="text-red-600 dark:text-red-400">joinery</span> is waiting on you.
-          </h2>
-          <p class="mt-2 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400">
-            It raised an ask at 09:12 and stopped. Everything else is either running or waiting on capacity.
-          </p>
+          <h2 id="hero-heading" class="max-w-[24ch] text-2xl font-semibold tracking-tight text-balance sm:text-3xl">…</h2>
+          <p id="hero-detail" class="mt-2 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400"></p>
         </div>
-        <a href="#" class="shrink-0 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">
+        <a id="hero-cta" href="#" hidden class="shrink-0 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">
           Answer the ask
         </a>
       </div>
@@ -105,8 +101,8 @@
           <dd id="binding" class="mt-0.5 text-xl font-semibold">…</dd>
         </div>
         <div class="bg-white p-3 dark:bg-zinc-950">
-          <dt class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Recovers in</dt>
-          <dd class="mt-0.5 text-xl font-semibold tabular-nums">2h10m</dd>
+          <dt class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Weekly resets in</dt>
+          <dd id="recovers" class="mt-0.5 text-xl font-semibold tabular-nums">…</dd>
         </div>
       </dl>
     </section>
@@ -119,17 +115,25 @@
 
         <!-- Fixture rows removed — programRow(program) in the script below builds these,
              keyed by `program-${name}` so a re-render preserves scroll position and any
-             open <details>. One reference row kept as a template of the RUN treatment:
+             open <details>, and prunes any id no longer present in state.programs. One
+             reference row kept as a template of the RUN treatment:
 
-        <li id="program-sunnyt" class="rounded-xl border-l-2 border-teal-500 py-1 pl-4">
-          <div class="flex flex-wrap items-center gap-x-2">
-            <h3 class="truncate text-lg font-semibold tracking-tight">sunnyt</h3>
-            <span class="eyebrow rounded px-1.5 py-0.5 text-sm font-medium">run</span>
-            <span class="font-mono text-sm text-zinc-400">p0</span>
+        <li id="program-sunnyt" class="rounded-xl border-l-2 border-teal-500 p-4 bg-zinc-50 dark:bg-white/5">
+          <div class="flex flex-wrap items-start gap-x-3 gap-y-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <h3 class="truncate text-lg font-semibold tracking-tight">sunnyt</h3>
+                <span class="eyebrow rounded bg-teal-500/15 px-1.5 py-0.5 text-sm font-medium text-teal-700 dark:text-teal-300">run</span>
+                <span class="font-mono text-sm text-zinc-400 dark:text-zinc-500">p0</span>
+              </div>
+              <p class="mt-1 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400">a cycle for this program is already in flight</p>
+            </div>
           </div>
-          <p class="mt-1 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm">a cycle for this program is already in flight</p>
-          <p class="mt-2 font-mono text-sm tabular-nums text-zinc-500">ctx 18% · 176k · 1 subagent</p>
-          <pre class="mt-3 max-h-32 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-sm/6 whitespace-pre-wrap wrap-anywhere text-zinc-600 ring-1 ring-zinc-950/5 dark:bg-white/5 dark:text-zinc-300">Agent "Promotion train + S-123 close" finished · 30m 42s</pre>
+          <div class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div class="h-1 min-w-32 flex-1 overflow-hidden rounded-full bg-zinc-950/10 dark:bg-white/10"><div class="h-full rounded-full bg-teal-500" style="width: 18%"></div></div>
+            <p class="font-mono text-sm tabular-nums text-zinc-500 dark:text-zinc-400">ctx 18% · 176k · 1 subagent</p>
+          </div>
+          <pre class="mt-3 max-h-32 overflow-auto rounded-lg bg-white p-3 font-mono text-sm/6 whitespace-pre-wrap wrap-anywhere text-zinc-600 ring-1 ring-zinc-950/5 sm:text-[0.8125rem]/5 sm:whitespace-pre dark:bg-zinc-950 dark:text-zinc-300 dark:ring-white/10">Agent "Promotion train + S-123 close" finished · 30m 42s</pre>
         </li>
         -->
       </ul>
@@ -139,48 +143,15 @@
     <section class="border-t border-zinc-950/5 py-8 dark:border-white/10">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 class="eyebrow text-sm text-zinc-500 dark:text-zinc-400">Capacity</h2>
-        <p class="text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">3 accounts · weekly resets in 2d5h</p>
+        <p id="capacity-meta" class="text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">…</p>
       </div>
 
+      <!-- The three rows are fixed slots (fable/general/session always exist), rebuilt
+           in place by capacityRow() — not a variable-length list, so no key/prune logic. -->
       <dl class="mt-5 flex flex-col gap-y-5">
-        <div class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]">
-          <dt class="font-mono text-base whitespace-nowrap sm:text-sm">fable 7d</dt>
-          <dd class="order-3 col-span-2 flex h-2.5 overflow-hidden rounded-full sm:order-none sm:col-span-1 sm:col-start-2">
-            <span class="w-(--w) bg-violet-500" style="--w: 21%"></span>
-            <span class="w-(--w) bg-emerald-500" style="--w: 24%"></span>
-            <span class="w-(--w) bg-teal-400" style="--w: 10%"></span>
-            <span class="w-(--w) bg-zinc-950/10 dark:bg-white/10" style="--w: 25%"></span>
-            <span class="w-(--w) bg-violet-500/25" style="--w: 20%"></span>
-          </dd>
-          <dd class="text-right font-mono text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">41%</dd>
-        </div>
-
-        <div class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]">
-          <dt class="font-mono text-base whitespace-nowrap sm:text-sm">general 7d</dt>
-          <dd class="order-3 col-span-2 flex h-2.5 overflow-hidden rounded-full sm:order-none sm:col-span-1 sm:col-start-2">
-            <span class="w-(--w) bg-violet-500" style="--w: 14%"></span>
-            <span class="w-(--w) bg-emerald-500" style="--w: 31%"></span>
-            <span class="w-(--w) bg-teal-400" style="--w: 9%"></span>
-            <span class="w-(--w) bg-zinc-950/10 dark:bg-white/10" style="--w: 31%"></span>
-            <span class="w-(--w) bg-violet-500/25" style="--w: 15%"></span>
-          </dd>
-          <dd class="text-right font-mono text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">29%</dd>
-        </div>
-
-        <div class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]">
-          <dt class="flex items-baseline gap-x-2 font-mono text-base whitespace-nowrap sm:text-sm">
-            session 5h
-            <span class="eyebrow rounded bg-amber-500/15 px-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">binds</span>
-          </dt>
-          <dd class="order-3 col-span-2 flex h-2.5 overflow-hidden rounded-full ring-1 ring-amber-500/60 sm:order-none sm:col-span-1 sm:col-start-2">
-            <span class="w-(--w) bg-violet-500" style="--w: 33%"></span>
-            <span class="w-(--w) bg-emerald-500" style="--w: 38%"></span>
-            <span class="w-(--w) bg-teal-400" style="--w: 17%"></span>
-            <span class="w-(--w) bg-zinc-950/10 dark:bg-white/10" style="--w: 4%"></span>
-            <span class="w-(--w) bg-violet-500/25" style="--w: 8%"></span>
-          </dd>
-          <dd class="text-right font-mono text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">41%</dd>
-        </div>
+        <div id="cap-fable" class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]"></div>
+        <div id="cap-general" class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]"></div>
+        <div id="cap-session" class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]"></div>
       </dl>
 
       <ul role="list" class="mt-5 flex flex-wrap gap-x-4 gap-y-1.5">
@@ -191,61 +162,40 @@
         <li class="flex items-center gap-x-1.5 text-base text-zinc-500 sm:text-sm dark:text-zinc-400"><span class="size-2 shrink-0 rounded-full bg-violet-500/25" aria-hidden="true"></span>held for you</li>
       </ul>
 
-      <p class="mt-4 max-w-[70ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400">
-        All three bind at once and the tightest decides. Session is tightest right now, so it is the one refusing cycles — and it recovers in hours, not days.
-      </p>
+      <p id="capacity-prose" class="mt-4 max-w-[70ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400"></p>
     </section>
 
     <!-- ═══ Controls ═══════════════════════════════════════════ -->
     <section class="border-t border-zinc-950/5 py-8 dark:border-white/10">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 class="eyebrow text-sm text-zinc-500 dark:text-zinc-400">Controls</h2>
-        <p class="text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Queued, then applied on the next tick.</p>
+        <p class="text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Read-only for now — posting an intent lands in Tasks 9–10.</p>
       </div>
 
+      <!-- The buttons the mock showed here are deleted, not merely hidden: a button that
+           does nothing is worse than no button. This grid structure stays so Tasks 9–10
+           can drop working controls back into the same four tiles. -->
       <div class="mt-5 grid gap-x-6 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <p class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Mode</p>
-          <p class="mt-1 text-xl font-semibold tracking-tight">normal</p>
-          <div class="mt-2.5 flex flex-wrap gap-2">
-            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">low</button>
-            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">away</button>
-            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">off</button>
-          </div>
+          <p id="ctrl-mode" class="mt-1 text-xl font-semibold tracking-tight">…</p>
         </div>
-
         <div>
           <p class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Held for you</p>
-          <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">45%</p>
-          <div class="mt-2.5 flex flex-wrap gap-2">
-            <button type="button" class="rounded-lg px-3 py-2 font-mono text-sm font-medium tabular-nums text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">−5</button>
-            <button type="button" class="rounded-lg px-3 py-2 font-mono text-sm font-medium tabular-nums text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">+5</button>
-          </div>
+          <p id="ctrl-reserve" class="mt-1 text-xl font-semibold tabular-nums tracking-tight">…</p>
         </div>
-
         <div>
           <p class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Concurrent cycles</p>
-          <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">2</p>
-          <div class="mt-2.5 flex flex-wrap gap-2">
-            <button type="button" class="rounded-lg px-3 py-2 font-mono text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">−</button>
-            <button type="button" class="rounded-lg px-3 py-2 font-mono text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">+</button>
-          </div>
+          <p id="ctrl-concurrency" class="mt-1 text-xl font-semibold tabular-nums tracking-tight">…</p>
         </div>
-
         <div>
           <p class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Pause</p>
-          <p class="mt-1 text-xl font-semibold tracking-tight">not paused</p>
-          <div class="mt-2.5 flex flex-wrap gap-2">
-            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">1h</button>
-            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">8h</button>
-          </div>
+          <p id="ctrl-pause" class="mt-1 text-xl font-semibold tracking-tight">…</p>
         </div>
       </div>
 
-      <div class="mt-6 flex flex-wrap items-baseline gap-x-2 rounded-lg bg-teal-500/10 px-3 py-2.5 ring-1 ring-teal-500/20">
-        <p class="text-base font-medium text-teal-800 sm:text-sm dark:text-teal-300">Queued: pause 1h.</p>
-        <p class="text-base text-teal-800/75 sm:text-sm dark:text-teal-300/75">Waiting for the next tick. Expires in 30 minutes if drovr never wakes.</p>
-      </div>
+      <!-- Real queuedIntents, not the mock's fixed toast — empty and hidden until one exists. -->
+      <div id="queued-intents" hidden class="mt-6 flex flex-col gap-y-2"></div>
     </section>
 
     <!-- ═══ Recent cycles ══════════════════════════════════════ -->
@@ -264,9 +214,9 @@
               </tr>
             </thead>
             <tbody id="recent-cycles" class="divide-y divide-zinc-950/5 dark:divide-white/10">
-              <!-- Fixture rows removed — no recent-cycles renderer is wired in this task
-                   (out of scope for the read-only panel milestone; render() only builds
-                   #programs). One reference row kept as a template:
+              <!-- Fixture rows removed — cycleRow(cycle) in the script below builds these
+                   from state.recentCycles on every real render. One reference row kept as
+                   a template:
               <tr>
                 <td class="py-2.5 pr-6 font-mono text-sm tabular-nums text-zinc-500 dark:text-zinc-400">08-24 09:12</td>
                 <td class="py-2.5 pr-6 text-sm font-medium">joinery</td>
@@ -290,19 +240,21 @@
 
       <div id="accounts" class="mt-3 divide-y divide-zinc-950/5 dark:divide-white/10">
 
-        <!-- Fixture accounts removed — no account renderer is wired in this task
-             (out of scope for the read-only panel milestone; render() only builds
-             #programs). One reference block kept as a template:
+        <!-- Fixture accounts removed — accountRow(account) in the script below builds
+             these, keyed by `account-${name}` so open <details> survive a re-render, and
+             prunes any id no longer present in state.accounts. One reference block kept
+             as a template:
 
-        <details class="group py-2 first:pt-0">
+        <details id="account-fourth@example.com" class="group py-2 first:pt-0">
           <summary class="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-2 py-2 -mx-2 hover:bg-zinc-50 [&::-webkit-details-marker]:hidden dark:hover:bg-white/5">
             <svg viewBox="0 0 16 16" class="size-4 shrink-0 fill-zinc-400 transition-transform group-open:rotate-90 dark:fill-zinc-500" aria-hidden="true"><path fill-rule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
-            <span class="size-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true"></span>
+            <span class="size-2 shrink-0 rounded-full bg-red-500" aria-hidden="true"></span>
             <span class="min-w-0 flex-1 truncate text-base font-medium">fourth@example.com</span>
+            <span class="eyebrow shrink-0 rounded bg-amber-500/15 px-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">warning</span>
             <span class="w-full pl-6 font-mono text-base tabular-nums text-zinc-500 sm:w-auto sm:pl-0 sm:text-sm dark:text-zinc-400">fable 94 · 7d 87 · 5h 23</span>
           </summary>
           <div class="mt-2 pb-2 pl-6">
-            <p class="mb-3 text-base text-zinc-500 sm:text-sm dark:text-zinc-400">oauth · active · 4 sessions · last used 15:22</p>
+            <p class="mb-3 text-base text-zinc-500 sm:text-sm dark:text-zinc-400">active · 4 sessions · last used 15:22</p>
           </div>
         </details>
         -->
@@ -320,11 +272,11 @@
 </div>
 
 <script>
-  // render(state) — one function per section, defined below. Keyed by program
-  // name so a re-render preserves scroll position and any open <details>.
-  const VERDICT_RAIL = { RUN: 'border-teal-500', GO: 'border-emerald-500',
-                         WAIT: 'border-amber-500', STOP: 'border-red-500', OFF: 'border-zinc-950/10' };
+  // Single script block: two sibling classic <script> tags share one global lexical
+  // scope, so a duplicate top-level `const` in either would be a silent parse error
+  // that stops the poll forever. One block removes the possibility entirely.
 
+  // ─── Generic helpers ──────────────────────────────────────────────────────
   const el = (tag, className, text) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -332,36 +284,325 @@
     return node;
   };
 
+  const two = (n) => String(n).padStart(2, '0');
+
+  const formatDuration = (hours) => {
+    if (hours === null || !Number.isFinite(hours)) return '—';
+    const totalMinutes = Math.max(0, Math.round(hours * 60));
+    const days = Math.floor(totalMinutes / 1440);
+    const remH = Math.floor((totalMinutes % 1440) / 60);
+    const remM = totalMinutes % 60;
+    if (days > 0) return `${days}d${remH}h`;
+    if (remH > 0) return `${remH}h${remM}m`;
+    return `${remM}m`;
+  };
+
+  const hoursUntil = (iso) => (iso === null ? null : (Date.parse(iso) - Date.now()) / 3_600_000);
+
+  const formatClock = (iso) => {
+    if (iso === null) return 'never';
+    const d = new Date(iso);
+    return `${two(d.getHours())}:${two(d.getMinutes())}`;
+  };
+
+  const formatStarted = (iso) => {
+    const d = new Date(iso);
+    return `${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+  };
+
+  const clampPercent = (value) => Math.min(100, Math.max(0, value));
+
+  const fmtPct = (fraction) => (fraction === null ? '—' : Math.round(fraction * 100));
+
+  /** Removes any child whose id is not in `liveIds` — the fix for a program or
+   * account that vanished from state but never leaves the DOM (CLAUDE.md I2). */
+  const pruneStale = (container, liveIds) => {
+    for (const child of Array.from(container.children)) {
+      if (!liveIds.has(child.id)) child.remove();
+    }
+  };
+
+  // ─── Programs ─────────────────────────────────────────────────────────────
+  const VERDICT_RAIL = {
+    RUN: 'border-teal-500', GO: 'border-emerald-500', WAIT: 'border-amber-500',
+    STOP: 'border-red-500', OFF: 'border-zinc-950/10 dark:border-white/15',
+  };
+  const VERDICT_CHIP = {
+    RUN: 'eyebrow rounded bg-teal-500/15 px-1.5 py-0.5 text-sm font-medium text-teal-700 dark:text-teal-300',
+    GO: 'eyebrow rounded bg-emerald-500/15 px-1.5 py-0.5 text-sm font-medium text-emerald-700 dark:text-emerald-300',
+    WAIT: 'eyebrow rounded bg-amber-500/15 px-1.5 py-0.5 text-sm font-medium text-amber-700 dark:text-amber-300',
+    STOP: 'eyebrow rounded bg-red-500/15 px-1.5 py-0.5 text-sm font-medium text-red-700 dark:text-red-300',
+    OFF: 'eyebrow rounded bg-zinc-950/5 px-1.5 py-0.5 text-sm font-medium text-zinc-500 dark:bg-white/10 dark:text-zinc-400',
+  };
+
   const programRow = (program) => {
     const key = `program-${program.name}`;
     const verdict = program.enabled ? program.verdict : 'OFF';
     const row = document.getElementById(key) ?? el('li', '');
     row.id = key;
-    row.className = `rounded-xl border-l-2 py-1 pl-4 ${VERDICT_RAIL[verdict] ?? VERDICT_RAIL.OFF}`;
+    // The RUN row gets a well so the live cycle draws the eye first, matching the mock.
+    const shell = verdict === 'RUN' ? 'p-4 bg-zinc-50 dark:bg-white/5' : 'py-1 pl-4';
+    row.className = `rounded-xl border-l-2 ${shell} ${VERDICT_RAIL[verdict] ?? VERDICT_RAIL.OFF}`;
     row.replaceChildren();
 
-    const head = el('div', 'flex flex-wrap items-center gap-x-2');
+    const wrap = el('div', 'flex flex-wrap items-start gap-x-3 gap-y-3');
+    const info = el('div', 'min-w-0 flex-1');   // min-w-0 ancestor is required for h3.truncate to work
+    const head = el('div', 'flex flex-wrap items-center gap-x-2 gap-y-1');
+    const nameClass = verdict === 'OFF'
+      ? 'truncate text-lg font-semibold tracking-tight text-zinc-400 dark:text-zinc-500'
+      : 'truncate text-lg font-semibold tracking-tight';
     head.append(
-      el('h3', 'truncate text-lg font-semibold tracking-tight', program.name),
-      el('span', 'eyebrow rounded px-1.5 py-0.5 text-sm font-medium', verdict.toLowerCase()),
-      el('span', 'font-mono text-sm text-zinc-400', `p${program.priority}`),
+      el('h3', nameClass, program.name),
+      el('span', VERDICT_CHIP[verdict] ?? VERDICT_CHIP.OFF, verdict.toLowerCase()),
+      el('span', 'font-mono text-sm text-zinc-400 dark:text-zinc-500', `p${program.priority}`),
     );
-    row.append(head, el('p', 'mt-1 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm', program.reason));
+    info.append(head, el('p', 'mt-1 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400', program.reason));
+    wrap.append(info);
+    row.append(wrap);
 
     if (program.context && program.context.percent !== null) {
-      row.append(el('p', 'mt-2 font-mono text-sm tabular-nums text-zinc-500',
+      const ctxRow = el('div', 'mt-4 flex flex-wrap items-center gap-x-3 gap-y-1');
+      const track = el('div', 'h-1 min-w-32 flex-1 overflow-hidden rounded-full bg-zinc-950/10 dark:bg-white/10');
+      const fill = el('div', 'h-full rounded-full bg-teal-500');
+      fill.style.width = `${clampPercent(program.context.percent)}%`;
+      track.append(fill);
+      ctxRow.append(track, el('p', 'font-mono text-sm tabular-nums text-zinc-500 dark:text-zinc-400',
         `ctx ${program.context.percent}% · ${program.context.tokens ?? '?'} · ${program.context.subagents ?? 0} subagent`));
+      row.append(ctxRow);
     }
     if (program.preview && program.preview.length > 0) {
-      row.append(el('pre',
-        'mt-3 max-h-32 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-sm/6 ' +
-        'whitespace-pre-wrap wrap-anywhere text-zinc-600 ring-1 ring-zinc-950/5 ' +
-        'sm:text-[0.8125rem]/5 sm:whitespace-pre dark:bg-white/5 dark:text-zinc-300',
-        program.preview.join('\n')));
+      // The RUN well is already bg-zinc-50, so its preview needs the lighter bg-white
+      // for contrast — every other row sits on the page background, so bg-zinc-50 there.
+      const preClass = verdict === 'RUN'
+        ? 'mt-3 max-h-32 overflow-auto rounded-lg bg-white p-3 font-mono text-sm/6 whitespace-pre-wrap wrap-anywhere text-zinc-600 ring-1 ring-zinc-950/5 sm:text-[0.8125rem]/5 sm:whitespace-pre dark:bg-zinc-950 dark:text-zinc-300 dark:ring-white/10'
+        : 'mt-3 max-h-32 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-sm/6 whitespace-pre-wrap wrap-anywhere text-zinc-600 ring-1 ring-zinc-950/5 sm:text-[0.8125rem]/5 sm:whitespace-pre dark:bg-white/5 dark:text-zinc-300 dark:ring-white/10';
+      row.append(el('pre', preClass, program.preview.join('\n')));
     }
     return row;
   };
 
+  // ─── Hero ("does anything need me?") ───────────────────────────────────────
+  const heroSection = (state) => {
+    const heading = document.getElementById('hero-heading');
+    const detail = document.getElementById('hero-detail');
+    const cta = document.getElementById('hero-cta');
+    const needsYou = state.programs.find((program) => program.enabled && program.verdict === 'STOP');
+
+    heading.replaceChildren();
+    if (needsYou === undefined) {
+      heading.append('Nothing needs you right now.');
+      detail.textContent = 'Every enabled program is either running or waiting on capacity.';
+      cta.hidden = true;
+      return;
+    }
+    heading.append(el('span', 'text-red-600 dark:text-red-400', needsYou.name), ' is waiting on you.');
+    detail.textContent = needsYou.reason;
+    cta.hidden = needsYou.asksUrl === null;
+    if (needsYou.asksUrl !== null) cta.href = needsYou.asksUrl;
+  };
+
+  // ─── Capacity bars ──────────────────────────────────────────────────────────
+  const BUCKET_LABEL = { fable: 'fable 7d', general: 'general 7d', session: 'session 5h' };
+  // Order matches the mock's five segments exactly: spent (yours, then programs'),
+  // reserved-but-unspent (in flight), free to programs, and held for you.
+  const SEGMENT_KEYS = ['yoursSpent', 'programsSpent', 'programsReserved', 'programsAvailable', 'yoursReserved'];
+  const SEGMENT_COLORS = ['bg-violet-500', 'bg-emerald-500', 'bg-teal-400', 'bg-zinc-950/10 dark:bg-white/10', 'bg-violet-500/25'];
+
+  const capacityRow = (bucketKey, allocation, isBinding) => {
+    const container = document.getElementById(`cap-${bucketKey}`);
+    container.replaceChildren();
+
+    const dt = el('dt', isBinding
+      ? 'flex items-baseline gap-x-2 font-mono text-base whitespace-nowrap sm:text-sm'
+      : 'font-mono text-base whitespace-nowrap sm:text-sm');
+    dt.append(BUCKET_LABEL[bucketKey]);
+    if (isBinding) {
+      dt.append(el('span', 'eyebrow rounded bg-amber-500/15 px-1.5 text-sm font-medium text-amber-700 dark:text-amber-400', 'binds'));
+    }
+
+    const total = allocation.total > 0 ? allocation.total : 1;
+    const barClass = `order-3 col-span-2 flex h-2.5 overflow-hidden rounded-full sm:order-none sm:col-span-1 sm:col-start-2${isBinding ? ' ring-1 ring-amber-500/60' : ''}`;
+    const bar = el('dd', barClass);
+    SEGMENT_KEYS.forEach((segmentKey, index) => {
+      const segment = el('span', SEGMENT_COLORS[index]);
+      segment.style.width = `${clampPercent((allocation[segmentKey] / total) * 100)}%`;
+      bar.append(segment);
+    });
+
+    // Craig's total footprint (spent + held) on this bucket — not a raw "used %",
+    // which would double-count programsReserved that isn't spent yet.
+    const percent = Math.round(clampPercent(((allocation.yoursSpent + allocation.yoursReserved) / total) * 100));
+    const label = el('dd', 'text-right font-mono text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400', `${percent}%`);
+
+    container.append(dt, bar, label);
+  };
+
+  const capacitySection = (state) => {
+    document.getElementById('capacity-meta').textContent =
+      `${state.pool.usableAccounts} accounts · weekly resets in ${formatDuration(state.hoursToWeeklyReset)}`;
+    for (const bucketKey of ['fable', 'general', 'session']) {
+      capacityRow(bucketKey, state.allocation[bucketKey], bucketKey === state.bindingBucket);
+    }
+    // A session (5h) hold recovers in hours; a weekly one (fable/general) in days —
+    // CLAUDE.md's own binding-bucket trap, restated for whichever bucket actually binds.
+    const horizon = state.bindingBucket === 'session' ? 'hours, not days' : 'days, not hours';
+    document.getElementById('capacity-prose').textContent =
+      `All three bind at once and the tightest decides. ${state.bindingBucket} is tightest right now, so it is the one refusing cycles — and it recovers in ${horizon}.`;
+  };
+
+  // ─── Accounts ───────────────────────────────────────────────────────────────
+  const CHEVRON_PATH = 'M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z';
+
+  const chevronIcon = () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('class', 'size-4 shrink-0 fill-zinc-400 transition-transform group-open:rotate-90 dark:fill-zinc-500');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('fill-rule', 'evenodd');
+    path.setAttribute('clip-rule', 'evenodd');
+    path.setAttribute('d', CHEVRON_PATH);
+    svg.append(path);
+    return svg;
+  };
+
+  const accountBucketRow = (label, bucket) => {
+    const row = el('div', 'grid grid-cols-[2.75rem_1fr_6.5rem] items-center gap-x-2 sm:grid-cols-[3.5rem_1fr_6rem] sm:gap-x-3');
+    const pct = bucket.usedFraction === null ? 0 : clampPercent(bucket.usedFraction * 100);
+    const fillColor = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
+    const track = el('dd', 'h-1.5 overflow-hidden rounded-full bg-zinc-950/10 dark:bg-white/10');
+    const fill = el('div', `h-full rounded-full ${fillColor}`);
+    fill.style.width = `${pct}%`;
+    track.append(fill);
+    const right = bucket.usedFraction === null ? 'never used'
+      : bucket.usedFraction === 0 ? 'idle'
+      : `${Math.round(pct)}% · ${formatDuration(hoursUntil(bucket.resetsAt))}`;
+    row.append(
+      el('dt', 'font-mono text-base whitespace-nowrap text-zinc-500 sm:text-sm dark:text-zinc-400', label),
+      track,
+      el('dd', 'text-right font-mono text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400', right),
+    );
+    return row;
+  };
+
+  const accountRow = (account) => {
+    const key = `account-${account.name}`;
+    const allNull = account.buckets.session.usedFraction === null
+      && account.buckets.general.usedFraction === null
+      && account.buckets.fable.usedFraction === null;
+    const worst = Math.max(
+      account.buckets.session.usedFraction ?? 0,
+      account.buckets.general.usedFraction ?? 0,
+      account.buckets.fable.usedFraction ?? 0,
+    );
+    const dotColor = allNull ? 'bg-zinc-300 dark:bg-zinc-600' : worst >= 0.9 ? 'bg-red-500' : 'bg-emerald-500';
+
+    const existing = document.getElementById(key);
+    const wasOpen = existing?.open ?? false;
+    const details = existing ?? el('details', '');
+    details.id = key;
+    details.className = 'group py-2 first:pt-0';
+    details.open = wasOpen;
+    details.replaceChildren();
+
+    const summary = el('summary', 'flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-2 py-2 -mx-2 hover:bg-zinc-50 [&::-webkit-details-marker]:hidden dark:hover:bg-white/5');
+    summary.append(
+      chevronIcon(),
+      el('span', `size-2 shrink-0 rounded-full ${dotColor}`),
+      el('span', 'min-w-0 flex-1 truncate text-base font-medium', account.name),
+    );
+    if (!allNull && worst >= 0.9) {
+      summary.append(el('span', 'eyebrow shrink-0 rounded bg-amber-500/15 px-1.5 text-sm font-medium text-amber-700 dark:text-amber-400', 'warning'));
+    }
+    const summaryLine = allNull
+      ? 'no window open'
+      : `fable ${fmtPct(account.buckets.fable.usedFraction)} · 7d ${fmtPct(account.buckets.general.usedFraction)} · 5h ${fmtPct(account.buckets.session.usedFraction)}`;
+    summary.append(el('span', 'w-full pl-6 font-mono text-base tabular-nums text-zinc-500 sm:w-auto sm:pl-0 sm:text-sm dark:text-zinc-400', summaryLine));
+
+    const body = el('div', 'mt-2 pb-2 pl-6');
+    if (allNull) {
+      body.append(el('p', 'max-w-[70ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400',
+        'Every bucket reports null — no window has opened, so nothing has been spent this period and the account contributes full headroom.'));
+    } else {
+      const sessionCount = account.sessions === 1 ? '1 session' : `${account.sessions} sessions`;
+      body.append(el('p', 'mb-3 text-base text-zinc-500 sm:text-sm dark:text-zinc-400',
+        `${account.status ?? 'unknown'} · ${sessionCount} · last used ${formatClock(account.lastUsedAt)}`));
+      const dl = el('dl', 'flex flex-col gap-y-2');
+      dl.append(
+        accountBucketRow('5h', account.buckets.session),
+        accountBucketRow('7d', account.buckets.general),
+        accountBucketRow('fable', account.buckets.fable),
+      );
+      body.append(dl);
+    }
+    details.append(summary, body);
+    return details;
+  };
+
+  // ─── Recent cycles ──────────────────────────────────────────────────────────
+  const EXIT_COLOR = {
+    seam: 'text-emerald-700 dark:text-emerald-400',
+    blocked: 'text-amber-700 dark:text-amber-400',
+    crash: 'text-red-600 dark:text-red-400',
+    stalled: 'text-red-600 dark:text-red-400',
+  };
+
+  const cycleRow = (cycle) => {
+    const tr = el('tr', '');
+    tr.append(
+      el('td', 'py-2.5 pr-6 font-mono text-sm tabular-nums text-zinc-500 dark:text-zinc-400', formatStarted(cycle.startedAt)),
+      el('td', 'py-2.5 pr-6 text-sm font-medium', cycle.program),
+      el('td', 'py-2.5 pr-6 text-sm text-zinc-500 dark:text-zinc-400', cycle.kind),
+      el('td', `py-2.5 pr-6 text-sm ${EXIT_COLOR[cycle.exit] ?? 'text-zinc-500 dark:text-zinc-400'}`, cycle.exit),
+      el('td', 'py-2.5 font-mono text-sm tabular-nums text-zinc-500 dark:text-zinc-400', String(cycle.asksRaised)),
+    );
+    return tr;
+  };
+
+  // ─── Controls (read-only: buttons deleted until Tasks 9–10 land intents) ────
+  const controlsSection = (state) => {
+    document.getElementById('ctrl-mode').textContent = state.mode;
+
+    // No exact "reserve %" field exists in DrovrState (it's a control.json ceiling,
+    // not a payload value) — this approximates it from the binding bucket's own
+    // yoursReserved share, which is the most relevant real number available.
+    const bucket = state.allocation[state.bindingBucket];
+    const total = bucket.total > 0 ? bucket.total : 1;
+    document.getElementById('ctrl-reserve').textContent = `${Math.round(clampPercent((bucket.yoursReserved / total) * 100))}%`;
+
+    document.getElementById('ctrl-concurrency').textContent = String(state.maxConcurrentCycles);
+    document.getElementById('ctrl-pause').textContent =
+      state.pauseUntil === null ? 'not paused' : `until ${formatClock(state.pauseUntil)}`;
+
+    const list = document.getElementById('queued-intents');
+    list.replaceChildren();
+    list.hidden = state.queuedIntents.length === 0;
+    for (const intent of state.queuedIntents) {
+      const toast = el('div', 'flex flex-wrap items-baseline gap-x-2 rounded-lg bg-teal-500/10 px-3 py-2.5 ring-1 ring-teal-500/20');
+      toast.append(
+        el('p', 'text-base font-medium text-teal-800 sm:text-sm dark:text-teal-300', `Queued: ${intent.action}.`),
+        el('p', 'text-base text-teal-800/75 sm:text-sm dark:text-teal-300/75',
+          `Requested ${formatClock(intent.requestedAt)}, expires ${formatClock(intent.expiresAt)}.`),
+      );
+      list.append(toast);
+    }
+  };
+
+  // ─── Header liveness widget ─────────────────────────────────────────────────
+  /** Reflects state.service.{loaded,overdue} and the payload's own age — and, on
+   * every no-data failure branch, is forced down rather than left showing the
+   * last good frame's "up"/fresh reading (CLAUDE.md C2). */
+  const setSupervisorWidget = (loaded, overdue, ageMs) => {
+    const healthy = loaded && !overdue;
+    document.getElementById('supervisor-status').textContent = healthy ? 'up' : 'down';
+    document.getElementById('supervisor-dot').className = `size-1.5 shrink-0 rounded-full ${healthy ? 'bg-emerald-500' : 'bg-red-500'}`;
+    document.getElementById('freshness-dot').className = `relative inline-flex size-1.5 rounded-full ${healthy ? 'bg-teal-500' : 'bg-red-500'}`;
+    document.getElementById('freshness-ping').className =
+      `absolute inline-flex size-full rounded-full opacity-75 ${healthy ? 'animate-ping bg-teal-500' : 'bg-red-500'}`;
+    document.getElementById('freshness-age').textContent = ageMs === null ? 'unknown' : `${Math.round(Math.max(0, ageMs) / 1000)}s ago`;
+  };
+
+  // ─── Top-level render ────────────────────────────────────────────────────────
   const render = (state) => {
     document.getElementById('mode').textContent = state.mode;
     document.getElementById('fundable').textContent = state.cyclesFundable.toFixed(1);
@@ -369,51 +610,84 @@
     // cyclesInFlight, not a filter over verdict === 'RUN' — that undercounts a
     // cycle whose program was removed or renamed out of control.json while
     // still running (CLAUDE.md service.ts/state.ts trap; fixed in the TUI first).
-    document.getElementById('running').textContent =
-      `${state.cyclesInFlight} / ${state.maxConcurrentCycles}`;
+    document.getElementById('running').textContent = `${state.cyclesInFlight} / ${state.maxConcurrentCycles}`;
+    document.getElementById('recovers').textContent = formatDuration(state.hoursToWeeklyReset);
 
-    const list = document.getElementById('programs');
-    // Reuse nodes by id so scroll offset and <details> state survive the re-render.
-    for (const program of state.programs) list.append(programRow(program));
+    heroSection(state);
+
+    const programList = document.getElementById('programs');
+    const liveProgramIds = new Set(state.programs.map((program) => `program-${program.name}`));
+    for (const program of state.programs) programList.append(programRow(program));
+    pruneStale(programList, liveProgramIds);   // a removed/renamed program must not linger (CLAUDE.md I2)
+
+    capacitySection(state);
+
+    const accountList = document.getElementById('accounts');
+    const liveAccountIds = new Set(state.accounts.map((account) => `account-${account.name}`));
+    for (const account of state.accounts) accountList.append(accountRow(account));
+    pruneStale(accountList, liveAccountIds);
+
+    const cycleList = document.getElementById('recent-cycles');
+    cycleList.replaceChildren();
+    for (const cycle of state.recentCycles) cycleList.append(cycleRow(cycle));
+
+    controlsSection(state);
   };
-</script>
 
-<script>
+  // ─── Poll loop ───────────────────────────────────────────────────────────────
   const DATA = '/craig/assets/snapshot.json';
   const FAST_MS = 5000, SLOW_MS = 30000, STALE_MS = 120000;
   let lastStamp = null, unchanged = 0, timer = null;
 
   const setBanner = (kind, headline, detail) => {
-    const el = document.getElementById('banner');
-    el.hidden = kind === null;
+    const banner = document.getElementById('banner');
+    banner.hidden = kind === null;
     if (kind === null) return;
-    el.dataset.kind = kind;
-    el.querySelector('[data-headline]').textContent = headline;
-    el.querySelector('[data-detail]').textContent = detail;
+    banner.dataset.kind = kind;
+    banner.querySelector('[data-headline]').textContent = headline;
+    banner.querySelector('[data-detail]').textContent = detail;
   };
 
   const poll = async () => {
     try {
-      const res = await fetch(`${DATA}?t=${Date.now()}`, { credentials: 'same-origin', cache: 'no-store' });
+      // redirect: 'manual' is deliberate: the real sign-in redirect is cross-origin
+      // (to Cognito's hosted UI), and a default 'follow' fetch rejects on a
+      // cross-origin redirect with no CORS headers rather than exposing it — this
+      // browser's own OAuth attempt hit exactly that wall. 'manual' reports it as
+      // an opaqueredirect response instead of throwing, for both same- and
+      // cross-origin redirects.
+      const res = await fetch(`${DATA}?t=${Date.now()}`, { credentials: 'same-origin', cache: 'no-store', redirect: 'manual' });
       if (res.status === 404) {
         setBanner('gone', 'No data.', 'The supervisor has been down for over a day.');
-      } else if (res.redirected || !(res.headers.get('content-type') ?? '').includes('application/json')) {
+        setSupervisorWidget(false, true, null);
+      } else if (res.type === 'opaqueredirect' || !res.ok || !(res.headers.get('content-type') ?? '').includes('application/json')) {
         setBanner('auth', 'Session expired.', 'Reload to sign in again.');
+        setSupervisorWidget(false, true, null);
       } else {
         const state = await res.json();
-        unchanged = state.generatedAt === lastStamp ? unchanged + 1 : 0;
+        const changed = state.generatedAt !== lastStamp;
+        unchanged = changed ? 0 : unchanged + 1;
         lastStamp = state.generatedAt;
-        render(state);
+        // Skip the DOM rebuild when nothing changed — payloadHash (panel.ts) already
+        // guarantees an identical generatedAt means an identical payload, and
+        // rebuilding the <pre> nodes on every poll resets whatever a reader had
+        // scrolled to (CLAUDE.md I7).
+        if (changed) render(state);
         const age = Date.now() - Date.parse(state.generatedAt);
+        setSupervisorWidget(state.service.loaded, state.service.overdue, age);
         setBanner(age > STALE_MS ? 'stale' : null,
           `Showing state from ${Math.round(age / 60000)} minutes ago.`,
           'The Mac stopped pushing. Nothing below is live.');
       }
     } catch (error) {
       setBanner('offline', 'Cannot reach the supervisor data.', String(error && error.message));
+      setSupervisorWidget(false, true, null);
+    } finally {
+      // In `finally`, not after the try/catch: a throw inside the catch handler
+      // itself must not leave the poll loop dead with no banner (CLAUDE.md I6).
+      clearTimeout(timer);
+      timer = setTimeout(poll, unchanged >= 3 ? SLOW_MS : FAST_MS);
     }
-    clearTimeout(timer);
-    timer = setTimeout(poll, unchanged >= 3 ? SLOW_MS : FAST_MS);
   };
   poll();
 </script>

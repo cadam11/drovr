@@ -61,6 +61,25 @@ const writeMarker = (path: string, marker: Marker): void => {
   writeFileSync(path, `${JSON.stringify(marker)}\n`, 'utf8');
 };
 
+export type RunMarker = { lastRunAt: number };
+
+/** Liveness for `drovr service status`: this is "did the agent fire", not "did it
+ * publish" — shouldPublish (panel.ts) deliberately skips most invocations, so
+ * publishedAt alone reads a healthy agent as stalled (see CLAUDE.md I1). */
+export const readRunMarker = (path: string): RunMarker | null => {
+  try {
+    const parsed: RunMarker = JSON.parse(readFileSync(path, 'utf8'));
+    return typeof parsed.lastRunAt === 'number' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const touchRunMarker = (path: string, now: number): void => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify({ lastRunAt: now })}\n`, 'utf8');
+};
+
 const aiceVersion = async (): Promise<string> => {
   const { stdout } = await run('aice', ['version']).catch((error: unknown) => {
     throw explainSpawn('aice', error);
@@ -122,10 +141,18 @@ const attemptPublish = async (): Promise<'published' | 'skipped'> => {
  * honour the CLI's own exit-code contract (see help.ts's AGENT_NOTES.exitCodes).
  */
 export const publishSnapshot = async (): Promise<'published' | 'skipped' | 'failed'> => {
+  const runMarkerPath = paths().snapshotRun;
   try {
-    return await attemptPublish();
+    const outcome = await attemptPublish();
+    touchRunMarker(runMarkerPath, Date.now());
+    return outcome;
   } catch (error) {
     console.error(`snapshot publish failed: ${error instanceof Error ? error.message : String(error)}`);
+    try {
+      touchRunMarker(runMarkerPath, Date.now());
+    } catch {
+      // Best-effort liveness stamp; the publish failure itself is already reported above.
+    }
     return 'failed';
   }
 };

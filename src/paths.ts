@@ -11,6 +11,9 @@ export const paths = () => {
     control: join(base, 'control.json'),
     cycles: join(base, 'cycles.jsonl'),
     snapshotState: join(base, 'snapshot-state.json'),
+    /** Every invocation, including a skip or a failure — distinct from snapshotState's
+     * `publishedAt`, which only advances on an actual publish (see publish-snapshot.ts). */
+    snapshotRun: join(base, 'snapshot-run.json'),
     decisions: join(base, 'decisions.jsonl'),
     tickLock: join(base, 'tick.lock'),
     programLock: (program: string) => join(base, 'programs', program, 'cycle.lock'),

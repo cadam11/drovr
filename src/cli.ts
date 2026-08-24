@@ -21,7 +21,7 @@ import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
-import { publishSnapshot, readMarker } from './publish-snapshot.ts';
+import { publishSnapshot, readMarker, readRunMarker } from './publish-snapshot.ts';
 import {
   bootoutCommand,
   bootstrapCommand,
@@ -329,6 +329,10 @@ const showService = (json: boolean): void => {
   const tick = serviceState();
   const snapshot = snapshotServiceState();
   const lastTick = lastDecisionAt(p.decisions);
+  // lastRunAt (every invocation) drives health/description, not lastPublishedAt
+  // (only an actual publish) — shouldPublish deliberately skips most invocations,
+  // so publishedAt alone reads a healthy agent as stalled (CLAUDE.md I1).
+  const lastRunAt = readRunMarker(p.snapshotRun)?.lastRunAt ?? null;
   const lastPublishedAt = readMarker(p.snapshotState)?.publishedAt ?? null;
   const now = Date.now();
   if (json) {
@@ -341,8 +345,9 @@ const showService = (json: boolean): void => {
         loadCommand: bootstrapCommand(LABEL), unloadCommand: bootoutCommand(LABEL),
       },
       snapshot: {
-        health: serviceHealth(snapshot, lastPublishedAt, now),
-        explanation: describeSnapshotAgent(snapshot, lastPublishedAt, now),
+        health: serviceHealth(snapshot, lastRunAt, now),
+        explanation: describeSnapshotAgent(snapshot, lastRunAt, now),
+        lastRunAt: lastRunAt === null ? null : new Date(lastRunAt).toISOString(),
         lastPublishedAt: lastPublishedAt === null ? null : new Date(lastPublishedAt).toISOString(),
         ...snapshot, plistPath: plistPathFor(SNAPSHOT_LABEL),
         loadCommand: bootstrapCommand(SNAPSHOT_LABEL), unloadCommand: bootoutCommand(SNAPSHOT_LABEL),
@@ -352,7 +357,7 @@ const showService = (json: boolean): void => {
   }
   console.log(`tick: ${describeService(tick, lastTick, now)}`);
   if (tick.pid !== null) console.log(`  a tick is executing right now (pid ${tick.pid})`);
-  console.log(`snapshot: ${describeSnapshotAgent(snapshot, lastPublishedAt, now)}`);
+  console.log(`snapshot: ${describeSnapshotAgent(snapshot, lastRunAt, now)}`);
   if (snapshot.pid !== null) console.log(`  a snapshot publish is executing right now (pid ${snapshot.pid})`);
   console.log(`plists: ${plistPath()}`);
   console.log(`        ${plistPathFor(SNAPSHOT_LABEL)}`);

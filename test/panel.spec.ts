@@ -35,11 +35,17 @@ test('payloadHash ignores generatedAt so an unchanged pool does not republish', 
   assert.equal(payloadHash(a), payloadHash(payload(later)));
 });
 
-test('shouldPublish skips an unchanged payload', () => {
+test('shouldPublish skips an unchanged payload under the heartbeat', () => {
   assert.equal(shouldPublish({
     previousHash: 'abc', nextHash: 'abc', cycleRunning: true,
-    lastPublishedAt: NOW - 60_000, now: NOW,
+    lastPublishedAt: NOW - 10_000, now: NOW,
   }), false);
+});
+
+test('shouldPublish emits a heartbeat past 60s even with an unchanged hash', () => {
+  const base = { previousHash: 'abc', nextHash: 'abc', cycleRunning: false, now: NOW };
+  assert.equal(shouldPublish({ ...base, lastPublishedAt: NOW - (CADENCE.heartbeatSeconds - 1) * 1000 }), false);
+  assert.equal(shouldPublish({ ...base, lastPublishedAt: NOW - CADENCE.heartbeatSeconds * 1000 }), true);
 });
 
 test('shouldPublish honours the active cadence while a cycle runs', () => {

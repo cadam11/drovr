@@ -217,12 +217,17 @@ export const describeService = (
 
 /**
  * describeService's counterpart for the snapshot agent. Not shared with it: the
- * vocabulary (tick/decision vs publish) differs enough on every branch that a
- * shared helper would need as many parameters as this function has lines.
+ * vocabulary (tick/decision vs run) differs enough on every branch that a shared
+ * helper would need as many parameters as this function has lines.
+ *
+ * Takes `lastRunAt` (every invocation, including a skip), never `lastPublishedAt`
+ * (only an actual publish). shouldPublish (panel.ts) deliberately skips most
+ * invocations — up to 5 minutes' worth when idle — so a threshold built on
+ * publish time reads a perfectly healthy agent as stalled.
  */
 export const describeSnapshotAgent = (
   state: ServiceState,
-  lastPublishedAt: number | null,
+  lastRunAt: number | null,
   now: number,
 ): string => {
   if (!state.installed) {
@@ -242,17 +247,17 @@ export const describeSnapshotAgent = (
       ? `. Warning: the last run failed (exit ${exitCode}) — check ${join(homedir(), '.drovr/logs/snapshot.err')}`
       : '';
 
-  if (lastPublishedAt === null) {
-    return `loaded${every}, but nothing has published yet${failed}`;
+  if (lastRunAt === null) {
+    return `loaded${every}, but it has not run yet${failed}`;
   }
 
-  const minutes = Math.round((now - lastPublishedAt) / 60_000);
+  const minutes = Math.round((now - lastRunAt) / 60_000);
   const ago = minutes < 60 ? `${minutes} minutes ago` : `${Math.floor(minutes / 60)}h${minutes % 60}m ago`;
   const stalled =
-    state.intervalSeconds !== null && now - lastPublishedAt > state.intervalSeconds * 3000
+    state.intervalSeconds !== null && now - lastRunAt > state.intervalSeconds * 3000
       ? ` — that is overdue for a ${state.intervalSeconds}s interval, so the agent may be stalled`
       : '';
-  return `loaded${every}. Last published ${ago}${stalled}${failed}`;
+  return `loaded${every}. Last ran ${ago}${stalled}${failed}`;
 };
 
 /** The same facts as a discriminated value, for a caller that needs to branch rather than read. */
