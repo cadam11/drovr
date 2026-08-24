@@ -256,3 +256,32 @@ test('expires= present but empty is distinguished from absent', () => {
   const intent = parseIntent(`drovr-intent v1 pause 3h expires=`, 'n-empty-exp', NOW);
   assert.match('rejected' in intent ? intent.rejected : '', /present but empty/);
 });
+
+// Finding 8: ISO format widened to accept valid timezone offsets
+test('expires= accepts +00:00 offset (UTC via offset)', () => {
+  const futureWithOffset = new Date(NOW + 30 * 60_000).toISOString().replace('Z', '+00:00');
+  const intent = parseIntent(`drovr-intent v1 pause 3h expires=${futureWithOffset}`, 'n-offset-plus', NOW);
+  assert.ok('action' in intent);
+});
+
+test('expires= accepts +00:00 offset with milliseconds', () => {
+  const futureWithOffset = new Date(NOW + 30 * 60_000).toISOString().replace('Z', '+00:00');
+  const intent = parseIntent(`drovr-intent v1 pause 3h expires=${futureWithOffset}`, 'n-offset-ms', NOW);
+  assert.ok('action' in intent);
+});
+
+test('expires= accepts -04:00 offset (EDT example)', () => {
+  const futureEDT = new Date(NOW + 30 * 60_000).toISOString().replace('Z', '-04:00');
+  const intent = parseIntent(`drovr-intent v1 pause 3h expires=${futureEDT}`, 'n-offset-minus', NOW);
+  assert.ok('action' in intent);
+});
+
+test('expires= still rejects offset-less local time (ambiguous)', () => {
+  const intent = parseIntent(`drovr-intent v1 pause 3h expires=2026-08-24T12:00:00`, 'n-no-tz', NOW);
+  assert.match('rejected' in intent ? intent.rejected : '', /ISO 8601/);
+});
+
+test('expires= still rejects date-only form (ambiguous local time)', () => {
+  const intent = parseIntent(`drovr-intent v1 pause 3h expires=2026-08-24`, 'n-date-only', NOW);
+  assert.match('rejected' in intent ? intent.rejected : '', /ISO 8601/);
+});

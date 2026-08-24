@@ -1,8 +1,9 @@
+import { MODES } from './modes.ts';
+
 export const MAX_INTENTS_PER_TICK = 20;
 
 const PREFIX = 'drovr-intent v1';
-const MODES = ['off', 'low', 'normal', 'away'];
-const ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+const ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(Z|[+-]\d{2}:\d{2})$/;
 
 export type Action =
   | { kind: 'mode'; value: string }
@@ -19,7 +20,7 @@ const toAction = (words: string[]): Action | string => {
 
   if (verb === 'mode') {
     if (arg1 === undefined) return 'mode needs a value';
-    if (!MODES.includes(arg1)) return `mode needs one of: ${MODES.join(', ')}`;
+    if (!MODES.includes(arg1 as typeof MODES[number])) return `mode needs one of: ${MODES.join(', ')}`;
     if (arg2 !== undefined) return `mode does not take multiple arguments; unexpected: ${arg2}`;
     return { kind: 'mode', value: arg1 };
   }

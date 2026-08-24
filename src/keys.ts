@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { DEFAULT_CEILINGS, parseControl, type Control } from './control.ts';
-
-const MODES = ['off', 'low', 'normal', 'away'] as const;
+import { MODES } from './modes.ts';
 const PAUSES = [
   { label: '1h', ms: 3_600_000 },
   { label: '3h', ms: 10_800_000 },
