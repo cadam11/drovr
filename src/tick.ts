@@ -7,7 +7,7 @@ import { decide, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
 import { PaneBusy } from './herdr.ts';
 import { readAsks } from './asks.ts';
-import { nudgeIfNeglected } from './nudge.ts';
+import { nudgeIfNeglected, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
 
 import { poolFrom } from './capacity.ts';
@@ -174,6 +174,13 @@ export const tick = async (): Promise<void> => {
   }
 };
 
+/** What a cycle that never wrote a report is recorded as. */
+const unreportedExit = (deferred: boolean, stalled: boolean): CycleRecord['exit'] => {
+  if (deferred) return 'deferred';
+  if (stalled) return 'stalled';
+  return 'crash';
+};
+
 /** The detached per-program worker. Holds the program lock for the cycle's whole life. */
 export const runProgramCycle = async (name: string): Promise<void> => {
   const p = paths();
@@ -219,7 +226,12 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     // Anything between the start record and the end record can throw — a missing
     // binary, a herdr error, a lost workspace. Without an end record the cycle stays
     // "in flight" forever, blocking its own program and holding a concurrency slot.
-    const outcome = await runCycle(program, startedAt, control.maxCycleHours).catch(
+    const limits = {
+      maxHours: control.maxCycleHours,
+      stallNudgeMs: control.stallNudgeMinutes * 60_000,
+      maxStallNudges: control.maxStallNudges,
+    };
+    const outcome = await runCycle(program, startedAt, limits).catch(
       (error: unknown) => {
         const detail = error instanceof Error ? error.message : String(error);
         // A busy pane is not a failure: the cycle never started and nothing is wrong.
@@ -233,20 +245,32 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     );
 
     const deferred = 'deferred' in outcome && outcome.deferred === true;
+    const stalled = 'stalled' in outcome && outcome.stalled === true;
 
     const report = readReport(name);
     const after = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 
     record({
       endedAt: new Date().toISOString(),
-      exit: report?.exit ?? (deferred ? 'deferred' : 'crash'),
+      exit: report?.exit ?? unreportedExit(deferred, stalled),
       poolAfter: after,
       startupTokens: report?.startupTokens ?? null,
       yield: report?.yield ?? null,
       asksRaised: report?.asksRaised ?? 0,
     });
 
-    if (report === null && !deferred) {
+    // A stalled runner was nudged and stayed silent, so Craig is the only one left
+    // who can tell whether the program is wedged or simply had nothing to say.
+    if (stalled) {
+      console.error(`cycle for ${name} stalled — recorded as stalled. ${outcome.detail}`);
+      await textCraig(
+        control.phoneNumber,
+        `drovr: ${name} stalled — its runner idled through ${control.maxStallNudges} nudges ` +
+          `without writing a report. Its pane is free and the next tick starts a fresh cycle.`,
+      );
+    }
+
+    if (report === null && !deferred && !stalled) {
       console.error(
         `cycle for ${name} produced no report — recorded as crash. ${outcome.detail}`,
       );

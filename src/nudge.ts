@@ -7,6 +7,37 @@ import { ensureDirs, paths } from './paths.ts';
 
 const run = promisify(execFile);
 
+/**
+ * The one place drovr sends SMS. Best-effort by design: a phone that cannot be
+ * reached must never take down a tick or a cycle, so failure is logged and reported
+ * rather than thrown. Returns whether the message actually went out.
+ */
+export const textCraig = async (phoneNumber: string | null, message: string): Promise<boolean> => {
+  if (phoneNumber === null) return false;
+  try {
+    await run('aws', [
+      'sns',
+      'publish',
+      '--profile',
+      'dev',
+      '--phone-number',
+      phoneNumber,
+      '--message',
+      message,
+    ]);
+    return true;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    // The dev profile is SSO-backed and its session expires, which is precisely the
+    // state an unattended overnight supervisor finds it in. Name the command.
+    const hint = /sso session|expired|invalid/i.test(detail)
+      ? ' Refresh it with: aws sso login --profile dev'
+      : '';
+    console.error(`could not text: ${detail}${hint}`);
+    return false;
+  }
+};
+
 const sentShape = z.object({ askedAt: z.number(), sentAt: z.number() });
 
 const sentPath = (program: string): string => join(paths().programState(program), 'nudged.json');
@@ -43,22 +74,7 @@ export const nudgeIfNeglected = async (input: {
     `drovr: ${program} has been blocked ${hours}h on ${asks} unanswered ask(s).` +
     (asksUrl === null ? '' : ` ${asksUrl}`);
 
-  try {
-    await run('aws', [
-      'sns',
-      'publish',
-      '--profile',
-      'dev',
-      '--phone-number',
-      phoneNumber,
-      '--message',
-      message,
-    ]);
-  } catch (error) {
-    // Never let a failed nudge take down a tick; the status line still carries it.
-    console.error(`could not text about ${program}: ${error instanceof Error ? error.message : error}`);
-    return false;
-  }
+  if (!(await textCraig(phoneNumber, message))) return false;
 
   ensureDirs(program);
   writeFileSync(sentPath(program), `${JSON.stringify({ askedAt, sentAt: now })}\n`, 'utf8');

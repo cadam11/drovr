@@ -38,6 +38,9 @@ export const AGENT_NOTES = {
     seam: 'the milestone completed at a clean boundary — the best outcome',
     blocked: 'every remaining item is waiting on a human answer',
     crash: 'the process exited without writing a report — check ~/.drovr/logs/',
+    stalled:
+      'the runner went idle without reporting and ignored every nudge — its pane was ' +
+      'freed and the next tick starts a fresh cycle. Repeated stalls latch the program.',
   },
   gotchas: [
     'A WAIT reason naming another program means it is queued behind it, not short of quota.',
@@ -202,7 +205,8 @@ export const COMMANDS: Command[] = [
     summary: 'recent cycles with their exit reason and yield',
     details: [
       'Exit reasons: context (hit the context ceiling), capacity (quota thinned), seam (milestone',
-      'complete), blocked (everything waiting on an ask), crash (exited without a report).',
+      'complete), blocked (everything waiting on an ask), crash (exited without a report),',
+      'stalled (went idle without reporting and ignored every nudge).',
     ],
     flags: [
       {

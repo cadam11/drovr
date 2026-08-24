@@ -89,6 +89,10 @@ const controlShape = z.object({
   blockedBackoffMinutes: z.number().default(60),
   /** Consecutive zero-yield cycles before the loop stops and escalates. */
   stuckCycleThreshold: z.number().default(3),
+  /** An idle runner that has written no report is stalled once it has idled this long. */
+  stallNudgeMinutes: z.number().default(10),
+  /** Nudges a stalled runner gets before its cycle is given up on and its pane freed. */
+  maxStallNudges: z.number().default(3),
   /** Used until the ledger holds enough delivery cycles to measure real cost. */
   seedCycleCost: z
     .object({ fable: z.number(), general: z.number(), session: z.number() })

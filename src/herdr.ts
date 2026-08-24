@@ -325,7 +325,7 @@ export const startCycleAgent = async (input: {
   }
 
   // No --wait: the cycle runs for hours, and blocking here would defeat the point.
-  await herdr(['agent', 'prompt', agentName, prompt]);
+  await promptAgent(agentName, prompt);
 
   return { agentName, ...pane };
 };
@@ -414,6 +414,11 @@ export const releaseAgent = async (agentName: string, paneId: string): Promise<b
     if ((await agentState(agentName)) === 'gone') return true;
   }
   return false;
+};
+
+/** Submits a prompt to a live session — how a cycle is started, and how a stalled one is restarted. */
+export const promptAgent = async (agentName: string, prompt: string): Promise<void> => {
+  await herdr(['agent', 'prompt', agentName, prompt]);
 };
 
 export const interruptAgent = async (agentName: string): Promise<void> => {

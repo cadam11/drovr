@@ -11,7 +11,7 @@ export const cycleShape = z.object({
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   /** Why the cycle stopped — the main input for tuning the context ceiling. */
-  exit: z.enum(['context', 'capacity', 'seam', 'blocked', 'crash', 'deferred', 'running']),
+  exit: z.enum(['context', 'capacity', 'seam', 'blocked', 'crash', 'stalled', 'deferred', 'running']),
   poolBefore: poolSnapshot,
   poolAfter: poolSnapshot.nullable(),
   /** Tokens consumed before the first productive action: the re-onboarding tax. */
@@ -35,6 +35,13 @@ export const decisionShape = z.object({
 export type CycleRecord = z.infer<typeof cycleShape>;
 export type DecisionRecord = z.infer<typeof decisionShape>;
 export type CycleCost = { fable: number; general: number; session: number };
+
+/**
+ * Exits where the cycle never delivered anything: it never started, or it started
+ * and went nowhere. They are not samples of what a cycle costs, and they must not
+ * burn a program's daily cap.
+ */
+const DID_NOT_DELIVER = new Set(['crash', 'stalled', 'deferred']);
 
 export const snapshot = (pool: Pool): CycleCost => ({
   fable: pool.fable,
@@ -108,7 +115,7 @@ export const estimateCycleCost = (
   minSamples = 3,
 ): CycleCost => {
   const costs = cycles
-    .filter((cycle) => cycle.kind === 'delivery' && cycle.exit !== 'crash' && cycle.exit !== 'deferred')
+    .filter((cycle) => cycle.kind === 'delivery' && !DID_NOT_DELIVER.has(cycle.exit))
     .map(costOf)
     .filter((cost): cost is PartialCost => cost !== null);
 
@@ -164,13 +171,14 @@ export const inFlight = (
  * Start and end share a record shape, so a cycle is counted by its identity, not
  * its rows. Crashes are excluded: the daily cap limits how much real work a program
  * may do, and a burst of cycles that died on a broken PATH should not burn the day.
- * Repeated crashing is caught by consecutiveCrashes instead.
+ * Repeated failure is caught by consecutiveFailures instead.
  */
 export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number => {
   // None of these did any work, so none should cost a program its day: a crash never
-  // ran, a deferral never started, and a blocked cycle only rediscovered that someone
-  // owes it an answer. The blocked backoff is what bounds those instead.
-  const idle = new Set(['crash', 'deferred', 'blocked']);
+  // ran, a deferral never started, a stalled cycle sat at its prompt, and a blocked
+  // cycle only rediscovered that someone owes it an answer. Their own backoffs and
+  // the failure latch are what bound them instead.
+  const idle = new Set([...DID_NOT_DELIVER, 'blocked']);
   const unspent = new Set(
     cycles
       .filter((cycle) => idle.has(cycle.exit))
@@ -184,14 +192,21 @@ export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number
   ).size;
 };
 
+/** A cycle that got as far as starting and still delivered nothing. */
+const FAILED = new Set(['crash', 'stalled']);
+
 /**
- * A crash loop needs a human, but only while it is still looping. Counting the whole
- * tail of history latches forever: an environment that was broken for twenty minutes
- * and has since been fixed would keep a program stopped until someone cleared it by
- * hand. Only recent crashes count, so a fixed cause resumes on its own and a genuine
- * loop re-latches on its next attempt.
+ * A failure loop needs a human, but only while it is still looping. Counting the
+ * whole tail of history latches forever: an environment that was broken for twenty
+ * minutes and has since been fixed would keep a program stopped until someone
+ * cleared it by hand. Only recent failures count, so a fixed cause resumes on its
+ * own and a genuine loop re-latches on its next attempt.
+ *
+ * Stalls count alongside crashes: nudging a stalled runner then starting a fresh
+ * cycle is cheap once, but a program that stalls every time would otherwise loop
+ * on it forever, paying full onboarding each round.
  */
-export const consecutiveCrashes = (
+export const consecutiveFailures = (
   cycles: CycleRecord[],
   now = Date.now(),
   windowMinutes = 60,
@@ -202,7 +217,7 @@ export const consecutiveCrashes = (
   for (let index = finished.length - 1; index >= 0; index -= 1) {
     const cycle = finished[index]!;
     if (cycle.exit === 'deferred') continue;
-    if (cycle.exit !== 'crash') break;
+    if (!FAILED.has(cycle.exit)) break;
     if (Date.parse(cycle.endedAt ?? cycle.startedAt) < cutoff) break;
     streak += 1;
   }

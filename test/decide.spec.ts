@@ -301,7 +301,36 @@ test('repeated crashes stop the loop, since nothing else catches a crash loop', 
   );
   const decision = run({ cycles: crashes });
   assert.equal(decision.verdict, 'STOP');
-  assert.match(decision.reason, /crashes in the last/);
+  assert.match(decision.reason, /crashed or stalled in the last/);
+});
+
+test('repeated stalls latch too, so a program that never delivers stops re-onboarding', () => {
+  // Nudging a stalled runner is cheap once. A program that stalls every cycle would
+  // otherwise loop start -> nudge x3 -> stalled -> start forever, paying full
+  // onboarding each round for nothing.
+  const stalls = Array.from({ length: 3 }, (_unused, index) =>
+    cycle({
+      startedAt: new Date(NOW - (index + 1) * 60_000).toISOString(),
+      exit: 'stalled',
+      yield: null,
+    }),
+  );
+  const decision = run({ cycles: stalls });
+  assert.equal(decision.verdict, 'STOP');
+  assert.match(decision.reason, /crashed or stalled in the last/);
+});
+
+test('a stalled cycle costs the program nothing against its daily cap', () => {
+  // It sat at its prompt and delivered nothing; the failure latch bounds it instead.
+  const stalls = Array.from({ length: 9 }, (_unused, index) =>
+    cycle({
+      startedAt: new Date(NOW - (index + 1) * HOUR).toISOString(),
+      exit: 'stalled',
+      yield: null,
+    }),
+  );
+  assert.notEqual(run({ cycles: stalls }).reason, undefined);
+  assert.doesNotMatch(run({ cycles: stalls }).reason, /daily cap/);
 });
 
 test('crashes that have aged out stop latching, so a fixed cause resumes on its own', () => {

@@ -61,6 +61,9 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `herdr.ts` | The runner must be Fable, but Craig's default model must not change. Pass `-- --model fable` to `agent start` (per-session) — never `/model`, a settings file, or an env default. |
 | `herdr.ts` | herdr names the agent state field `agent_status`, not `state`. Reading the wrong name parses clean and answers `unknown` — a real herdr status — for every agent, so a finished runner never looks releasable and every tick defers against drovr's own leftover. Parse it strictly and let an unrecognised shape throw. |
 | `herdr.ts` | Only send `/exit` to a **settled** agent. A runner keeps working after writing its report; `/exit` typed into that turn is swallowed by it, and the pane is held forever. Return false instead and let the next tick retry — the release has to be retryable, not one-shot. |
+| `cycle.ts` | An idle runner with no report is **stalled**, not finished — an interactive session that lost its turn to a 529, or answered Craig and stopped, sits at the prompt forever. The watch loop only ever asked *report yet?* and *agent gone?*, so both held a slot until `maxCycleHours`. Nudge the live session (cheap, keeps its context), bounded, then give up and free the pane. |
+| `cycle.ts` | Never nudge a `blocked` agent. It is waiting on a dialog only Craig can answer, and a prompt queues up behind it rather than clearing it. |
+| `ledger.ts` | `stalled` counts toward the failure latch alongside `crash`, and toward nothing else. Leave it out and a program that stalls every cycle loops start → nudge×3 → stalled → start forever, paying full onboarding each round. |
 
 ## The CLI is read by agents
 
@@ -82,8 +85,11 @@ Never document a flag before implementing it — a help page that lies is worse 
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
-- **The SMS nudge** (`nudge.ts`) — never triggered, because the asks were answered before the
-  threshold. The `aws sns publish --profile dev` call is unverified end to end.
+- **The SMS nudge** (`nudge.ts`) — still never delivered. The send path was exercised on
+  2026-08-24 and failed: the `dev` profile is SSO-backed and its session had expired, which is
+  exactly the state an unattended overnight supervisor finds it in. `textCraig` degrades
+  correctly (logs the fix, returns false, never takes down a tick), so every caller is
+  best-effort — do not build anything that assumes the text arrived.
 - **A full ask → answer → auto-resume round trip.** Both halves have been seen separately.
 - **`headless` runner mode** — a fallback, exercised once early, untouched since the herdr runner
   landed.

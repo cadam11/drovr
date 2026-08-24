@@ -1,7 +1,7 @@
 import { hoursToWeeklyReset, poolFrom, type Pool } from './capacity.ts';
 import { ceilingsFor, isPaused, type Control } from './control.ts';
 import {
-  consecutiveCrashes,
+  consecutiveFailures,
   consecutiveZeroYield,
   cyclesStartedSince,
   estimateCycleCost,
@@ -137,11 +137,11 @@ export const decide = (input: DecideInput): Decision => {
     return halt(`${stuck} consecutive cycles produced no yield — escalating instead of looping`);
   }
 
-  // Only recent crashes latch, so a fixed cause resumes without anyone clearing it.
-  const crashes = consecutiveCrashes(mine, now, control.crashWindowMinutes);
-  if (crashes >= control.stuckCycleThreshold) {
+  // Only recent failures latch, so a fixed cause resumes without anyone clearing it.
+  const failures = consecutiveFailures(mine, now, control.crashWindowMinutes);
+  if (failures >= control.stuckCycleThreshold) {
     return halt(
-      `${crashes} crashes in the last ${control.crashWindowMinutes}m — see ` +
+      `${failures} cycles crashed or stalled in the last ${control.crashWindowMinutes}m — see ` +
         `~/.drovr/logs/${program}-worker.log. Retries on its own once those age out, ` +
         `or run "drovr run-cycle ${program}" to try immediately.`,
     );
