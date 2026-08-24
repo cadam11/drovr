@@ -15,17 +15,21 @@ export type Preview = {
 
 const isTurn = (line: string): boolean => TURN_GLYPHS.some((glyph) => line.startsWith(glyph));
 
-const strip = (line: string): string =>
-  Array.from(line).slice(1).join('').trim().slice(0, MAX_LINE);
+const strip = (line: string): string => {
+  const chars = Array.from(line).slice(1);
+  const trimmed = chars.join('').trim();
+  return Array.from(trimmed).slice(0, MAX_LINE).join('');
+};
 
 const lastMatch = (text: string, pattern: RegExp): RegExpExecArray | null => {
   let match: RegExpExecArray | null = null;
-  let lastMatch: RegExpExecArray | null = null;
-  const regex = new RegExp(pattern, 'g');
+  let result: RegExpExecArray | null = null;
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const regex = new RegExp(pattern.source, flags);
   while ((match = regex.exec(text)) !== null) {
-    lastMatch = match;
+    result = match;
   }
-  return lastMatch;
+  return result;
 };
 
 const gauge = (scanned: string): { percent: number | null; tokens: number | null } => {

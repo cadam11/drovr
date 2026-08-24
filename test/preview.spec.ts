@@ -76,3 +76,19 @@ test('parsePreview scans only the last MAX_SCAN lines and returns null if no tur
   const preview = parsePreview(raw);
   assert.equal(preview, null);
 });
+
+test('parsePreview matches uppercase K and M scale suffixes in the context gauge', () => {
+  const raw = `⏺ Agent running
+using Fable 5 | ctx:41% (402K)`;
+  const preview = parsePreview(raw)!;
+  assert.equal(preview.contextPercent, 41);
+  assert.equal(preview.contextTokens, 402_000);
+});
+
+test('parsePreview also matches uppercase M scale suffix', () => {
+  const raw = `⏺ Agent running
+using Fable 5 | ctx:85% (1.2M)`;
+  const preview = parsePreview(raw)!;
+  assert.equal(preview.contextPercent, 85);
+  assert.equal(preview.contextTokens, 1_200_000);
+});
