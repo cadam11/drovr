@@ -112,14 +112,18 @@ const attemptPublish = async (): Promise<'published' | 'skipped'> => {
 /**
  * Fails soft on every path: a panel that stops updating must never stop a cycle
  * from starting. The 1d ttl turns a prolonged outage into a 404, which the page
- * reports honestly, rather than a convincing dead frame. Failure is logged with an
- * actionable reason and returned as 'skipped' — never thrown, and never silent.
+ * reports honestly, rather than a convincing dead frame.
+ *
+ * Never throws — but 'failed' is distinct from 'skipped' so a caller can tell
+ * "nothing changed" from "publishing is broken": a launchd tick can ignore either
+ * and carry on, while `drovr snapshot` invoked directly needs the difference to
+ * honour the CLI's own exit-code contract (see help.ts's AGENT_NOTES.exitCodes).
  */
-export const publishSnapshot = async (): Promise<'published' | 'skipped'> => {
+export const publishSnapshot = async (): Promise<'published' | 'skipped' | 'failed'> => {
   try {
     return await attemptPublish();
   } catch (error) {
     console.error(`snapshot publish failed: ${error instanceof Error ? error.message : String(error)}`);
-    return 'skipped';
+    return 'failed';
   }
 };

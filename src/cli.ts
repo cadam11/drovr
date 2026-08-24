@@ -389,6 +389,11 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'tick') return tick();
   if (command === 'snapshot') {
     const outcome = await publishSnapshot();
+    if (outcome === 'failed') {
+      console.error('snapshot publish failed — see the reason logged above');
+      process.exitCode = 1;
+      return;
+    }
     console.log(outcome === 'published' ? 'snapshot published' : 'snapshot unchanged — not published');
     return;
   }

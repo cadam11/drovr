@@ -237,11 +237,12 @@ export const buildState = (input: StateInput): DrovrState => {
  * The only I/O. Previews are read concurrently and never allowed to reject.
  *
  * `onWarning` exists because readPreview's own failures are surfaced, not logged
- * (see herdr.ts:readPreview) — a caller drawing a terminal frame is the only one
- * who knows where a diagnostic can safely land without becoming an unsolicited
- * write mid-frame. Passing nothing here means the warning is simply dropped,
- * which is correct for a caller — like the panel publisher — with no frame to
- * fold it into.
+ * (see herdr.ts:readPreview), and the two real callers need it to land differently.
+ * The terminal UI (watch.ts) can never print mid-frame, so it folds the warning into
+ * the view instead. The panel publisher (publish-snapshot.ts) has no frame to fold
+ * it into and runs unattended from launchd, so it passes console.error, and that is
+ * exactly the case this diagnostic exists for. Passing nothing drops the warning —
+ * only correct for a caller with neither a frame nor a log to put it in.
  */
 export const collectState = async (
   queuedIntents: DrovrState['queuedIntents'] = [],
