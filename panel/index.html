@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en" class="antialiased">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drovr</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style type="text/tailwindcss">
+  @import url('https://rsms.me/inter/inter.css');
+  @import "tailwindcss";
+  @theme {
+    --font-sans: 'InterVariable', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  :root { font-feature-settings: 'cv02','cv03','cv04','cv11','ss01'; }
+
+  /* Section eyebrows: uppercase is only permitted on monospace, with tracking. */
+  @utility eyebrow {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+  }
+</style>
+</head>
+<body class="min-h-dvh bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+<div class="isolate">
+
+  <!-- ═══ Header ══════════════════════════════════════════════ -->
+  <header class="sticky top-0 z-10 border-b border-zinc-950/5 bg-white/80 backdrop-blur-md dark:border-white/10 dark:bg-zinc-950/80">
+    <div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
+      <h1 class="text-base font-semibold tracking-tight">drovr</h1>
+      <span id="mode" class="rounded-md bg-zinc-950/5 px-2 py-0.5 font-mono text-sm text-zinc-600 dark:bg-white/10 dark:text-zinc-300">…</span>
+
+      <div class="ml-auto flex items-center gap-x-4">
+        <p class="flex items-center gap-x-1.5 text-base text-zinc-500 sm:text-sm dark:text-zinc-400">
+          <span class="size-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true"></span>
+          <span class="max-sm:hidden">supervisor</span> up
+        </p>
+        <p class="flex items-center gap-x-1.5 text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">
+          <span class="relative flex size-1.5 shrink-0" aria-hidden="true">
+            <span class="absolute inline-flex size-full animate-ping rounded-full bg-teal-500 opacity-75"></span>
+            <span class="relative inline-flex size-1.5 rounded-full bg-teal-500"></span>
+          </span>
+          4s ago
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══ Data banner — hidden unless the poll can't vouch for what's below ═
+       data-kind distinguishes stale (self-recovering) / auth (needs a reload) /
+       gone (day-long outage) / offline (this browser can't reach the host) so
+       each gets a different color, not just different words. -->
+  <div id="banner" hidden
+       class="group border-b
+              data-[kind=stale]:border-amber-500/20 data-[kind=stale]:bg-amber-500/10
+              data-[kind=auth]:border-sky-500/20 data-[kind=auth]:bg-sky-500/10
+              data-[kind=gone]:border-red-500/20 data-[kind=gone]:bg-red-500/10
+              data-[kind=offline]:border-zinc-500/30 data-[kind=offline]:bg-zinc-500/10">
+    <div class="mx-auto flex max-w-5xl flex-wrap items-baseline gap-x-2 px-4 py-2.5 sm:px-6">
+      <p data-headline
+         class="text-base font-medium sm:text-sm
+                group-data-[kind=stale]:text-amber-800 dark:group-data-[kind=stale]:text-amber-300
+                group-data-[kind=auth]:text-sky-800 dark:group-data-[kind=auth]:text-sky-300
+                group-data-[kind=gone]:text-red-800 dark:group-data-[kind=gone]:text-red-300
+                group-data-[kind=offline]:text-zinc-700 dark:group-data-[kind=offline]:text-zinc-300"></p>
+      <p data-detail
+         class="text-base sm:text-sm
+                group-data-[kind=stale]:text-amber-800/75 dark:group-data-[kind=stale]:text-amber-300/75
+                group-data-[kind=auth]:text-sky-800/75 dark:group-data-[kind=auth]:text-sky-300/75
+                group-data-[kind=gone]:text-red-800/75 dark:group-data-[kind=gone]:text-red-300/75
+                group-data-[kind=offline]:text-zinc-700/75 dark:group-data-[kind=offline]:text-zinc-300/75"></p>
+    </div>
+  </div>
+
+  <main class="mx-auto max-w-5xl px-4 pb-20 sm:px-6">
+
+    <!-- ═══ The answer to "does anything need me?" ═════════════ -->
+    <section class="border-b border-zinc-950/5 py-8 dark:border-white/10">
+      <div class="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
+        <div class="min-w-0">
+          <h2 class="max-w-[24ch] text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+            <span class="text-red-600 dark:text-red-400">joinery</span> is waiting on you.
+          </h2>
+          <p class="mt-2 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400">
+            It raised an ask at 09:12 and stopped. Everything else is either running or waiting on capacity.
+          </p>
+        </div>
+        <a href="#" class="shrink-0 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">
+          Answer the ask
+        </a>
+      </div>
+
+      <dl class="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-zinc-950/5 sm:grid-cols-4 dark:bg-white/10">
+        <div class="bg-white p-3 dark:bg-zinc-950">
+          <dt class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Running</dt>
+          <dd id="running" class="mt-0.5 text-xl font-semibold tabular-nums">…</dd>
+        </div>
+        <div class="bg-white p-3 dark:bg-zinc-950">
+          <dt class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Cycles fundable</dt>
+          <dd id="fundable" class="mt-0.5 text-xl font-semibold tabular-nums">…</dd>
+        </div>
+        <div class="bg-white p-3 dark:bg-zinc-950">
+          <dt class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Tightest bucket</dt>
+          <dd id="binding" class="mt-0.5 text-xl font-semibold">…</dd>
+        </div>
+        <div class="bg-white p-3 dark:bg-zinc-950">
+          <dt class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Recovers in</dt>
+          <dd class="mt-0.5 text-xl font-semibold tabular-nums">2h10m</dd>
+        </div>
+      </dl>
+    </section>
+
+    <!-- ═══ Programs ═══════════════════════════════════════════ -->
+    <section class="py-8 @container">
+      <h2 class="eyebrow text-sm text-zinc-500 dark:text-zinc-400">Programs</h2>
+
+      <ul id="programs" role="list" class="mt-4 flex flex-col gap-y-3">
+
+        <!-- Fixture rows removed — programRow(program) in the script below builds these,
+             keyed by `program-${name}` so a re-render preserves scroll position and any
+             open <details>. One reference row kept as a template of the RUN treatment:
+
+        <li id="program-sunnyt" class="rounded-xl border-l-2 border-teal-500 py-1 pl-4">
+          <div class="flex flex-wrap items-center gap-x-2">
+            <h3 class="truncate text-lg font-semibold tracking-tight">sunnyt</h3>
+            <span class="eyebrow rounded px-1.5 py-0.5 text-sm font-medium">run</span>
+            <span class="font-mono text-sm text-zinc-400">p0</span>
+          </div>
+          <p class="mt-1 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm">a cycle for this program is already in flight</p>
+          <p class="mt-2 font-mono text-sm tabular-nums text-zinc-500">ctx 18% · 176k · 1 subagent</p>
+          <pre class="mt-3 max-h-32 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-sm/6 whitespace-pre-wrap wrap-anywhere text-zinc-600 ring-1 ring-zinc-950/5 dark:bg-white/5 dark:text-zinc-300">Agent "Promotion train + S-123 close" finished · 30m 42s</pre>
+        </li>
+        -->
+      </ul>
+    </section>
+
+    <!-- ═══ Capacity ═══════════════════════════════════════════ -->
+    <section class="border-t border-zinc-950/5 py-8 dark:border-white/10">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 class="eyebrow text-sm text-zinc-500 dark:text-zinc-400">Capacity</h2>
+        <p class="text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">3 accounts · weekly resets in 2d5h</p>
+      </div>
+
+      <dl class="mt-5 flex flex-col gap-y-5">
+        <div class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]">
+          <dt class="font-mono text-base whitespace-nowrap sm:text-sm">fable 7d</dt>
+          <dd class="order-3 col-span-2 flex h-2.5 overflow-hidden rounded-full sm:order-none sm:col-span-1 sm:col-start-2">
+            <span class="w-(--w) bg-violet-500" style="--w: 21%"></span>
+            <span class="w-(--w) bg-emerald-500" style="--w: 24%"></span>
+            <span class="w-(--w) bg-teal-400" style="--w: 10%"></span>
+            <span class="w-(--w) bg-zinc-950/10 dark:bg-white/10" style="--w: 25%"></span>
+            <span class="w-(--w) bg-violet-500/25" style="--w: 20%"></span>
+          </dd>
+          <dd class="text-right font-mono text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">41%</dd>
+        </div>
+
+        <div class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]">
+          <dt class="font-mono text-base whitespace-nowrap sm:text-sm">general 7d</dt>
+          <dd class="order-3 col-span-2 flex h-2.5 overflow-hidden rounded-full sm:order-none sm:col-span-1 sm:col-start-2">
+            <span class="w-(--w) bg-violet-500" style="--w: 14%"></span>
+            <span class="w-(--w) bg-emerald-500" style="--w: 31%"></span>
+            <span class="w-(--w) bg-teal-400" style="--w: 9%"></span>
+            <span class="w-(--w) bg-zinc-950/10 dark:bg-white/10" style="--w: 31%"></span>
+            <span class="w-(--w) bg-violet-500/25" style="--w: 15%"></span>
+          </dd>
+          <dd class="text-right font-mono text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">29%</dd>
+        </div>
+
+        <div class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-2 sm:grid-cols-[10rem_1fr_4rem]">
+          <dt class="flex items-baseline gap-x-2 font-mono text-base whitespace-nowrap sm:text-sm">
+            session 5h
+            <span class="eyebrow rounded bg-amber-500/15 px-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">binds</span>
+          </dt>
+          <dd class="order-3 col-span-2 flex h-2.5 overflow-hidden rounded-full ring-1 ring-amber-500/60 sm:order-none sm:col-span-1 sm:col-start-2">
+            <span class="w-(--w) bg-violet-500" style="--w: 33%"></span>
+            <span class="w-(--w) bg-emerald-500" style="--w: 38%"></span>
+            <span class="w-(--w) bg-teal-400" style="--w: 17%"></span>
+            <span class="w-(--w) bg-zinc-950/10 dark:bg-white/10" style="--w: 4%"></span>
+            <span class="w-(--w) bg-violet-500/25" style="--w: 8%"></span>
+          </dd>
+          <dd class="text-right font-mono text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">41%</dd>
+        </div>
+      </dl>
+
+      <ul role="list" class="mt-5 flex flex-wrap gap-x-4 gap-y-1.5">
+        <li class="flex items-center gap-x-1.5 text-base text-zinc-500 sm:text-sm dark:text-zinc-400"><span class="size-2 shrink-0 rounded-full bg-violet-500" aria-hidden="true"></span>you spent</li>
+        <li class="flex items-center gap-x-1.5 text-base text-zinc-500 sm:text-sm dark:text-zinc-400"><span class="size-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true"></span>programs spent</li>
+        <li class="flex items-center gap-x-1.5 text-base text-zinc-500 sm:text-sm dark:text-zinc-400"><span class="size-2 shrink-0 rounded-full bg-teal-400" aria-hidden="true"></span>in flight</li>
+        <li class="flex items-center gap-x-1.5 text-base text-zinc-500 sm:text-sm dark:text-zinc-400"><span class="size-2 shrink-0 rounded-full bg-zinc-950/15 dark:bg-white/20" aria-hidden="true"></span>free to programs</li>
+        <li class="flex items-center gap-x-1.5 text-base text-zinc-500 sm:text-sm dark:text-zinc-400"><span class="size-2 shrink-0 rounded-full bg-violet-500/25" aria-hidden="true"></span>held for you</li>
+      </ul>
+
+      <p class="mt-4 max-w-[70ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400">
+        All three bind at once and the tightest decides. Session is tightest right now, so it is the one refusing cycles — and it recovers in hours, not days.
+      </p>
+    </section>
+
+    <!-- ═══ Controls ═══════════════════════════════════════════ -->
+    <section class="border-t border-zinc-950/5 py-8 dark:border-white/10">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 class="eyebrow text-sm text-zinc-500 dark:text-zinc-400">Controls</h2>
+        <p class="text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Queued, then applied on the next tick.</p>
+      </div>
+
+      <div class="mt-5 grid gap-x-6 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <p class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Mode</p>
+          <p class="mt-1 text-xl font-semibold tracking-tight">normal</p>
+          <div class="mt-2.5 flex flex-wrap gap-2">
+            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">low</button>
+            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">away</button>
+            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">off</button>
+          </div>
+        </div>
+
+        <div>
+          <p class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Held for you</p>
+          <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">45%</p>
+          <div class="mt-2.5 flex flex-wrap gap-2">
+            <button type="button" class="rounded-lg px-3 py-2 font-mono text-sm font-medium tabular-nums text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">−5</button>
+            <button type="button" class="rounded-lg px-3 py-2 font-mono text-sm font-medium tabular-nums text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">+5</button>
+          </div>
+        </div>
+
+        <div>
+          <p class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Concurrent cycles</p>
+          <p class="mt-1 text-xl font-semibold tabular-nums tracking-tight">2</p>
+          <div class="mt-2.5 flex flex-wrap gap-2">
+            <button type="button" class="rounded-lg px-3 py-2 font-mono text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">−</button>
+            <button type="button" class="rounded-lg px-3 py-2 font-mono text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">+</button>
+          </div>
+        </div>
+
+        <div>
+          <p class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Pause</p>
+          <p class="mt-1 text-xl font-semibold tracking-tight">not paused</p>
+          <div class="mt-2.5 flex flex-wrap gap-2">
+            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">1h</button>
+            <button type="button" class="rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 dark:text-zinc-200 dark:ring-white/15 dark:hover:bg-white/5">8h</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 flex flex-wrap items-baseline gap-x-2 rounded-lg bg-teal-500/10 px-3 py-2.5 ring-1 ring-teal-500/20">
+        <p class="text-base font-medium text-teal-800 sm:text-sm dark:text-teal-300">Queued: pause 1h.</p>
+        <p class="text-base text-teal-800/75 sm:text-sm dark:text-teal-300/75">Waiting for the next tick. Expires in 30 minutes if drovr never wakes.</p>
+      </div>
+    </section>
+
+    <!-- ═══ Recent cycles ══════════════════════════════════════ -->
+    <section class="border-t border-zinc-950/5 py-8 dark:border-white/10">
+      <h2 class="eyebrow text-sm text-zinc-500 dark:text-zinc-400">Recent cycles</h2>
+      <div class="-mx-4 -my-2 mt-3 overflow-x-auto whitespace-nowrap sm:-mx-6">
+        <div class="inline-block min-w-full px-4 py-2 align-middle sm:px-6">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-zinc-950/10 dark:border-white/10">
+                <th scope="col" class="py-2 pr-6 text-sm font-medium whitespace-nowrap">Started</th>
+                <th scope="col" class="py-2 pr-6 text-sm font-medium whitespace-nowrap">Program</th>
+                <th scope="col" class="py-2 pr-6 text-sm font-medium whitespace-nowrap">Kind</th>
+                <th scope="col" class="py-2 pr-6 text-sm font-medium whitespace-nowrap">Exit</th>
+                <th scope="col" class="py-2 text-sm font-medium whitespace-nowrap">Asks</th>
+              </tr>
+            </thead>
+            <tbody id="recent-cycles" class="divide-y divide-zinc-950/5 dark:divide-white/10">
+              <!-- Fixture rows removed — no recent-cycles renderer is wired in this task
+                   (out of scope for the read-only panel milestone; render() only builds
+                   #programs). One reference row kept as a template:
+              <tr>
+                <td class="py-2.5 pr-6 font-mono text-sm tabular-nums text-zinc-500 dark:text-zinc-400">08-24 09:12</td>
+                <td class="py-2.5 pr-6 text-sm font-medium">joinery</td>
+                <td class="py-2.5 pr-6 text-sm text-zinc-500 dark:text-zinc-400">delivery</td>
+                <td class="py-2.5 pr-6 text-sm text-amber-700 dark:text-amber-400">blocked</td>
+                <td class="py-2.5 font-mono text-sm tabular-nums text-zinc-500 dark:text-zinc-400">1</td>
+              </tr>
+              -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ Accounts ═══════════════════════════════════════════ -->
+    <section class="border-t border-zinc-950/5 py-8 dark:border-white/10">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 class="eyebrow text-sm text-zinc-500 dark:text-zinc-400">Accounts</h2>
+        <p class="text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Diagnostic — rotation is per request, so capacity is pooled.</p>
+      </div>
+
+      <div id="accounts" class="mt-3 divide-y divide-zinc-950/5 dark:divide-white/10">
+
+        <!-- Fixture accounts removed — no account renderer is wired in this task
+             (out of scope for the read-only panel milestone; render() only builds
+             #programs). One reference block kept as a template:
+
+        <details class="group py-2 first:pt-0">
+          <summary class="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-2 py-2 -mx-2 hover:bg-zinc-50 [&::-webkit-details-marker]:hidden dark:hover:bg-white/5">
+            <svg viewBox="0 0 16 16" class="size-4 shrink-0 fill-zinc-400 transition-transform group-open:rotate-90 dark:fill-zinc-500" aria-hidden="true"><path fill-rule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
+            <span class="size-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true"></span>
+            <span class="min-w-0 flex-1 truncate text-base font-medium">fourth@example.com</span>
+            <span class="w-full pl-6 font-mono text-base tabular-nums text-zinc-500 sm:w-auto sm:pl-0 sm:text-sm dark:text-zinc-400">fable 94 · 7d 87 · 5h 23</span>
+          </summary>
+          <div class="mt-2 pb-2 pl-6">
+            <p class="mb-3 text-base text-zinc-500 sm:text-sm dark:text-zinc-400">oauth · active · 4 sessions · last used 15:22</p>
+          </div>
+        </details>
+        -->
+      </div>
+
+      <p class="mt-5 max-w-[70ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400">
+        One account at 94% cannot be rescued by another's headroom — each is clamped before the pool is summed. That clamping is why pooled fable headroom is lower than three accounts would suggest.
+      </p>
+    </section>
+
+    <p class="border-t border-zinc-950/5 pt-5 text-base text-zinc-400 sm:text-sm dark:border-white/10 dark:text-zinc-500">
+      Confidential — not for distribution.
+    </p>
+  </main>
+</div>
+
+<script>
+  // render(state) — one function per section, defined below. Keyed by program
+  // name so a re-render preserves scroll position and any open <details>.
+  const VERDICT_RAIL = { RUN: 'border-teal-500', GO: 'border-emerald-500',
+                         WAIT: 'border-amber-500', STOP: 'border-red-500', OFF: 'border-zinc-950/10' };
+
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;   // never innerHTML — aice sends no CSP
+    return node;
+  };
+
+  const programRow = (program) => {
+    const key = `program-${program.name}`;
+    const verdict = program.enabled ? program.verdict : 'OFF';
+    const row = document.getElementById(key) ?? el('li', '');
+    row.id = key;
+    row.className = `rounded-xl border-l-2 py-1 pl-4 ${VERDICT_RAIL[verdict] ?? VERDICT_RAIL.OFF}`;
+    row.replaceChildren();
+
+    const head = el('div', 'flex flex-wrap items-center gap-x-2');
+    head.append(
+      el('h3', 'truncate text-lg font-semibold tracking-tight', program.name),
+      el('span', 'eyebrow rounded px-1.5 py-0.5 text-sm font-medium', verdict.toLowerCase()),
+      el('span', 'font-mono text-sm text-zinc-400', `p${program.priority}`),
+    );
+    row.append(head, el('p', 'mt-1 max-w-[60ch] text-base text-pretty text-zinc-500 sm:text-sm', program.reason));
+
+    if (program.context && program.context.percent !== null) {
+      row.append(el('p', 'mt-2 font-mono text-sm tabular-nums text-zinc-500',
+        `ctx ${program.context.percent}% · ${program.context.tokens ?? '?'} · ${program.context.subagents ?? 0} subagent`));
+    }
+    if (program.preview && program.preview.length > 0) {
+      row.append(el('pre',
+        'mt-3 max-h-32 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-sm/6 ' +
+        'whitespace-pre-wrap wrap-anywhere text-zinc-600 ring-1 ring-zinc-950/5 ' +
+        'sm:text-[0.8125rem]/5 sm:whitespace-pre dark:bg-white/5 dark:text-zinc-300',
+        program.preview.join('\n')));
+    }
+    return row;
+  };
+
+  const render = (state) => {
+    document.getElementById('mode').textContent = state.mode;
+    document.getElementById('fundable').textContent = state.cyclesFundable.toFixed(1);
+    document.getElementById('binding').textContent = state.bindingBucket;
+    // cyclesInFlight, not a filter over verdict === 'RUN' — that undercounts a
+    // cycle whose program was removed or renamed out of control.json while
+    // still running (CLAUDE.md service.ts/state.ts trap; fixed in the TUI first).
+    document.getElementById('running').textContent =
+      `${state.cyclesInFlight} / ${state.maxConcurrentCycles}`;
+
+    const list = document.getElementById('programs');
+    // Reuse nodes by id so scroll offset and <details> state survive the re-render.
+    for (const program of state.programs) list.append(programRow(program));
+  };
+</script>
+
+<script>
+  const DATA = '/craig/assets/snapshot.json';
+  const FAST_MS = 5000, SLOW_MS = 30000, STALE_MS = 120000;
+  let lastStamp = null, unchanged = 0, timer = null;
+
+  const setBanner = (kind, headline, detail) => {
+    const el = document.getElementById('banner');
+    el.hidden = kind === null;
+    if (kind === null) return;
+    el.dataset.kind = kind;
+    el.querySelector('[data-headline]').textContent = headline;
+    el.querySelector('[data-detail]').textContent = detail;
+  };
+
+  const poll = async () => {
+    try {
+      const res = await fetch(`${DATA}?t=${Date.now()}`, { credentials: 'same-origin', cache: 'no-store' });
+      if (res.status === 404) {
+        setBanner('gone', 'No data.', 'The supervisor has been down for over a day.');
+      } else if (res.redirected || !(res.headers.get('content-type') ?? '').includes('application/json')) {
+        setBanner('auth', 'Session expired.', 'Reload to sign in again.');
+      } else {
+        const state = await res.json();
+        unchanged = state.generatedAt === lastStamp ? unchanged + 1 : 0;
+        lastStamp = state.generatedAt;
+        render(state);
+        const age = Date.now() - Date.parse(state.generatedAt);
+        setBanner(age > STALE_MS ? 'stale' : null,
+          `Showing state from ${Math.round(age / 60000)} minutes ago.`,
+          'The Mac stopped pushing. Nothing below is live.');
+      }
+    } catch (error) {
+      setBanner('offline', 'Cannot reach the supervisor data.', String(error && error.message));
+    }
+    clearTimeout(timer);
+    timer = setTimeout(poll, unchanged >= 3 ? SLOW_MS : FAST_MS);
+  };
+  poll();
+</script>
+</body>
+</html>

@@ -1,12 +1,18 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export const LABEL = 'tech.propra.drovr';
+/** A second, independent launchd agent: same file, different label, so a bootout of
+ * one never touches the other and each fails or reloads on its own. */
+export const SNAPSHOT_LABEL = 'tech.propra.drovr.snapshot';
 
-export const plistPath = (): string =>
-  join(homedir(), 'Library', 'LaunchAgents', `${LABEL}.plist`);
+export const plistPathFor = (label: string): string =>
+  join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`);
+
+/** Kept for every existing caller that means "the tick agent's plist" by default. */
+export const plistPath = (): string => plistPathFor(LABEL);
 
 /**
  * launchd starts with a bare PATH that does not include tool dirs like
@@ -19,8 +25,10 @@ export const agentPath = (): string => {
   return [...new Set([...inherited, ...standard])].join(':');
 };
 
-/** StartInterval, not a long-lived daemon: every tick is a fresh, crash-isolated process. */
+/** StartInterval, not a long-lived daemon: every firing is a fresh, crash-isolated process. */
 export const plist = (input: {
+  label: string;
+  command: string;
   nodeBin: string;
   cliPath: string;
   intervalSeconds: number;
@@ -31,22 +39,31 @@ export const plist = (input: {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>${LABEL}</string>
+  <key>Label</key><string>${input.label}</string>
   <key>ProgramArguments</key>
   <array>
     <string>${input.nodeBin}</string>
     <string>${input.cliPath}</string>
-    <string>tick</string>
+    <string>${input.command}</string>
   </array>
   <key>StartInterval</key><integer>${input.intervalSeconds}</integer>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>${join(input.logDir, 'drovr.out.log')}</string>
-  <key>StandardErrorPath</key><string>${join(input.logDir, 'drovr.err.log')}</string>
+  <key>StandardOutPath</key><string>${join(input.logDir, `${input.command}.log`)}</string>
+  <key>StandardErrorPath</key><string>${join(input.logDir, `${input.command}.err`)}</string>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>${input.path}</string></dict>
 </dict>
 </plist>
 `;
+
+/** The two agents drovr installs. Only the tick interval is operator-configurable
+ * (`drovr service install [seconds]`); the snapshot cadence is fixed — it is not a
+ * decision loop, just a cheap poll-and-publish, and CADENCE in panel.ts already
+ * backs it off to 5m on its own once no cycle is in flight. */
+export const AGENTS: { label: string; command: string; intervalSeconds: number }[] = [
+  { label: LABEL, command: 'tick', intervalSeconds: 600 },
+  { label: SNAPSHOT_LABEL, command: 'snapshot', intervalSeconds: 20 },
+];
 
 export type ServiceState = {
   /** The plist exists on disk. */
@@ -59,9 +76,9 @@ export type ServiceState = {
   intervalSeconds: number | null;
 };
 
-const launchctlList = (): string | null => {
+const launchctlList = (label: string): string | null => {
   try {
-    return execFileSync('launchctl', ['list', LABEL], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return execFileSync('launchctl', ['list', label], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   } catch {
     // A non-zero exit means launchd does not know the label — that is an answer, not a failure.
     return null;
@@ -79,9 +96,9 @@ const intervalFromPlist = (path: string): number | null => {
   return match === null ? null : Number.parseInt(match[1]!, 10);
 };
 
-export const serviceState = (): ServiceState => {
-  const path = plistPath();
-  const listing = launchctlList();
+export const serviceStateFor = (label: string): ServiceState => {
+  const path = plistPathFor(label);
+  const listing = launchctlList(label);
   return {
     installed: existsSync(path),
     loaded: listing !== null,
@@ -91,13 +108,20 @@ export const serviceState = (): ServiceState => {
   };
 };
 
+/** Kept for every existing caller that means "the tick agent's state" by default. */
+export const serviceState = (): ServiceState => serviceStateFor(LABEL);
+
+export const snapshotServiceState = (): ServiceState => serviceStateFor(SNAPSHOT_LABEL);
+
 /**
  * launchd being loaded only proves it is scheduled. Ticks are short-lived, so the
  * honest liveness signal is when one last actually ran.
  */
-export const bootstrapCommand = (): string => `launchctl bootstrap gui/$(id -u) ${plistPath()}`;
+export const bootstrapCommand = (label: string = LABEL): string =>
+  `launchctl bootstrap gui/$(id -u) ${plistPathFor(label)}`;
 
-export const bootoutCommand = (): string => `launchctl bootout gui/$(id -u)/${LABEL}`;
+export const bootoutCommand = (label: string = LABEL): string =>
+  `launchctl bootout gui/$(id -u)/${label}`;
 
 const launchctl = (args: string[]): boolean => {
   try {
@@ -112,16 +136,44 @@ const launchctl = (args: string[]): boolean => {
  * launchd holds the plist it loaded, not the file on disk, so rewriting the file
  * changes nothing until the agent is booted out and back in. Installing over a
  * loaded agent without reloading looks like it worked and silently keeps running
- * the old definition — which is exactly how a stale PATH survived a fix.
+ * the old definition — which is exactly how a stale PATH survived a fix. Takes an
+ * explicit label so the two agents can never be reloaded into each other's slot.
  */
-export const reloadAgent = (): 'reloaded' | 'loaded' | 'failed' => {
+export const reloadAgent = (label: string): 'reloaded' | 'loaded' | 'failed' => {
   const domain = `gui/${process.getuid?.() ?? ''}`;
-  const wasLoaded = launchctlList() !== null;
-  if (wasLoaded) launchctl(['bootout', `${domain}/${LABEL}`]);
-  const ok = launchctl(['bootstrap', domain, plistPath()]);
+  const wasLoaded = launchctlList(label) !== null;
+  if (wasLoaded) launchctl(['bootout', `${domain}/${label}`]);
+  const ok = launchctl(['bootstrap', domain, plistPathFor(label)]);
   if (!ok) return 'failed';
   return wasLoaded ? 'reloaded' : 'loaded';
 };
+
+/**
+ * Writes and reloads both agents' plists in one call, so `service install` can
+ * never end up with one agent updated and the other left on a stale definition.
+ * The tick interval is the only operator-configurable one; see AGENTS' comment.
+ */
+export const installAgents = (input: {
+  tickIntervalSeconds: number;
+  nodeBin: string;
+  cliPath: string;
+  logDir: string;
+  path: string;
+}): { label: string; outcome: 'reloaded' | 'loaded' | 'failed' }[] =>
+  AGENTS.map((agent) => {
+    const intervalSeconds = agent.label === LABEL ? input.tickIntervalSeconds : agent.intervalSeconds;
+    const target = plistPathFor(agent.label);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(
+      target,
+      plist({
+        label: agent.label, command: agent.command, intervalSeconds,
+        nodeBin: input.nodeBin, cliPath: input.cliPath, logDir: input.logDir, path: input.path,
+      }),
+      'utf8',
+    );
+    return { label: agent.label, outcome: reloadAgent(agent.label) };
+  });
 
 /**
  * Every branch says what is wrong and the exact command that fixes it. Referring to
@@ -147,7 +199,7 @@ export const describeService = (
       : state.lastExitStatus >> 8;
   const failed =
     exitCode !== null && exitCode !== 0
-      ? `. Warning: the last tick failed (exit ${exitCode}) — check ${join(homedir(), '.drovr/logs/drovr.err.log')}`
+      ? `. Warning: the last tick failed (exit ${exitCode}) — check ${join(homedir(), '.drovr/logs/tick.err')}`
       : '';
 
   if (lastTickAt === null) {
@@ -161,6 +213,46 @@ export const describeService = (
       ? ` — that is overdue for a ${state.intervalSeconds}s interval, so the agent may be stalled`
       : '';
   return `loaded${every}. Last tick recorded a decision ${ago}${stalled}${failed}`;
+};
+
+/**
+ * describeService's counterpart for the snapshot agent. Not shared with it: the
+ * vocabulary (tick/decision vs publish) differs enough on every branch that a
+ * shared helper would need as many parameters as this function has lines.
+ */
+export const describeSnapshotAgent = (
+  state: ServiceState,
+  lastPublishedAt: number | null,
+  now: number,
+): string => {
+  if (!state.installed) {
+    return 'no launchd agent has been written, so nothing publishes on a schedule. Fix: drovr service install';
+  }
+  if (!state.loaded) {
+    return `the launchd agent file exists but launchd has not loaded it, so it will never publish. Fix: ${bootstrapCommand(SNAPSHOT_LABEL)}`;
+  }
+
+  const every = state.intervalSeconds === null ? '' : ` and fires every ${state.intervalSeconds}s`;
+  const exitCode =
+    state.lastExitStatus === null || state.lastExitStatus < 256
+      ? state.lastExitStatus
+      : state.lastExitStatus >> 8;
+  const failed =
+    exitCode !== null && exitCode !== 0
+      ? `. Warning: the last run failed (exit ${exitCode}) — check ${join(homedir(), '.drovr/logs/snapshot.err')}`
+      : '';
+
+  if (lastPublishedAt === null) {
+    return `loaded${every}, but nothing has published yet${failed}`;
+  }
+
+  const minutes = Math.round((now - lastPublishedAt) / 60_000);
+  const ago = minutes < 60 ? `${minutes} minutes ago` : `${Math.floor(minutes / 60)}h${minutes % 60}m ago`;
+  const stalled =
+    state.intervalSeconds !== null && now - lastPublishedAt > state.intervalSeconds * 3000
+      ? ` — that is overdue for a ${state.intervalSeconds}s interval, so the agent may be stalled`
+      : '';
+  return `loaded${every}. Last published ${ago}${stalled}${failed}`;
 };
 
 /** The same facts as a discriminated value, for a caller that needs to branch rather than read. */

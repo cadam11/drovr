@@ -255,20 +255,26 @@ export const COMMANDS: Command[] = [
   {
     name: 'service',
     usage: 'drovr service <status|install|uninstall|print> [seconds]',
-    summary: 'manage the launchd agent that runs tick',
+    summary: 'manage the two launchd agents: tick, and the panel snapshot publisher',
     details: [
-      'status reports whether launchd has the agent loaded and when a tick last actually recorded',
-      'a decision — loaded only proves it is scheduled.',
-      'install writes the plist and prints the launchctl line to load it; print emits the plist',
-      'without writing anything.',
+      'drovr installs two independent launchd agents: tech.propra.drovr runs tick on [seconds]',
+      '(default 600); tech.propra.drovr.snapshot runs snapshot on a fixed 20s and feeds the web',
+      'panel. Each is loaded, reloaded and reported on separately — a bootout of one never',
+      'touches the other.',
+      'status reports both: whether launchd has each loaded, and when it last actually ran —',
+      'a tick recording a decision, or a snapshot publishing — since loaded only proves it is',
+      'scheduled.',
+      'install writes both plists and reloads both agents; launchd holds the plist it loaded, not',
+      'the file on disk, so install always bootouts and bootstraps rather than only rewriting.',
+      'print emits the tick plist without writing anything.',
     ],
     flags: [
       {
         flag: '--json',
-        describes: 'structured state, including the exact command that fixes an unhealthy one',
+        describes: 'structured state for both agents, each with the exact command that fixes it',
       },
     ],
-    writes: 'the launchd plist, for install',
+    writes: 'both launchd plists, for install',
   },
   {
     name: 'init',

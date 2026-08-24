@@ -43,9 +43,11 @@ export const assertAiceVersion = (reported: string): void => {
   );
 };
 
-type Marker = { hash: string; publishedAt: number };
+export type Marker = { hash: string; publishedAt: number };
 
-const readMarker = (path: string): Marker | null => {
+/** Exported for `drovr service status`, which reports the snapshot agent's own
+ * liveness signal (last publish) the same way describeService reports the tick's. */
+export const readMarker = (path: string): Marker | null => {
   try {
     const parsed: Marker = JSON.parse(readFileSync(path, 'utf8'));
     return typeof parsed.hash === 'string' && typeof parsed.publishedAt === 'number' ? parsed : null;

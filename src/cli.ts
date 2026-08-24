@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, effectivePriority, parseControl, readControl } from './control.ts';
@@ -21,18 +21,22 @@ import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
-import { publishSnapshot } from './publish-snapshot.ts';
+import { publishSnapshot, readMarker } from './publish-snapshot.ts';
 import {
   bootoutCommand,
   bootstrapCommand,
-  reloadAgent,
+  installAgents,
   agentPath,
   describeService,
+  describeSnapshotAgent,
   LABEL,
   plist,
   plistPath,
+  plistPathFor,
+  SNAPSHOT_LABEL,
   serviceHealth,
   serviceState,
+  snapshotServiceState,
 } from './service.ts';
 import { readStatus } from './teamclaude.ts';
 import { inFlightCycles, launchDetached, runProgramCycle, tick } from './tick.ts';
@@ -251,20 +255,23 @@ const showLedger = (limit: number, json: boolean): void => {
   }
 };
 
+/** Installs and reloads both the tick and snapshot launchd agents in one call —
+ * see service.ts:installAgents for why they must never be split into two steps. */
 const installService = (intervalSeconds: number): void => {
   ensureDirs();
   const cliPath = resolve(fileURLToPath(new URL('./cli.ts', import.meta.url)));
-  const target = plistPath();
-  mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, plist({ nodeBin: process.execPath, cliPath, intervalSeconds, logDir: p.logs, path: agentPath() }), 'utf8');
-  console.log(`wrote ${target}`);
-
-  const outcome = reloadAgent();
-  if (outcome === 'reloaded') console.log('reloaded the running agent so it picks up this plist');
-  if (outcome === 'loaded') console.log('loaded the agent — ticks start on the next interval');
-  if (outcome === 'failed') {
-    console.error(`could not load the agent automatically. Run: ${bootstrapCommand()}`);
-    process.exitCode = 1;
+  const results = installAgents({
+    tickIntervalSeconds: intervalSeconds,
+    nodeBin: process.execPath, cliPath, logDir: p.logs, path: agentPath(),
+  });
+  for (const { label, outcome } of results) {
+    console.log(`wrote ${plistPathFor(label)}`);
+    if (outcome === 'reloaded') console.log(`  ${label}: reloaded so it picks up this plist`);
+    if (outcome === 'loaded') console.log(`  ${label}: loaded — starts on its next interval`);
+    if (outcome === 'failed') {
+      console.error(`  ${label}: could not load automatically. Run: ${bootstrapCommand(label)}`);
+      process.exitCode = 1;
+    }
   }
 };
 
@@ -316,42 +323,52 @@ const removeProgram = (name: string | undefined): void => {
   console.log(`removed ${name} (its ledger history and ~/.drovr/programs/${name} are left alone)`);
 };
 
+/** Both agents are independent launchd entries — see CLAUDE.md's service.ts trap —
+ * so status is reported for each rather than folded into one combined shape. */
 const showService = (json: boolean): void => {
-  const state = serviceState();
+  const tick = serviceState();
+  const snapshot = snapshotServiceState();
   const lastTick = lastDecisionAt(p.decisions);
+  const lastPublishedAt = readMarker(p.snapshotState)?.publishedAt ?? null;
   const now = Date.now();
   if (json) {
-    console.log(
-      JSON.stringify(
-        {
-          health: serviceHealth(state, lastTick, now),
-          explanation: describeService(state, lastTick, now),
-          lastTickAt: lastTick === null ? null : new Date(lastTick).toISOString(),
-          ...state,
-          plistPath: plistPath(),
-          loadCommand: bootstrapCommand(),
-          unloadCommand: bootoutCommand(),
-        },
-        null,
-        2,
-      ),
-    );
+    console.log(JSON.stringify({
+      tick: {
+        health: serviceHealth(tick, lastTick, now),
+        explanation: describeService(tick, lastTick, now),
+        lastTickAt: lastTick === null ? null : new Date(lastTick).toISOString(),
+        ...tick, plistPath: plistPath(),
+        loadCommand: bootstrapCommand(LABEL), unloadCommand: bootoutCommand(LABEL),
+      },
+      snapshot: {
+        health: serviceHealth(snapshot, lastPublishedAt, now),
+        explanation: describeSnapshotAgent(snapshot, lastPublishedAt, now),
+        lastPublishedAt: lastPublishedAt === null ? null : new Date(lastPublishedAt).toISOString(),
+        ...snapshot, plistPath: plistPathFor(SNAPSHOT_LABEL),
+        loadCommand: bootstrapCommand(SNAPSHOT_LABEL), unloadCommand: bootoutCommand(SNAPSHOT_LABEL),
+      },
+    }, null, 2));
     return;
   }
-  console.log(describeService(state, lastTick, now));
-  if (state.pid !== null) console.log(`a tick is executing right now (pid ${state.pid})`);
-  console.log(`plist: ${plistPath()}`);
-  console.log(`logs:  ${p.logs}`);
+  console.log(`tick: ${describeService(tick, lastTick, now)}`);
+  if (tick.pid !== null) console.log(`  a tick is executing right now (pid ${tick.pid})`);
+  console.log(`snapshot: ${describeSnapshotAgent(snapshot, lastPublishedAt, now)}`);
+  if (snapshot.pid !== null) console.log(`  a snapshot publish is executing right now (pid ${snapshot.pid})`);
+  console.log(`plists: ${plistPath()}`);
+  console.log(`        ${plistPathFor(SNAPSHOT_LABEL)}`);
+  console.log(`logs:   ${p.logs}`);
 };
 
 const uninstallService = (): void => {
-  const target = plistPath();
-  if (!existsSync(target)) {
-    console.log('not installed');
-    return;
+  for (const label of [LABEL, SNAPSHOT_LABEL]) {
+    const target = plistPathFor(label);
+    if (!existsSync(target)) {
+      console.log(`${label}: not installed`);
+      continue;
+    }
+    console.log(`${label}: unload it with:  ${bootoutCommand(label)}`);
+    console.log(`${label}: then remove:     rm ${target}`);
   }
-  console.log(`unload it with:  ${bootoutCommand()}`);
-  console.log(`then remove:     rm ${target}`);
 };
 
 const showHelp = (topic: string | undefined, json: boolean): void => {
@@ -591,7 +608,10 @@ const main = async (argv: string[]): Promise<void> => {
     if (sub === 'install') return installService(seconds);
     if (sub === 'print') {
       const cliPath = resolve(fileURLToPath(new URL('./cli.ts', import.meta.url)));
-      console.log(plist({ nodeBin: process.execPath, cliPath, intervalSeconds: seconds, logDir: p.logs, path: agentPath() }));
+      console.log(plist({
+        label: LABEL, command: 'tick', nodeBin: process.execPath, cliPath,
+        intervalSeconds: seconds, logDir: p.logs, path: agentPath(),
+      }));
       return;
     }
     throw new Error(`unknown service subcommand "${sub ?? ''}" — expected status, install, uninstall or print (label: ${LABEL})`);
