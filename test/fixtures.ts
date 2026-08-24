@@ -12,13 +12,15 @@ type AccountInput = {
   weeklyResetInHours?: number;
   disabled?: boolean;
   rateLimitedUntil?: number | null;
+  /** One of the values teamclaude actually emits: 'active' | 'error' | 'exhausted' | 'throttled'. */
+  status?: string;
 };
 
 export const account = (input: AccountInput) => ({
   name: input.name,
   type: 'oauth',
   orgName: null,
-  status: input.disabled ? 'disabled' : 'active',
+  status: input.status ?? 'active',
   sessions: 0,
   disabled: input.disabled ?? false,
   quota: {

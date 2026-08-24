@@ -52,3 +52,25 @@ test('parseStatus tolerates an account that has never been used', () => {
   assert.equal(parsed.accounts[0]!.quota.unifiedStatus, null);
   assert.equal(parsed.accounts[0]!.usage.lastUsed, null);
 });
+
+test('parseStatus defaults fields a future teamclaude payload might omit outright', () => {
+  const parsed = parseStatus({
+    currentAccount: null,
+    accounts: [{
+      name: 'second@example.com',
+      disabled: false,
+      quota: {
+        unified5h: null, unified5hReset: null, unified7d: null, unified7dReset: null,
+        unified7dFable: null, unified7dFableReset: null,
+      },
+      rateLimitedUntil: null, pausedUntil: null,
+    }],
+  });
+  const account = parsed.accounts[0]!;
+  assert.equal(account.type, 'oauth');
+  assert.equal(account.orgName, null);
+  assert.equal(account.status, null);
+  assert.equal(account.sessions, 0);
+  assert.equal(account.usage.lastUsed, null);
+  assert.equal(account.quota.unifiedStatus, null);
+});
