@@ -21,6 +21,7 @@ import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
+import { publishSnapshot } from './publish-snapshot.ts';
 import {
   bootoutCommand,
   bootstrapCommand,
@@ -386,6 +387,11 @@ const main = async (argv: string[]): Promise<void> => {
 
   if (command === 'init') return init();
   if (command === 'tick') return tick();
+  if (command === 'snapshot') {
+    const outcome = await publishSnapshot();
+    console.log(outcome === 'published' ? 'snapshot published' : 'snapshot unchanged — not published');
+    return;
+  }
   if (command === 'run-cycle') {
     const name = rest[0];
     if (name === undefined) throw new Error('run-cycle needs a program name');

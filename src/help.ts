@@ -106,6 +106,18 @@ export const COMMANDS: Command[] = [
     writes: 'cycles.jsonl, the program status page',
   },
   {
+    name: 'snapshot',
+    usage: 'drovr snapshot',
+    summary: 'Publish current state to the drovr aice panel.',
+    details: [
+      'Assembles one DrovrState and publishes it as assets/snapshot.json on the drovr aice',
+      'install, where the panel page reads it same-origin behind aice\'s own sign-in.',
+      'Skips the publish when nothing changed, and backs off from 20s to 5m when no cycle',
+      'is in flight. Requires aice >= 0.16.0 for --ttl.',
+    ],
+    writes: '~/.drovr/snapshot.json, ~/.drovr/snapshot-state.json, and assets/snapshot.json on the aice install',
+  },
+  {
     name: 'add',
     usage: 'drovr add <name> <path> [flags]',
     summary: 'track a new program',

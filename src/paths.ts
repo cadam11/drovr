@@ -10,6 +10,7 @@ export const paths = () => {
     base,
     control: join(base, 'control.json'),
     cycles: join(base, 'cycles.jsonl'),
+    snapshotState: join(base, 'snapshot-state.json'),
     decisions: join(base, 'decisions.jsonl'),
     tickLock: join(base, 'tick.lock'),
     programLock: (program: string) => join(base, 'programs', program, 'cycle.lock'),
