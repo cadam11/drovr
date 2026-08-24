@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildState } from '../src/state.ts';
-import { account, control, healthy, NOW, status } from './fixtures.ts';
+import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
 
 const input = () => ({
   status: healthy(),
@@ -54,6 +54,53 @@ test('buildState marks the service overdue past three intervals', () => {
   const stale = { ...input(), service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW - 4 * 600_000 } };
   assert.equal(buildState(stale).service.overdue, true);
   assert.equal(buildState(input()).service.overdue, false);
+});
+
+/**
+ * decide() treats a cycle as in flight only within control.maxCycleHours (12 by
+ * default), not inFlight()'s own 24h default. A call site that reached that default
+ * instead of passing control.maxCycleHours explicitly (as decide() does) would still
+ * count a 13h-old, never-ended cycle as running — showing 'RUN' for a program
+ * decide() itself considers free to admit.
+ *
+ * This deliberately uses a live `Date.now()` rather than the frozen fixture `NOW`.
+ * The bug this guards is a call site omitting `now` entirely and letting `inFlight`
+ * fall back to its own `Date.now()` default — a frozen historical `now` would let
+ * that fallback drift arbitrarily far from the fixture's clock and get silently
+ * filtered out anyway, masking exactly the defect under test. `now` captured here
+ * lands within the same instant the buggy default would have used, so a
+ * reintroduced omission is caught regardless of which day this test runs.
+ */
+test('buildState stops counting a cycle as running once it is older than control.maxCycleHours, matching decide()', () => {
+  const now = Date.now();
+  const staleCycle = {
+    v: 1 as const,
+    kind: 'delivery' as const,
+    program: 'demo',
+    startedAt: new Date(now - 13 * HOUR).toISOString(),
+    endedAt: null,
+    exit: 'running' as const,
+    poolBefore: { fable: 0, general: 0, session: 0 },
+    poolAfter: null,
+    startupTokens: null,
+    yield: null,
+    asksRaised: 0,
+  };
+
+  const state = buildState({
+    status: healthy(),
+    control: control({ programs: [{ name: 'demo', cwd: '/tmp/demo' }] }), // maxCycleHours defaults to 12
+    cycles: [staleCycle],
+    now,
+    service: { loaded: true, intervalSeconds: 600, lastTickAt: now - 60_000 },
+    previews: new Map(),
+    locks: new Map(),
+    asksUrls: new Map(),
+    queuedIntents: [],
+  });
+
+  const demo = state.programs.find((program) => program.name === 'demo');
+  assert.notEqual(demo?.verdict, 'RUN');
 });
 
 /**

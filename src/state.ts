@@ -121,7 +121,7 @@ const RUNNING_PLACEHOLDER: CycleRecord = {
 
 const programsOf = (input: StateInput): ProgramState[] => {
   const { control, cycles, now, previews, locks, asksUrls } = input;
-  const running = inFlight(cycles);
+  const running = inFlight(cycles, now, control.maxCycleHours);
   const ordered = byPriority(control.programs, now, control.deadlineHorizonDays);
   const projected: CycleRecord[] = [];
 
@@ -168,7 +168,9 @@ export const buildState = (input: StateInput): DrovrState => {
   const { status, control, cycles, now } = input;
   const ceilings = ceilingsFor(control) ?? { weekly: 0, session: 0 };
   const pool = poolFrom(status, ceilings, now);
-  const running = inFlight(cycles).length;
+  // Same window decide() uses (control.maxCycleHours, not inFlight's own 24h
+  // default), so the reservation and bar segments never disagree with the verdict.
+  const running = inFlight(cycles, now, control.maxCycleHours).length;
   const cost = estimateCycleCost(cycles, control.seedCycleCost);
   // Mirrors decide()'s own admission math: in-flight cycles have not shown up as
   // spent quota yet, so funding off the raw pool would let N concurrent programs
@@ -234,7 +236,7 @@ export const collectState = async (
   const status = await readStatus();
   const control = readControl(p.control);
   const cycles = readCycles(p.cycles);
-  const running = inFlight(cycles);
+  const running = inFlight(cycles, now, control.maxCycleHours);
 
   const previews = new Map<string, Preview>();
   const asksUrls = new Map<string, string>();
