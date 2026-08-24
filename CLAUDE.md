@@ -66,7 +66,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `ledger.ts` | `stalled` counts toward the failure latch alongside `crash`, and toward nothing else. Leave it out and a program that stalls every cycle loops start → nudge×3 → stalled → start forever, paying full onboarding each round. |
 | `nudge.ts` | SMS sends on the **default** aws profile, with no `--profile`. The named profiles are SSO-backed and their sessions expire — exactly the state an unattended overnight supervisor finds them in, which is how the alert path sat broken. The default profile is a static IAM user and still works at 4am. |
 | `nudge.ts` | SNS accepting a message is not proof a handset got it. Say "accepted", never "delivered", and never build anything that assumes the text arrived — `textCraig` is best-effort on every path. |
-| `nudge.ts` | A rejected `originationNumber` fails at *delivery* time, long after `sns publish` returned a MessageId and exit 0. Nothing in the CLI response says so — the reason appears only in the `DirectPublishToPhoneNumber/Failure` CloudWatch log group. Never conclude a send worked from its exit code; read the log. |
+| `nudge.ts` | Never conclude a send worked from its exit code. `aws sns publish` returns a MessageId and exit 0 for messages that fail at delivery a minute later; the reason appears only in the `DirectPublishToPhoneNumber/Failure` log group. `notify` waits for the real verdict — keep it that way. |
 
 ## The CLI is read by agents
 
@@ -94,35 +94,30 @@ Written and type-checked, never seen to fire. Unproven, not done:
 
 ## Notifications
 
-`drovr notify` texts Craig and is the way to prove the alert path before trusting it. Verified
-end to end on 2026-08-24.
+`drovr notify` texts Craig. It waits for the delivery status rather than reporting the exit
+code, because acceptance and delivery are different events a minute or so apart — `aws sns
+publish` returns a MessageId and exit 0 for messages that never leave.
 
-drovr has its own dedicated Canadian long code, **+1 506 906 8159**
-(`phone-dceeb0a0acc6439dbdd0a08ebc73cb98`, $1/month). Every other number in the account belongs
-to sunnyt — never borrow one, because their two-way channels route replies into sunnyt's own
-inbound topics, which its cycles poll.
+drovr sends from its own Canadian long code, **+1 506 906 8159**
+(`phone-dceeb0a0acc6439dbdd0a08ebc73cb98`, $1/month, `pool-8a85c8fb`), set as
+`originationNumber` in `control.json`.
 
-**`originationNumber` is null, and null is the working state — not an unfinished one.** Left
-null, SNS picks a number itself and every message delivers. Setting it to drovr's own number
-makes every message fail *after* `sns publish` has returned a MessageId and exit 0, with the
-reason visible only in the `DirectPublishToPhoneNumber/Failure` log group: "The provided number
-does not exist or does not belong to the account".
+**A configured `originationNumber` must be sent via `pinpoint-sms-voice-v2 send-text-message`,
+not `sns publish`.** SNS cannot resolve an explicit origination identity: it accepts the call
+and then fails at delivery with "The provided number does not exist or does not belong to the
+account". End User Messaging sends from the same number without complaint. Measured 2026-08-24
+to a live handset — SNS failed from that number three times, End User Messaging delivered three
+times. Pool membership and number age were both investigated and neither was the cause; the
+transport was.
 
-Measured on 2026-08-24, sending to the same handset:
+Leaving `originationNumber` null is *not* the safe fallback it looks like. SNS then picks a
+number itself, and it picks one of sunnyt's — so drovr's alerts arrive from the product's
+number and any reply lands in sunnyt's inbound topics, which its cycles poll.
 
-| origination | age | pooled | delivered |
-|---|---|---|---|
-| `+12362058605` | 11 months | yes | **yes** |
-| `+14313415075` | months | no | no |
-| `+15069068159` (drovr's) | minutes | no, then yes | no, and still no |
-
-Pooling the new number changed nothing, so pool membership is **not** the discriminator —
-an earlier version of this file claimed it was, on two data points, and was wrong. The
-remaining untested variable is the number's age: explicit origination may need a
-newly-acquired number to settle on AWS's side for longer than a few minutes. Retry
-`drovr notify` with it set, a day after 2026-08-24, and record the result here either way.
-
-That number also has no two-way (a reply goes nowhere) and no deletion protection.
+Delivery status is only readable on the SNS path, from the `DirectPublishToPhoneNumber` and
+`.../Failure` log groups. End User Messaging reports through a configuration set that drovr
+does not have, so `notify` says `unknown` there and names the two commands that would create
+one. Sending is unaffected.
 
 ## The repo is local-only
 

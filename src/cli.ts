@@ -16,6 +16,7 @@ import {
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
 import { readAsks } from './asks.ts';
 import { textCraig } from './nudge.ts';
+import { unverified, verifyDelivery } from './delivery.ts';
 import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { holder } from './lock.ts';
@@ -480,33 +481,45 @@ const main = async (argv: string[]): Promise<void> => {
       return;
     }
 
-    const sent = await textCraig(control.phoneNumber, message, control.originationNumber);
+    const result = await textCraig(control.phoneNumber, message, control.originationNumber);
     const from = control.originationNumber ?? 'whichever number SNS picks';
+
+    // Accepting a message and delivering it are different events, minutes apart. The
+    // only place the difference shows up is the delivery log, so look rather than guess.
+    const verdict = rest.includes('--no-verify')
+      ? unverified('not checked (--no-verify)')
+      : await verifyDelivery(result, 90_000);
+
     if (json) {
       console.log(
         JSON.stringify(
           {
-            accepted: sent,
+            accepted: result.sent,
+            delivery: verdict.state,
+            reason: verdict.reason,
             to: control.phoneNumber,
             from,
+            via: result.via,
+            messageId: result.messageId,
             message,
-            note: 'accepted means SNS took the message; it is not proof a handset received it',
+            note: 'accepted means the API took the message; delivery is the one that matters',
             usingThis: AGENT_NOTES,
           },
           null,
           2,
         ),
       );
-      if (!sent) process.exitCode = 1;
+      if (!result.sent || verdict.state === 'failed') process.exitCode = 1;
       return;
     }
-    if (!sent) {
-      console.error('SNS did not accept the message — the reason is logged above.');
+    if (!result.sent) {
+      console.error('the send was refused — the reason is logged above.');
       process.exitCode = 1;
       return;
     }
-    console.log(`sent to ${control.phoneNumber} from ${from}`);
-    console.log('SNS accepted it. That is not proof a handset received it — check the phone.');
+    console.log(`sent to ${control.phoneNumber} from ${from} via ${result.via}`);
+    console.log(`delivery: ${verdict.state} — ${verdict.reason}`);
+    if (verdict.state === 'failed') process.exitCode = 1;
     return;
   }
 
