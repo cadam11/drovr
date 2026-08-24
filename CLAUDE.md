@@ -59,6 +59,8 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `herdr.ts` | `agent start` exits non-zero with `agent_not_ready` when claude comes up behind a dialog (a trust prompt, a malformed settings.json). The agent is live and named — wait for idle and prompt it, never treat it as fatal, or a session sits there forever having never been told what to do. |
 | `herdr.ts` | Only ever close a tab drovr labelled, in that program own workspace, with no agent in any of its panes. A stray empty tab is untidy; a closed live one is lost work. |
 | `herdr.ts` | The runner must be Fable, but Craig's default model must not change. Pass `-- --model fable` to `agent start` (per-session) — never `/model`, a settings file, or an env default. |
+| `herdr.ts` | herdr names the agent state field `agent_status`, not `state`. Reading the wrong name parses clean and answers `unknown` — a real herdr status — for every agent, so a finished runner never looks releasable and every tick defers against drovr's own leftover. Parse it strictly and let an unrecognised shape throw. |
+| `herdr.ts` | Only send `/exit` to a **settled** agent. A runner keeps working after writing its report; `/exit` typed into that turn is swallowed by it, and the pane is held forever. Return false instead and let the next tick retry — the release has to be retryable, not one-shot. |
 
 ## The CLI is read by agents
 
@@ -82,8 +84,6 @@ Written and type-checked, never seen to fire. Unproven, not done:
 
 - **The SMS nudge** (`nudge.ts`) — never triggered, because the asks were answered before the
   threshold. The `aws sns publish --profile dev` call is unverified end to end.
-- **`releaseAgent` sending `/exit`** — every cycle so far ended by other means. If `/exit` does not
-  close a Claude Code session, the pane stays occupied and the next cycle defers indefinitely.
 - **A full ask → answer → auto-resume round trip.** Both halves have been seen separately.
 - **`headless` runner mode** — a fallback, exercised once early, untouched since the herdr runner
   landed.

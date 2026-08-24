@@ -27,9 +27,35 @@ const workspaceCreateShape = z.object({
   result: z.object({ workspace: z.object({ workspace_id: z.string() }) }),
 });
 
+/** herdr's own vocabulary, as listed by `herdr agent wait --until`. */
+const AGENT_STATUSES = ['idle', 'working', 'blocked', 'done', 'unknown'] as const;
+
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
+
+/** `gone` is drovr's own addition: the agent target no longer exists at all. */
+export type AgentState = AgentStatus | 'gone';
+
 const agentShape = z.object({
-  result: z.object({ agent: z.object({ state: z.string() }).partial() }).partial(),
+  result: z.object({
+    agent: z.object({ agent_status: z.enum(AGENT_STATUSES) }).passthrough(),
+  }),
 });
+
+/**
+ * herdr names this field `agent_status`. Reading `state` instead parsed clean and
+ * answered `unknown` for every agent — itself a real herdr status — so a finished
+ * runner was never recognised as releasable and every tick deferred against drovr's
+ * own leftover. An unrecognised shape has to be loud for exactly that reason.
+ */
+export const parseAgentStatus = (payload: unknown): AgentStatus => {
+  const parsed = agentShape.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error(
+      `herdr agent get did not report an agent_status: ${JSON.stringify(payload).slice(0, 300)}`,
+    );
+  }
+  return parsed.data.result.agent.agent_status;
+};
 
 const herdr = async (args: string[]): Promise<unknown> => {
   const shown = `herdr ${args.join(' ')}`;
@@ -173,13 +199,11 @@ const assertProxyEnv = async (paneId: string): Promise<void> => {
 };
 
 /** An occupied pane means a previous agent is still there — very likely a restored cycle. */
-export const paneOccupant = async (paneId: string): Promise<string | null> => {
-  try {
-    const parsed = agentShape.safeParse(await herdr(['agent', 'get', paneId]));
-    return parsed.success ? (parsed.data.result?.agent?.state ?? 'unknown') : null;
-  } catch {
-    return null;
-  }
+export const paneOccupant = async (paneId: string): Promise<AgentStatus | null> => {
+  // `agent get` on a pane holding no agent exits non-zero with agent_not_found. A
+  // payload drovr cannot read is a different thing entirely and is left to throw.
+  const payload = await herdr(['agent', 'get', paneId]).catch(() => null);
+  return payload === null ? null : parseAgentStatus(payload);
 };
 
 /**
@@ -348,15 +372,22 @@ export const tidyCycleTabs = async (input: {
   return closed;
 };
 
-export const agentState = async (agentName: string): Promise<string> => {
-  try {
-    const parsed = agentShape.safeParse(await herdr(['agent', 'get', agentName]));
-    return parsed.success ? (parsed.data.result?.agent?.state ?? 'unknown') : 'unknown';
-  } catch {
-    // The agent exited or its pane closed — both mean the cycle is no longer running.
-    return 'gone';
-  }
+export const agentState = async (agentName: string): Promise<AgentState> => {
+  // The agent exited or its pane closed — both mean the cycle is no longer running.
+  const payload = await herdr(['agent', 'get', agentName]).catch(() => null);
+  if (payload === null) return 'gone';
+  return parseAgentStatus(payload);
 };
+
+const SETTLED: AgentState[] = ['idle', 'done', 'unknown', 'gone'];
+
+/**
+ * Only a settled session can act on `/exit`. Typed into a running turn it is
+ * swallowed by that turn instead of executed, and typed at a dialog it is not read
+ * at all — either way the pane is held and every later cycle for the program is
+ * refused. `unknown` stays settled: herdr simply cannot see a state to wait on.
+ */
+export const isSettled = (state: AgentState): boolean => SETTLED.includes(state);
 
 /**
  * An interactive claude session cannot exit itself — it finishes its turn and idles
@@ -365,13 +396,17 @@ export const agentState = async (agentName: string): Promise<string> => {
  * the pane stays occupied and the next cycle for that program is refused.
  */
 export const releaseAgent = async (agentName: string, paneId: string): Promise<boolean> => {
-  const settled = ['idle', 'done', 'unknown', 'gone'];
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const state = await agentState(agentName);
-    if (state === 'gone') return true;
-    if (settled.includes(state)) break;
+  let state = await agentState(agentName);
+  for (let attempt = 0; attempt < 10 && !isSettled(state); attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 3_000));
+    state = await agentState(agentName);
   }
+  if (state === 'gone') return true;
+
+  // A runner can keep working long after writing its report, so refusing here rather
+  // than sending anyway is what makes this retryable: the next tick finds the agent
+  // idle and releases it then, instead of burning the only attempt on a deaf session.
+  if (!isSettled(state)) return false;
 
   await herdr(['pane', 'send-text', paneId, '/exit\r']).catch(() => ({}));
   for (let attempt = 0; attempt < 10; attempt += 1) {
