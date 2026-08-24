@@ -120,8 +120,10 @@ export const COMMANDS: Command[] = [
     details: [
       'Assembles one DrovrState and publishes it as assets/snapshot.json on the drovr aice',
       'install, where the panel page reads it same-origin behind aice\'s own sign-in.',
-      'Skips the publish when nothing changed, and backs off from 20s to 5m when no cycle',
-      'is in flight. Requires aice >= 0.16.0 for --ttl.',
+      'Skips the publish only when nothing changed AND the last publish is under the 40s',
+      'heartbeat; past that it republishes even an unchanged payload, so the panel\'s own',
+      '2-minute staleness banner never fires against a healthy agent. A genuine change',
+      'republishes after a 20s rate limit. Requires aice >= 0.16.0 for --ttl.',
       'Exits 1 with an actionable message on stderr if the publish itself could not run',
       '(aice/direnv missing or below the version floor, or the publish call failing) — a',
       'launchd-driven caller may treat that outcome as best-effort and carry on regardless.',

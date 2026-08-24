@@ -2,9 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { readControl } from './control.ts';
 import { explainSpawn } from './exec.ts';
-import { inFlight, readCycles } from './ledger.ts';
 import { payload, payloadHash, shouldPublish } from './panel.ts';
 import { paths } from './paths.ts';
 import { collectState } from './state.ts';
@@ -109,15 +107,14 @@ const attemptPublish = async (): Promise<'published' | 'skipped'> => {
   const json = payload(state);
   const nextHash = payloadHash(json);
   const marker = readMarker(p.snapshotState);
-  // control.maxCycleHours, not inFlight's own 24h default — otherwise this could
-  // disagree with decide() and buildState about which cycles are still running.
-  const maxCycleHours = readControl(p.control).maxCycleHours;
-  const cycleRunning = inFlight(readCycles(p.cycles), Date.now(), maxCycleHours).length > 0;
-
+  // shouldPublish no longer takes cycleRunning: the heartbeat (panel.ts) now
+  // governs liveness regardless of whether a cycle is in flight, and the old
+  // fast/slow split by cycleRunning had nowhere to live once quietSeconds was
+  // deleted — a rate limit that still branched on it but did nothing with the
+  // result would be exactly the dead-but-looks-live pattern that caused C1.
   const go = shouldPublish({
     previousHash: marker?.hash ?? null,
     nextHash,
-    cycleRunning,
     lastPublishedAt: marker?.publishedAt ?? null,
     now: Date.now(),
   });

@@ -50,6 +50,14 @@ export type DrovrState = {
   pauseUntil: string | null;
   maxConcurrentCycles: number;
   /**
+   * 1 - ceilings[mode].weekly — the reserve knob itself (keys.ts:setReserve is
+   * literally its inverse), not allocation.yoursReserved. That field drifts down
+   * as capacity is spent and swings with whichever bucket happens to bind, even
+   * though the knob never moved; a panel tile built on it read 27% while the
+   * real setting was 45% (see CLAUDE.md's C3 "Held for you" trap).
+   */
+  reserve: number;
+  /**
    * Every ledger-in-flight cycle within control.maxCycleHours — the same count
    * decide() caps against (decide.ts) and buildState reserves against below. A count
    * derived only from state.programs would miss a cycle whose program was removed or
@@ -204,6 +212,7 @@ export const buildState = (input: StateInput): DrovrState => {
     mode: control.mode,
     pauseUntil: control.pauseUntil,
     maxConcurrentCycles: control.maxConcurrentCycles,
+    reserve: r(1 - ceilings.weekly),
     cyclesInFlight: running,
     service: {
       loaded: input.service.loaded,

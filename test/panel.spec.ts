@@ -37,31 +37,36 @@ test('payloadHash ignores generatedAt so an unchanged pool does not republish', 
 
 test('shouldPublish skips an unchanged payload under the heartbeat', () => {
   assert.equal(shouldPublish({
-    previousHash: 'abc', nextHash: 'abc', cycleRunning: true,
+    previousHash: 'abc', nextHash: 'abc',
     lastPublishedAt: NOW - 10_000, now: NOW,
   }), false);
 });
 
-test('shouldPublish emits a heartbeat past 60s even with an unchanged hash', () => {
-  const base = { previousHash: 'abc', nextHash: 'abc', cycleRunning: false, now: NOW };
+test('shouldPublish emits a heartbeat past 40s even with an unchanged hash', () => {
+  const base = { previousHash: 'abc', nextHash: 'abc', now: NOW };
   assert.equal(shouldPublish({ ...base, lastPublishedAt: NOW - (CADENCE.heartbeatSeconds - 1) * 1000 }), false);
   assert.equal(shouldPublish({ ...base, lastPublishedAt: NOW - CADENCE.heartbeatSeconds * 1000 }), true);
 });
 
-test('shouldPublish honours the active cadence while a cycle runs', () => {
-  const base = { previousHash: 'a', nextHash: 'b', cycleRunning: true, now: NOW };
+// The heartbeat check must sit ABOVE the hash comparison. This is the regression
+// test for C1: a nested heartbeat only fires when the hash is unchanged, but real
+// payloads (account.lastUsedAt, sessions, the session bucket) almost never hash
+// identically, so that branch was dead and the 300s-old quiet cadence it replaced
+// governed the panel's staleness banner regardless of agent health.
+test('shouldPublish rate-limits a genuine change to activeSeconds, not the deleted quiet cadence', () => {
+  const base = { previousHash: 'a', nextHash: 'b', now: NOW };
   assert.equal(shouldPublish({ ...base, lastPublishedAt: NOW - 5_000 }), false);
   assert.equal(shouldPublish({ ...base, lastPublishedAt: NOW - 25_000 }), true);
 });
 
-test('shouldPublish backs off to the quiet cadence when nothing is in flight', () => {
-  const base = { previousHash: 'a', nextHash: 'b', cycleRunning: false, now: NOW };
-  assert.equal(shouldPublish({ ...base, lastPublishedAt: NOW - 60_000 }), false);
-  assert.equal(shouldPublish({ ...base, lastPublishedAt: NOW - (CADENCE.quietSeconds + 1) * 1000 }), true);
+test('shouldPublish publishes a real change once enough time has passed, even while idle', () => {
+  assert.equal(shouldPublish({
+    previousHash: 'a', nextHash: 'b', lastPublishedAt: NOW - 41_000, now: NOW,
+  }), true);
 });
 
 test('shouldPublish always publishes when nothing has been published yet', () => {
   assert.equal(shouldPublish({
-    previousHash: null, nextHash: 'b', cycleRunning: false, lastPublishedAt: null, now: NOW,
+    previousHash: null, nextHash: 'b', lastPublishedAt: null, now: NOW,
   }), true);
 });

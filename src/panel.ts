@@ -3,12 +3,19 @@ import type { DrovrState } from './state.ts';
 
 /**
  * heartbeatSeconds exists because the panel's own STALE_MS (2 minutes) is shorter
- * than quietSeconds (5 minutes): without a heartbeat, a perfectly healthy, unchanged
- * payload sits unpublished for up to 5 minutes and the page falsely reports the Mac
- * stopped pushing. Raising STALE_MS instead was rejected — that would hide a real
- * outage for up to 6 minutes, which defeats the one banner that must be believed.
+ * than the old quietSeconds backoff (5 minutes) ever was: without a heartbeat, a
+ * perfectly healthy, unchanged payload could sit unpublished long enough for the
+ * page to falsely report the Mac stopped pushing. quietSeconds was deleted
+ * entirely (not just superseded) once the heartbeat moved above the hash
+ * comparison — a constant nothing can reach is exactly the kind of dead-but-
+ * looks-live thing that caused the bug it replaced.
+ *
+ * 40s, not 60s: worst case is one skipped launchd slot (up to 20s of phase) plus
+ * publish latency on top of the heartbeat itself. At 60s that stacks to ~85-90s
+ * against a 120s banner threshold, so a single missed slot gets uncomfortably
+ * close and two trip it. 40s (two slots) leaves real margin at negligible cost.
  */
-export const CADENCE = { activeSeconds: 20, quietSeconds: 300, heartbeatSeconds: 60 };
+export const CADENCE = { activeSeconds: 20, heartbeatSeconds: 40 };
 
 export const payload = (state: DrovrState): string => `${JSON.stringify(state, null, 2)}\n`;
 
@@ -22,19 +29,26 @@ export const payloadHash = (json: string): string => {
   return createHash('sha256').update(JSON.stringify(parsed)).digest('hex').slice(0, 32);
 };
 
+/**
+ * The heartbeat check MUST come before the unchanged-hash check, not inside it.
+ * account fields (lastUsedAt, sessions, current, the session bucket) move on
+ * almost every real collectState() call, so previousHash === nextHash is nearly
+ * always false in practice — a heartbeat nested inside that branch is a branch
+ * that never runs. Hoisting it above the comparison means it fires regardless of
+ * whether anything actually changed, which is the whole point of a heartbeat.
+ *
+ * cycleRunning is gone: the old fast/slow (20s/300s) split by whether a cycle was
+ * running no longer has anywhere to live once quietSeconds is deleted, so every
+ * genuine change is rate-limited by the same activeSeconds floor.
+ */
 export const shouldPublish = (input: {
   previousHash: string | null;
   nextHash: string;
-  cycleRunning: boolean;
   lastPublishedAt: number | null;
   now: number;
 }): boolean => {
   if (input.lastPublishedAt === null || input.previousHash === null) return true;
-  if (input.previousHash === input.nextHash) {
-    // A heartbeat, not news: refreshes generatedAt so the page's staleness clock
-    // never falsely trips while nothing has actually changed.
-    return input.now - input.lastPublishedAt >= CADENCE.heartbeatSeconds * 1000;
-  }
-  const floor = input.cycleRunning ? CADENCE.activeSeconds : CADENCE.quietSeconds;
-  return input.now - input.lastPublishedAt >= floor * 1000;
+  if (input.now - input.lastPublishedAt >= CADENCE.heartbeatSeconds * 1000) return true;
+  if (input.previousHash === input.nextHash) return false;
+  return input.now - input.lastPublishedAt >= CADENCE.activeSeconds * 1000;
 };

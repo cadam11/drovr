@@ -260,9 +260,7 @@
         -->
       </div>
 
-      <p class="mt-5 max-w-[70ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400">
-        One account at 94% cannot be rescued by another's headroom — each is clamped before the pool is summed. That clamping is why pooled fable headroom is lower than three accounts would suggest.
-      </p>
+      <p id="accounts-prose" class="mt-5 max-w-[70ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400">…</p>
     </section>
 
     <p class="border-t border-zinc-950/5 pt-5 text-base text-zinc-400 sm:text-sm dark:border-white/10 dark:text-zinc-500">
@@ -397,8 +395,12 @@
     }
     heading.append(el('span', 'text-red-600 dark:text-red-400', needsYou.name), ' is waiting on you.');
     detail.textContent = needsYou.reason;
-    cta.hidden = needsYou.asksUrl === null;
-    if (needsYou.asksUrl !== null) cta.href = needsYou.asksUrl;
+    // aice sends no CSP, and this is the one sink that isn't textContent — asksUrl's
+    // provenance is Craig's own .envrc (low risk), but cheap to refuse anything that
+    // isn't the scheme a real link should ever use.
+    const safeUrl = needsYou.asksUrl !== null && needsYou.asksUrl.startsWith('https://');
+    cta.hidden = !safeUrl;
+    if (safeUrl) cta.href = needsYou.asksUrl;
   };
 
   // ─── Capacity bars ──────────────────────────────────────────────────────────
@@ -539,6 +541,31 @@
     return details;
   };
 
+  /** Real data, not the mock's fixed "one account at 94%" — names the actual
+   * worst bucket across all accounts, or falls back to a generic explanation
+   * of clamping (no invented number) when nothing is particularly saturated. */
+  const accountsProse = (state) => {
+    let worstAccount = null, worstBucket = null, worstFraction = -1;
+    for (const account of state.accounts) {
+      for (const bucketKey of ['session', 'general', 'fable']) {
+        const fraction = account.buckets[bucketKey].usedFraction;
+        if (fraction !== null && fraction > worstFraction) {
+          worstFraction = fraction;
+          worstAccount = account.name;
+          worstBucket = bucketKey;
+        }
+      }
+    }
+    const prose = document.getElementById('accounts-prose');
+    if (worstAccount === null || worstFraction < 0.7) {
+      prose.textContent =
+        'Each account is clamped before the pool is summed, so one near its ceiling cannot be rescued by another\'s headroom.';
+      return;
+    }
+    prose.textContent =
+      `${worstAccount} at ${Math.round(worstFraction * 100)}% (${worstBucket}) cannot be rescued by another's headroom — each account is clamped before the pool is summed.`;
+  };
+
   // ─── Recent cycles ──────────────────────────────────────────────────────────
   const EXIT_COLOR = {
     seam: 'text-emerald-700 dark:text-emerald-400',
@@ -563,12 +590,11 @@
   const controlsSection = (state) => {
     document.getElementById('ctrl-mode').textContent = state.mode;
 
-    // No exact "reserve %" field exists in DrovrState (it's a control.json ceiling,
-    // not a payload value) — this approximates it from the binding bucket's own
-    // yoursReserved share, which is the most relevant real number available.
-    const bucket = state.allocation[state.bindingBucket];
-    const total = bucket.total > 0 ? bucket.total : 1;
-    document.getElementById('ctrl-reserve').textContent = `${Math.round(clampPercent((bucket.yoursReserved / total) * 100))}%`;
+    // state.reserve is 1 - ceilings[mode].weekly — the actual reserve knob
+    // (setReserve, keys.ts, is literally its inverse). allocation.yoursReserved
+    // looks similar but drifts down as capacity is spent and swings with
+    // whichever bucket binds, even though the knob itself never moved.
+    document.getElementById('ctrl-reserve').textContent = `${Math.round(state.reserve * 100)}%`;
 
     document.getElementById('ctrl-concurrency').textContent = String(state.maxConcurrentCycles);
     document.getElementById('ctrl-pause').textContent =
@@ -591,14 +617,22 @@
   // ─── Header liveness widget ─────────────────────────────────────────────────
   /** Reflects state.service.{loaded,overdue} and the payload's own age — and, on
    * every no-data failure branch, is forced down rather than left showing the
-   * last good frame's "up"/fresh reading (CLAUDE.md C2). */
+   * last good frame's "up"/fresh reading (CLAUDE.md C2).
+   *
+   * `healthy` (tick loaded, not overdue) and `fresh` (this payload isn't stale)
+   * are deliberately separate signals — a stale snapshot doesn't mean the tick
+   * agent is unhealthy — but the freshness dot/ping specifically must reflect
+   * freshness, not just tick health: without the ageMs gate it stayed teal and
+   * kept pulsing next to a "300s ago" label during a stale banner.
+   */
   const setSupervisorWidget = (loaded, overdue, ageMs) => {
     const healthy = loaded && !overdue;
+    const fresh = healthy && ageMs !== null && ageMs <= STALE_MS;
     document.getElementById('supervisor-status').textContent = healthy ? 'up' : 'down';
     document.getElementById('supervisor-dot').className = `size-1.5 shrink-0 rounded-full ${healthy ? 'bg-emerald-500' : 'bg-red-500'}`;
-    document.getElementById('freshness-dot').className = `relative inline-flex size-1.5 rounded-full ${healthy ? 'bg-teal-500' : 'bg-red-500'}`;
+    document.getElementById('freshness-dot').className = `relative inline-flex size-1.5 rounded-full ${fresh ? 'bg-teal-500' : 'bg-red-500'}`;
     document.getElementById('freshness-ping').className =
-      `absolute inline-flex size-full rounded-full opacity-75 ${healthy ? 'animate-ping bg-teal-500' : 'bg-red-500'}`;
+      `absolute inline-flex size-full rounded-full opacity-75 ${fresh ? 'animate-ping bg-teal-500' : 'bg-red-500'}`;
     document.getElementById('freshness-age').textContent = ageMs === null ? 'unknown' : `${Math.round(Math.max(0, ageMs) / 1000)}s ago`;
   };
 
@@ -626,6 +660,7 @@
     const liveAccountIds = new Set(state.accounts.map((account) => `account-${account.name}`));
     for (const account of state.accounts) accountList.append(accountRow(account));
     pruneStale(accountList, liveAccountIds);
+    accountsProse(state);
 
     const cycleList = document.getElementById('recent-cycles');
     cycleList.replaceChildren();
@@ -660,6 +695,11 @@
       if (res.status === 404) {
         setBanner('gone', 'No data.', 'The supervisor has been down for over a day.');
         setSupervisorWidget(false, true, null);
+      } else if (res.status >= 500) {
+        // Distinct from the auth branch below: a 5xx is the origin failing, not a
+        // stale session, and "reload to sign in" cannot fix a server error.
+        setBanner('offline', 'Server error.', `The data endpoint is failing (${res.status}) — reloading will not fix this.`);
+        setSupervisorWidget(false, true, null);
       } else if (res.type === 'opaqueredirect' || !res.ok || !(res.headers.get('content-type') ?? '').includes('application/json')) {
         setBanner('auth', 'Session expired.', 'Reload to sign in again.');
         setSupervisorWidget(false, true, null);
@@ -667,12 +707,19 @@
         const state = await res.json();
         const changed = state.generatedAt !== lastStamp;
         unchanged = changed ? 0 : unchanged + 1;
-        lastStamp = state.generatedAt;
         // Skip the DOM rebuild when nothing changed — payloadHash (panel.ts) already
         // guarantees an identical generatedAt means an identical payload, and
         // rebuilding the <pre> nodes on every poll resets whatever a reader had
         // scrolled to (CLAUDE.md I7).
+        //
+        // lastStamp is assigned only AFTER render() returns, not before it runs: if
+        // render() throws partway through, the DOM is left half-built, and the
+        // catch below paints the offline banner for this poll. Updating lastStamp
+        // first would make the NEXT poll see an "unchanged" generatedAt, skip the
+        // retry, and clear the banner — a half-built page that looks healthy.
+        // Leaving lastStamp stale forces a retry instead.
         if (changed) render(state);
+        lastStamp = state.generatedAt;
         const age = Date.now() - Date.parse(state.generatedAt);
         setSupervisorWidget(state.service.loaded, state.service.overdue, age);
         setBanner(age > STALE_MS ? 'stale' : null,
