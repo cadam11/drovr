@@ -104,6 +104,43 @@ test('buildState stops counting a cycle as running once it is older than control
 });
 
 /**
+ * The 13h test above catches a call site that drops control.maxCycleHours but
+ * still passes a real now — it cannot catch a call site that drops only `now`,
+ * because a dropped `now` falls back to inFlight's own live Date.now() default,
+ * which lands within milliseconds of a live-clock test's own `now` and produces
+ * the same answer either way. This test isolates that other half: a frozen,
+ * historical `now` (2026-08-22) far from the real wall clock, with a cycle just
+ * 2h before it — comfortably inside control.maxCycleHours (12h default either
+ * way). If the passed `now` is honoured, the cycle is 2h old and counts as
+ * running. If a call site silently substitutes real Date.now(), that same
+ * `startedAt` is however many days in the past this test happens to run,
+ * which is certainly outside any maxHours cutoff, and the assertion flips.
+ */
+test('buildState honours the passed now rather than the real wall clock for a recent cycle', () => {
+  const recentCycle = {
+    v: 1 as const,
+    kind: 'delivery' as const,
+    program: 'demo',
+    startedAt: new Date(NOW - 2 * HOUR).toISOString(),
+    endedAt: null,
+    exit: 'running' as const,
+    poolBefore: { fable: 0, general: 0, session: 0 },
+    poolAfter: null,
+    startupTokens: null,
+    yield: null,
+    asksRaised: 0,
+  };
+
+  const state = buildState({
+    ...input(),
+    cycles: [recentCycle],
+  });
+
+  const demo = state.programs.find((program) => program.name === 'demo');
+  assert.equal(demo?.verdict, 'RUN');
+});
+
+/**
  * One account, deliberately thin on session headroom, funds one cycle's worth
  * of the tightest bucket but not two once the first is projected as running.
  * This is the sequential-admission projection restored per plan ruling 1
