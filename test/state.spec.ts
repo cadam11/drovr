@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildState } from '../src/state.ts';
-import { control, healthy, NOW } from './fixtures.ts';
+import { account, control, healthy, NOW, status } from './fixtures.ts';
 
 const input = () => ({
   status: healthy(),
@@ -54,4 +54,50 @@ test('buildState marks the service overdue past three intervals', () => {
   const stale = { ...input(), service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW - 4 * 600_000 } };
   assert.equal(buildState(stale).service.overdue, true);
   assert.equal(buildState(input()).service.overdue, false);
+});
+
+/**
+ * One account, deliberately thin on session headroom, funds one cycle's worth
+ * of the tightest bucket but not two once the first is projected as running.
+ * This is the sequential-admission projection restored per plan ruling 1
+ * (mirroring src/watch.ts's programLines) — without it, both programs would
+ * see the raw pool independently and both report GO.
+ */
+const scarcePool = () =>
+  status([account({ name: 'a', fable: 0.2, general: 0.1, session: 0.0 })]);
+
+const scarceInput = (programs: { name: string; cwd: string; priority: number }[]) => ({
+  status: scarcePool(),
+  control: control({ programs }),
+  cycles: [],
+  now: NOW,
+  service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW - 60_000 },
+  previews: new Map(),
+  locks: new Map(),
+  asksUrls: new Map(),
+  queuedIntents: [],
+});
+
+test('buildState admits only as many programs as the pool can fund, in priority order', () => {
+  const state = buildState(scarceInput([
+    { name: 'alpha', cwd: '/tmp/alpha', priority: 0 },
+    { name: 'beta', cwd: '/tmp/beta', priority: 1 },
+  ]));
+
+  const alpha = state.programs.find((program) => program.name === 'alpha');
+  const beta = state.programs.find((program) => program.name === 'beta');
+  assert.equal(alpha?.verdict, 'GO');
+  assert.notEqual(beta?.verdict, 'GO');
+});
+
+test('buildState changes which program wins scarce capacity when priority is reordered', () => {
+  const promoted = buildState(scarceInput([
+    { name: 'alpha', cwd: '/tmp/alpha', priority: 1 },
+    { name: 'beta', cwd: '/tmp/beta', priority: 0 },
+  ]));
+
+  const alpha = promoted.programs.find((program) => program.name === 'alpha');
+  const beta = promoted.programs.find((program) => program.name === 'beta');
+  assert.equal(beta?.verdict, 'GO');
+  assert.notEqual(alpha?.verdict, 'GO');
 });

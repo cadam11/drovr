@@ -1,7 +1,7 @@
 import { allocationFor, type Allocation, type BucketName } from './allocation.ts';
 import { hoursToWeeklyReset, poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, effectivePriority, readControl, type Control } from './control.ts';
-import { cyclesFundableFrom, decide, type Verdict } from './decide.ts';
+import { cyclesFundableFrom, decide, lessReserved, type Verdict } from './decide.ts';
 import {
   estimateCycleCost, inFlight, lastDecisionAt, readCycles, spentSince, type CycleRecord,
 } from './ledger.ts';
@@ -13,11 +13,21 @@ import { serviceState } from './service.ts';
 import { readStatus, type TeamclaudeStatus } from './teamclaude.ts';
 
 const BUCKETS: BucketName[] = ['fable', 'general', 'session'];
-const SEED_COST = { fable: 0.1, general: 0.08, session: 0.25 };
 const OVERDUE_INTERVALS = 3;
 
 /** Rounded at the edge so the JSON carries meanings, not float noise. */
 const r = (value: number, places = 4): number => Number(value.toFixed(places));
+
+/** allocationFor's division/multiplication over quota fractions is the biggest source of float noise in the payload. */
+const roundAllocation = (allocation: Allocation): Allocation => ({
+  bucket: allocation.bucket,
+  total: r(allocation.total),
+  yoursSpent: r(allocation.yoursSpent),
+  programsSpent: r(allocation.programsSpent),
+  programsReserved: r(allocation.programsReserved),
+  programsAvailable: r(allocation.programsAvailable),
+  yoursReserved: r(allocation.yoursReserved),
+});
 
 export type ProgramState = {
   name: string;
@@ -158,21 +168,25 @@ export const buildState = (input: StateInput): DrovrState => {
   const { status, control, cycles, now } = input;
   const ceilings = ceilingsFor(control) ?? { weekly: 0, session: 0 };
   const pool = poolFrom(status, ceilings, now);
-  const cost = estimateCycleCost(cycles, SEED_COST);
-  const funding = cyclesFundableFrom(pool, cost);
+  const running = inFlight(cycles).length;
+  const cost = estimateCycleCost(cycles, control.seedCycleCost);
+  // Mirrors decide()'s own admission math: in-flight cycles have not shown up as
+  // spent quota yet, so funding off the raw pool would let N concurrent programs
+  // each claim the whole thing.
+  const available = lessReserved(pool, cost, running);
+  const funding = cyclesFundableFrom(available, cost);
   const hoursLeft = hoursToWeeklyReset(status, now);
   const windowStart = hoursLeft === null ? now : now - (168 - hoursLeft) * 3_600_000;
   const spent = spentSince(cycles, windowStart);
-  const running = inFlight(cycles).length;
 
   const allocation = Object.fromEntries(
-    BUCKETS.map((bucket) => [bucket, allocationFor({
+    BUCKETS.map((bucket) => [bucket, roundAllocation(allocationFor({
       status, pool, bucket,
       spentByPrograms: spent[bucket],
       runningCycles: running,
       cycleCost: cost,
       now,
-    })]),
+    }))]),
   ) as Record<BucketName, Allocation>;
 
   return {

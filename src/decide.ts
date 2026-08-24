@@ -64,8 +64,10 @@ export const cyclesFundableFrom = (pool: Pool, cost: CycleCost): Funding => {
 /**
  * Cycles already running have not yet shown up as spent quota, so admitting
  * against the raw pool would let N concurrent programs each claim all of it.
+ * Exported so state.ts's headline funding number applies the same reservation
+ * this module does, rather than a second copy of the arithmetic drifting apart.
  */
-const lessReserved = (pool: Pool, cost: CycleCost, running: number): Pool => ({
+export const lessReserved = (pool: Pool, cost: CycleCost, running: number): Pool => ({
   ...pool,
   fable: Math.max(0, pool.fable - running * cost.fable),
   general: Math.max(0, pool.general - running * cost.general),
