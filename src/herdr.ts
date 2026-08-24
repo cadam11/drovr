@@ -440,7 +440,7 @@ export const readPreview = async (agentName: string): Promise<Preview | null> =>
     ], { maxBuffer: 1024 * 1024 });
     return parsePreview(stdout);
   } catch (error) {
-    console.error(`preview unavailable for ${agentName}: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`preview unavailable for ${agentName}: ${explainSpawn('herdr', error).message}`);
     return null;
   }
 };
