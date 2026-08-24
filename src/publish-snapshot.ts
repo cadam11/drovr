@@ -12,7 +12,8 @@ const run = promisify(execFile);
 /** aice rejects any JSON outside assets/, and only 0.16.0+ knows --ttl. */
 const DATA_PATH = 'assets/snapshot.json';
 const AICE_FLOOR = [0, 16, 0];
-const DROVR_REPO = '/Users/cadam/code/drovr';
+/** The panel and its data live on the drovr install, which this repo's own .envrc names. */
+export const DROVR_REPO = '/Users/cadam/code/drovr';
 
 export const publishArgs = (file: string): string[] => [
   'exec', DROVR_REPO,

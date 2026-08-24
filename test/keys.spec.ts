@@ -8,10 +8,15 @@ import {
   cycleMode,
   cyclePause,
   nudgePriority,
+  nudgeReserve,
+  pauseForHours,
+  setEnabled,
+  setMode,
   setReserve,
   toggleEnabled,
 } from '../src/keys.ts';
 import { parseControl } from '../src/control.ts';
+import { parseIntent } from '../src/intents.ts';
 
 const scratch = (): string => {
   const dir = mkdtempSync(join(tmpdir(), 'drovr-'));
@@ -124,4 +129,118 @@ test('reserve applies per mode, leaving the others alone', () => {
   const ceilings = read(path).ceilings;
   assert.equal(ceilings.away!.weekly.toFixed(2), '0.90');
   assert.equal(ceilings.normal!.weekly.toFixed(2), '0.55');
+});
+
+test('setMode names a target rather than stepping to the next one', () => {
+  const path = scratch();
+  assert.equal(setMode(path, 'away').message, 'mode → away');
+  assert.equal(read(path).mode, 'away');
+  assert.equal(setMode(path, 'away').message, 'mode → away');
+  assert.equal(read(path).mode, 'away');
+});
+
+test('an unknown mode is refused, leaving the file untouched', () => {
+  const path = scratch();
+  const before = readFileSync(path, 'utf8');
+  assert.throws(() => setMode(path, 'turbo'), /unknown mode/);
+  assert.equal(readFileSync(path, 'utf8'), before);
+});
+
+test('pauseForHours pauses for the hours asked for, not the next step up', () => {
+  const path = scratch();
+  pauseForHours(path, 5);
+  const until = read(path).pauseUntil;
+  assert.ok(until !== null);
+  const hours = (Date.parse(until) - Date.now()) / 3_600_000;
+  assert.ok(hours > 4.9 && hours < 5.1, `expected about 5h, got ${hours}`);
+});
+
+test('setEnabled sets the state named, so a repeat is not a flip back', () => {
+  const path = scratch();
+  assert.match(setEnabled(path, 'sunnyt', false).message, /disabled/);
+  assert.equal(read(path).programs[0]!.enabled, false);
+  setEnabled(path, 'sunnyt', false);
+  assert.equal(read(path).programs[0]!.enabled, false);
+  setEnabled(path, 'sunnyt', true);
+  assert.equal(read(path).programs[0]!.enabled, true);
+});
+
+test('setEnabled on an unknown program is refused, leaving the file untouched', () => {
+  const path = scratch();
+  const before = readFileSync(path, 'utf8');
+  assert.throws(() => setEnabled(path, 'nope', false), /no program named/);
+  assert.equal(readFileSync(path, 'utf8'), before);
+});
+
+test('nudgeReserve moves the reserve by the delta, against the mode in force', () => {
+  const path = scratch();
+  // normal defaults to a weekly ceiling of 0.55, so the reserve starts at 0.45.
+  nudgeReserve(path, 0.1);
+  assert.equal(read(path).ceilings.normal!.weekly.toFixed(2), '0.45');
+  nudgeReserve(path, -0.2);
+  assert.equal(read(path).ceilings.normal!.weekly.toFixed(2), '0.65');
+});
+
+test('nudgeReserve is refused while the mode is off, rather than writing a dead ceiling', () => {
+  const path = scratch();
+  setMode(path, 'off');
+  const before = readFileSync(path, 'utf8');
+  assert.throws(() => nudgeReserve(path, 0.1), /mode is off/);
+  assert.equal(readFileSync(path, 'utf8'), before);
+});
+
+/**
+ * The parser refuses out-of-range values with a human-readable message, and these
+ * setters are the only appliers of what it lets through. Checked in both
+ * directions: a setter wider than the parser leaves a gap for a later caller, and
+ * one narrower silently refuses input the parser promised was valid.
+ */
+const parserTakes = (body: string): boolean => {
+  const now = Date.now();
+  const stamp = new Date(now + 60_000).toISOString();
+  return !('rejected' in parseIntent(`drovr-intent v1 ${body} expires=${stamp}`, 'n-1', now));
+};
+
+test('pause: the setter accepts exactly the 1h-72h the parser promises', () => {
+  const path = scratch();
+  assert.ok(parserTakes('pause 1h') && parserTakes('pause 72h'));
+  assert.ok(!parserTakes('pause 0h') && !parserTakes('pause 73h'));
+  assert.doesNotThrow(() => pauseForHours(path, 1));
+  assert.doesNotThrow(() => pauseForHours(path, 72));
+  assert.throws(() => pauseForHours(path, 0), /out of range/);
+  assert.throws(() => pauseForHours(path, 73), /out of range/);
+});
+
+test('reserve: the setter accepts exactly the +/-0.95 the parser promises', () => {
+  const path = scratch();
+  assert.ok(parserTakes('reserve 0.95') && parserTakes('reserve -0.95'));
+  assert.ok(!parserTakes('reserve 0.96') && !parserTakes('reserve -0.96'));
+  assert.doesNotThrow(() => nudgeReserve(path, 0.95));
+  assert.doesNotThrow(() => nudgeReserve(path, -0.95));
+  assert.throws(() => nudgeReserve(path, 0.96), /out of range/);
+  assert.throws(() => nudgeReserve(path, -0.96), /out of range/);
+});
+
+test('mode: the setter accepts exactly the names the parser promises', () => {
+  const path = scratch();
+  for (const mode of ['off', 'low', 'normal', 'away']) {
+    assert.ok(parserTakes(`mode ${mode}`), `parser refused ${mode}`);
+    assert.doesNotThrow(() => setMode(path, mode));
+  }
+  assert.ok(!parserTakes('mode turbo'));
+  assert.throws(() => setMode(path, 'turbo'), /unknown mode/);
+});
+
+test('concurrency and priority: the widest delta the parser passes still lands in range', () => {
+  const path = scratch();
+  assert.ok(parserTakes('concurrency 7') && !parserTakes('concurrency 8'));
+  assert.ok(parserTakes('priority sunnyt 9') && !parserTakes('priority sunnyt 10'));
+  adjustConcurrency(path, 7);
+  assert.equal(read(path).maxConcurrentCycles, 8);
+  adjustConcurrency(path, -7);
+  assert.equal(read(path).maxConcurrentCycles, 1);
+  nudgePriority(path, 'sunnyt', 9);
+  assert.equal(read(path).programs[0]!.priority, 9);
+  nudgePriority(path, 'sunnyt', -9);
+  assert.equal(read(path).programs[0]!.priority, 0);
 });

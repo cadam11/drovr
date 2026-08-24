@@ -1,3 +1,5 @@
+import { MAX_INTENTS_PER_TICK } from './intents.ts';
+
 export type Command = {
   name: string;
   usage: string;
@@ -49,6 +51,8 @@ export const AGENT_NOTES = {
     'Pool headroom is summed per bucket and is a display figure: it can look free while no ' +
       'single account has room in all three at once. Read capacity.cyclesFundable, never pool \u00f7 cost.',
     'run-cycle blocks for hours. Use tick, which detaches, or read cycles.jsonl to follow progress.',
+    'control.json can change under you between ticks: a tick applies any intent left on the panel ' +
+      'before it decides anything. Re-read it rather than caching a copy.',
   ],
 };
 
@@ -98,8 +102,19 @@ export const COMMANDS: Command[] = [
       'run-cycle worker rather than awaited.',
       'A launched cycle opens as an interactive claude tab in that program’s own herdr workspace,',
       'so a human can read it and talk to it while it runs. drovr watches it but never kills it.',
+      'Before deciding anything it drains the intents left as shared notes on the panel page —',
+      'an intent changes the very inputs admission reads. At most ' +
+        `${MAX_INTENTS_PER_TICK} per tick; the rest wait for the next one and the cap is logged.`,
+      'Each one is answered in its own thread and resolved, refusals included; a note that is not',
+      'an intent is left untouched and unresolved.',
+      'An intent reads "drovr-intent v1 <action> expires=<ISO 8601>". Actions: mode <off|low|',
+      'normal|away>, pause <1-72>h, reserve <-0.95..0.95>, concurrency <-7..7>, enable <program>,',
+      'disable <program>, priority <program> <-9..9>.',
+      'Shared notes must be enabled on the panel page by its owner. While they are off the read',
+      'succeeds and returns nothing, so the tick reports the page as unreadable rather than empty.',
     ],
-    writes: 'decisions.jsonl, cycles.jsonl, and launches cycle processes',
+    writes:
+      'control.json (any intent drained from the panel), decisions.jsonl, cycles.jsonl, and launches cycle processes',
   },
   {
     name: 'run-cycle',

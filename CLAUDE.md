@@ -71,6 +71,13 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `nudge.ts` | SMS sends on the **default** aws profile, with no `--profile`. The named profiles are SSO-backed and their sessions expire — exactly the state an unattended overnight supervisor finds them in, which is how the alert path sat broken. The default profile is a static IAM user and still works at 4am. |
 | `nudge.ts` | SNS accepting a message is not proof a handset got it. Say "accepted", never "delivered", and never build anything that assumes the text arrived — `textCraig` is best-effort on every path. |
 | `nudge.ts` | Never conclude a send worked from its exit code. `aws sns publish` returns a MessageId and exit 0 for messages that fail at delivery a minute later; the reason appears only in the `DirectPublishToPhoneNumber/Failure` log group. `notify` waits for the real verdict — keep it that way. |
+| `publish-snapshot.ts` | aice refuses any JSON published outside `assets/`. The panel's data path is `assets/snapshot.json` and nothing else — a snapshot published to a bare path is rejected, and the page then reads a 404 it has no way to distinguish from a dead Mac. |
+| `publish-snapshot.ts` | Every panel publish carries `--ttl` **and** `--force`. Without `--force` a republish to the same path is refused and the panel silently freezes at the last accepted payload; without `--ttl` a prolonged outage leaves a convincing dead frame up forever instead of turning into the 404 the page reports honestly. |
+| `publish-snapshot.ts` | aice must be >= 0.16.0 — earlier builds have no `--ttl`, so the publish fails on an unknown flag rather than on anything about the payload. `assertAiceVersion` names the floor and the fix (`aice update`); keep the check ahead of the publish, not after it. |
+| `panel/index.html` | The snapshot fetch needs a cache-buster (`?t=${Date.now()}`) alongside `cache: 'no-store'`. CloudFront happily serves a stale object to a plain URL, and a panel showing minute-old capacity as current is worse than one showing nothing. |
+| `preview.ts` | The preview parser is lenient **because it is a scrape** of claude's TUI — an undeclared format that changes between releases, where an unrecognised shape must yield `null` and cost the panel a preview, never fail a tick. This is the exact inverse of `herdr.ts`'s `agent_status` rule: parse a declared interface strictly and let a surprise throw, parse a scrape leniently and let it return nothing. Know which one you are reading before choosing. |
+| `asks.ts` | Two note shapes on purpose. `readAsks` parses leniently for a liveness heuristic; `listNotes` parses strictly because what it returns is applied to `control.json`. Do not merge them into one tolerant shape — that would make an unrecognised payload look like a page with no intents on it. |
+| `tick.ts` | Resolve a drained intent thread *before* replying to it. A reply that fails costs Craig an explanation the log still holds; a thread left open is drained again on the next tick, and a delta like `concurrency +1` applies a second time. |
 
 ## The CLI is read by agents
 
@@ -95,6 +102,11 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **A full ask → answer → auto-resume round trip.** Both halves have been seen separately.
 - **`headless` runner mode** — a fallback, exercised once early, untouched since the herdr runner
   landed.
+- **A panel intent applied end to end.** Every piece is tested against a real control file, but no
+  intent has been read off the live page, because shared notes are **off** on `craig/index.html`
+  and only Craig can turn them on, from the notes widget on the page itself. Until he does, every
+  tick logs the page as unreadable and nothing can be sent from the panel. `notes add` still
+  reports success against an unshared page, so a written note is not evidence the loop works.
 
 ## Notifications
 

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { DEFAULT_CEILINGS, parseControl, type Control } from './control.ts';
+import { DEFAULT_CEILINGS, parseControl, readControl, type Control } from './control.ts';
 import { MODES } from './modes.ts';
 const PAUSES = [
   { label: '1h', ms: 3_600_000 },
@@ -125,4 +125,59 @@ export const adjustConcurrency = (path: string, delta: number): Action => {
     raw.maxConcurrentCycles = cap;
   });
   return { message: `concurrency cap → ${cap}`, redraw: true };
+};
+
+/**
+ * Panel intents name a target where the TUI's keys cycle, so they need setters
+ * rather than steppers — but the same `mutate`, so control.json keeps one writer.
+ *
+ * The bounds below restate the parser's own (src/intents.ts) at the point of the
+ * write. A setter wider than the parser leaves a gap for any later caller; one
+ * narrower silently refuses input the parser promised was valid.
+ */
+export const setMode = (path: string, mode: string): Action => {
+  if (!MODES.includes(mode as (typeof MODES)[number])) {
+    throw new Error(`unknown mode "${mode}" — expected one of: ${MODES.join(', ')}`);
+  }
+  mutate(path, (raw) => {
+    raw.mode = mode;
+  });
+  return { message: `mode → ${mode}`, redraw: true };
+};
+
+export const pauseForHours = (path: string, hours: number): Action => {
+  if (!Number.isFinite(hours) || hours < 1 || hours > 72) {
+    throw new Error(`pause of ${hours}h is out of range — expected 1h to 72h`);
+  }
+  const until = new Date(Date.now() + hours * 3_600_000).toISOString();
+  mutate(path, (raw) => {
+    raw.pauseUntil = until;
+  });
+  return { message: `paused ${hours}h`, redraw: true };
+};
+
+export const setEnabled = (path: string, name: string, enabled: boolean): Action => {
+  mutate(path, (raw) => {
+    programAt(raw, name).enabled = enabled;
+  });
+  return { message: `${name} ${enabled ? 'enabled' : 'disabled'}`, redraw: true };
+};
+
+/**
+ * The panel sends a delta against the reserve Craig thinks in; setReserve takes an
+ * absolute one, so read the current ceiling first. Refused while the mode is off:
+ * there is no ceiling in force to move, and writing an `off` entry would create a
+ * number ceilingsFor() never reads.
+ */
+export const nudgeReserve = (path: string, delta: number): Action => {
+  if (!Number.isFinite(delta) || delta < -0.95 || delta > 0.95) {
+    throw new Error(`reserve delta ${delta} is out of range — expected -0.95 to 0.95`);
+  }
+  const control = readControl(path);
+  if (control.mode === 'off') {
+    throw new Error('mode is off, so no ceiling is in force — set a mode before moving the reserve');
+  }
+  const fallback = DEFAULT_CEILINGS[control.mode] ?? DEFAULT_CEILINGS.normal!;
+  const weekly = control.ceilings[control.mode]?.weekly ?? fallback.weekly;
+  return setReserve(path, control.mode, 1 - weekly + delta);
 };

@@ -6,17 +6,29 @@ import { appendRecord, inFlight, readCycles, snapshot, type CycleRecord } from '
 import { decide, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
 import { PaneBusy } from './herdr.ts';
-import { readAsks } from './asks.ts';
+import { listNotes, readAsks, replyToNote, resolveNote, type NoteThread } from './asks.ts';
 import { nudgeIfNeglected, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
 
 import { poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, readControl, type Program } from './control.ts';
+import { MAX_INTENTS_PER_TICK, parseIntent, type Action as IntentAction } from './intents.ts';
+import {
+  adjustConcurrency,
+  nudgePriority,
+  nudgeReserve,
+  pauseForHours,
+  setEnabled,
+  setMode,
+} from './keys.ts';
 import { acquire, holder, release } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { readStatus } from './teamclaude.ts';
 import { renderStatus } from './render.ts';
 import { publishStatus } from './publish.ts';
+import { DROVR_REPO } from './publish-snapshot.ts';
+
+const explain = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const logDecision = (program: string, decision: Decision, now: number): void => {
   appendRecord(paths().decisions, {
@@ -96,6 +108,104 @@ const reconcileAbandoned = (now: number): number => {
   return abandoned.length;
 };
 
+/** drovr has exactly one panel, so a control-file field for it would be surface nothing reads. */
+const PANEL_PAGE = 'craig/index.html';
+
+/** The whole intent -> writer routing. Exported so the six-way dispatch is covered
+ *  against a real control file rather than only through the notes I/O around it. */
+export const applyIntent = (controlPath: string, action: IntentAction): string => {
+  if (action.kind === 'mode') return setMode(controlPath, action.value).message;
+  if (action.kind === 'pause') return pauseForHours(controlPath, action.hours).message;
+  if (action.kind === 'reserve') return nudgeReserve(controlPath, action.delta).message;
+  if (action.kind === 'concurrency') return adjustConcurrency(controlPath, action.delta).message;
+  if (action.kind === 'enable') {
+    return setEnabled(controlPath, action.program, action.enabled).message;
+  }
+  return nudgePriority(controlPath, action.program, action.delta).message;
+};
+
+/** A setter's refusal is Craig's answer, not a tick failure, so it comes back as text. */
+const attempt = (controlPath: string, action: IntentAction): { ok: boolean; message: string } => {
+  try {
+    return { ok: true, message: `applied: ${applyIntent(controlPath, action)}` };
+  } catch (error) {
+    return { ok: false, message: `not applied: ${explain(error)}` };
+  }
+};
+
+/**
+ * Resolve first, then reply. A reply that fails costs Craig an explanation he can
+ * still read in the log; a thread left open is drained again on the next tick, and
+ * a delta like `concurrency +1` would then be applied a second time.
+ */
+const settle = async (threadId: string, message: string): Promise<void> => {
+  await resolveNote(DROVR_REPO, PANEL_PAGE, threadId);
+  await replyToNote(DROVR_REPO, PANEL_PAGE, threadId, message);
+};
+
+/**
+ * A thread that is not an intent is Craig talking, so it is left entirely alone —
+ * replying would be spam and resolving would bury his own comment. Every other
+ * outcome is answered and closed: an unparseable note left open is retried forever.
+ */
+const drainThread = async (
+  controlPath: string,
+  thread: NoteThread,
+  now: number,
+): Promise<'applied' | 'rejected' | 'ignored'> => {
+  const parsed = parseIntent(thread.text, thread.id, now);
+  if ('rejected' in parsed && parsed.rejected === 'not an intent') return 'ignored';
+  if ('rejected' in parsed) {
+    await settle(thread.id, `not applied: ${parsed.rejected}`);
+    return 'rejected';
+  }
+  const outcome = attempt(controlPath, parsed.action);
+  await settle(thread.id, outcome.message);
+  return outcome.ok ? 'applied' : 'rejected';
+};
+
+export type Drained = { applied: number; rejected: number; capped: boolean };
+
+/**
+ * Applies the intents a human left on the panel. Bounded per tick, and a page whose
+ * owner has not enabled shared notes reads as an empty, healthy page — so that case
+ * is reported as unreadable rather than counted as nothing to do.
+ */
+export const drainIntents = async (now = Date.now()): Promise<Drained> => {
+  const controlPath = paths().control;
+  const listing = await listNotes(DROVR_REPO, PANEL_PAGE);
+  if (!listing.shared) {
+    console.error(
+      `panel intents unreadable: shared notes are off for ${PANEL_PAGE}, so no intent can be ` +
+        'seen, applied or refused. Turn sharing on from the notes widget on that page.',
+    );
+    return { applied: 0, rejected: 0, capped: false };
+  }
+
+  const open = listing.threads.filter((thread) => !thread.resolved);
+  const batch = open.slice(0, MAX_INTENTS_PER_TICK);
+  const capped = open.length > batch.length;
+  let applied = 0;
+  let rejected = 0;
+
+  for (const thread of batch) {
+    const outcome = await drainThread(controlPath, thread, now).catch((error: unknown) => {
+      console.error(`panel intent ${thread.id} left open: ${explain(error)}`);
+      return 'ignored' as const;
+    });
+    if (outcome === 'applied') applied += 1;
+    if (outcome === 'rejected') rejected += 1;
+  }
+
+  if (capped) {
+    console.error(
+      `panel intents capped at ${MAX_INTENTS_PER_TICK} this tick; ` +
+        `${open.length - batch.length} left for the next one`,
+    );
+  }
+  return { applied, rejected, capped };
+};
+
 export const tick = async (): Promise<void> => {
   const p = paths();
   ensureDirs();
@@ -105,9 +215,21 @@ export const tick = async (): Promise<void> => {
   }
 
   try {
+    const now = Date.now();
+    // Before admission, not after: an intent changes the very inputs decide() reads.
+    // A notes outage must never stop a cycle starting, so it is reported and passed.
+    const drained = await drainIntents(now).catch((error: unknown) => {
+      console.error(
+        `panel intents not drained: ${explain(error)}. Admission continues as configured.`,
+      );
+      return null;
+    });
+    if (drained !== null && drained.applied + drained.rejected > 0) {
+      console.log(`panel intents: ${drained.applied} applied, ${drained.rejected} refused`);
+    }
+
     const control = readControl(p.control);
     const status = await readStatus();
-    const now = Date.now();
     reconcileAbandoned(now);
 
     // Workers write their own start record, so within one tick the earlier launches
@@ -233,7 +355,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     };
     const outcome = await runCycle(program, startedAt, limits).catch(
       (error: unknown) => {
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = explain(error);
         // A busy pane is not a failure: the cycle never started and nothing is wrong.
         if (error instanceof PaneBusy) {
           console.log(`${name}: ${detail}`);
