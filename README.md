@@ -85,6 +85,12 @@ are rounded, because the consumer has to interpret it rather than just deseriali
     "resetAt": { "general": "2026-08-23T10:59:59.685Z" },
     "units": "account-fractions of headroom; one usable account contributes at most 1.0"
   },
+  "capacity": {
+    "cyclesFundable": 0,
+    "bindingBucket": "session",
+    "perAccount": [{ "name": "karen@…", "cyclesFundable": 0, "bindingBucket": "session" }],
+    "units": "whole delivery cycles, net of cycles already in flight; the total is the sum over accounts of each account's own tightest bucket, never the min of the pool sums"
+  },
   "programs": [{
     "verdict": "WAIT",
     "verdictMeaning": "transient — a later tick will retry, no action needed",

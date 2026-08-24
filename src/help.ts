@@ -46,6 +46,8 @@ export const AGENT_NOTES = {
     'A WAIT reason naming another program means it is queued behind it, not short of quota.',
     'The three quota buckets bind simultaneously; the reason names whichever is tightest.',
     'A 5h (session) hold recovers in hours. A weekly hold recovers in days. Read the binding bucket.',
+    'Pool headroom is summed per bucket and is a display figure. It can look free while no single',
+    'account has room in all three at once — read capacity.cyclesFundable, never pool \u00f7 cost.',
     'run-cycle blocks for hours. Use tick, which detaches, or read cycles.jsonl to follow progress.',
   ],
 };
@@ -61,6 +63,12 @@ export const COMMANDS: Command[] = [
       'it rather than on quota.',
       'Verdicts are GO (a cycle would launch), WAIT (retry next tick) or STOP (mode off, or the',
       'program is stuck and needs a human).',
+      'The pool line is in account-units, never percentages: one usable account contributes at',
+      'most 1.00, so "fable 0.81 across 3 accounts" is 27% of the theoretical pool, not 81% free.',
+      'The capacity line beneath it is what admission actually uses. One Fable token decrements',
+      'all three buckets on whichever account served the request, so an account is spendable only',
+      'where it has room in all three at once: capacity is the sum over accounts of each',
+      'account\u2019s own tightest bucket, and can be zero while every pool figure looks healthy.',
     ],
     flags: [
       {

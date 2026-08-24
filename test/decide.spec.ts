@@ -145,7 +145,7 @@ test('away mode raises the entitlement enough to keep running', () => {
 
 test('cyclesFundable is bound by the scarcest of the three buckets', () => {
   const pool = poolFrom(healthy(), { weekly: 0.55, session: 0.4 }, NOW);
-  const fundable = cyclesFundableFrom(pool, { fable: 0.1, general: 0.1, session: 0.6 });
+  const fundable = cyclesFundableFrom(pool, { fable: 0.1, general: 0.1, session: 0.6 }, 0);
   assert.equal(fundable.binding, 'session');
   assert.equal(fundable.cycles.toFixed(2), "2.00");
 });
@@ -153,9 +153,93 @@ test('cyclesFundable is bound by the scarcest of the three buckets', () => {
 test('a zero-cost bucket does not constrain funding', () => {
   const pool = poolFrom(healthy(), { weekly: 0.55, session: 0.4 }, NOW);
   assert.equal(
-    Number.isFinite(cyclesFundableFrom(pool, { fable: 0, general: 0, session: 0 }).cycles),
+    Number.isFinite(cyclesFundableFrom(pool, { fable: 0, general: 0, session: 0 }, 0).cycles),
     false,
   );
+});
+
+/**
+ * Observed live 2026-08-24, and the reason this file exists in its current shape:
+ * `drovr status` reported 6.3 cycles fundable while every account was pinned in at
+ * least one bucket. Summing each bucket across accounts and taking the min afterwards
+ * counts headroom that cannot be spent — min-of-sums is not sum-of-mins.
+ */
+const coupled = () =>
+  status([
+    account({ name: 'first@example.com', fable: 0.22, general: 0.2, session: 0.98 }),
+    account({ name: 'second@example.com', fable: 0.07, general: 0.08, session: 0.66 }),
+    account({ name: 'fourth@example.com', fable: 0.98, general: 0.9, session: 0.0 }),
+  ]);
+
+const COUPLED_COST = { fable: 0.025, general: 0.02, session: 0.063 };
+
+test('an account only contributes what its own tightest bucket allows', () => {
+  const pool = poolFrom(coupled(), { weekly: 0.55, session: 0.4 }, NOW);
+  // What the pooled sums say on their own, and what drovr used to answer.
+  assert.equal(pool.fable.toFixed(2), '0.81');
+  assert.equal(pool.general.toFixed(2), '0.82');
+  assert.equal(pool.session.toFixed(2), '0.40');
+  assert.equal(Math.min(0.81 / 0.025, 0.82 / 0.02, 0.4 / 0.063).toFixed(1), '6.3');
+
+  const funding = cyclesFundableFrom(pool, COUPLED_COST, 0);
+  assert.equal(funding.cycles, 0);
+});
+
+test('with every account at zero the binding bucket is the one that recovers first', () => {
+  // session pins the two propra accounts and recovers in hours; fable pins
+  // memberjunction and is days away. Reporting fable would read as a write-off.
+  const pool = poolFrom(coupled(), { weekly: 0.55, session: 0.4 }, NOW);
+  const funding = cyclesFundableFrom(pool, COUPLED_COST, 0);
+  assert.equal(funding.binding, 'session');
+  assert.equal(pool.resetAt.session, NOW + 2 * HOUR);
+});
+
+test('the coupled pool holds the loop and the reason names who is pinned by what', () => {
+  const decision = run({
+    status: coupled(),
+    control: control({ seedCycleCost: COUPLED_COST }),
+  });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.equal(decision.cyclesFundable, 0);
+  assert.equal(decision.binding, 'session');
+  assert.equal(decision.earliestRecoveryAt, NOW + 2 * HOUR);
+  assert.match(decision.reason, /no account has room in all three buckets/);
+  assert.match(decision.reason, /session pins craig\.adam@propra and karen\.adam@propra/);
+  assert.match(decision.reason, /fable pins craig@memberjunction/);
+});
+
+test('one account with room in all three funds its own minimum, not the pooled sum', () => {
+  // b and c are pinned on session; only a can serve, and only up to its own tightest
+  // bucket. The pooled sums would have offered b and c's weekly headroom as well.
+  const lopsided = status([
+    account({ name: 'a', fable: 0.35, general: 0.35, session: 0.1 }),
+    account({ name: 'b', fable: 0.05, general: 0.05, session: 0.95 }),
+    account({ name: 'c', fable: 0.05, general: 0.05, session: 0.95 }),
+  ]);
+  const pool = poolFrom(lopsided, { weekly: 0.55, session: 0.4 }, NOW);
+  const funding = cyclesFundableFrom(pool, { fable: 0.1, general: 0.1, session: 0.1 }, 0);
+  // a: min(0.20/0.1, 0.20/0.1, 0.30/0.1) = 2.0. b and c contribute nothing.
+  assert.equal(funding.cycles.toFixed(2), '2.00');
+  assert.equal(funding.binding, 'fable');
+});
+
+test('a healthy multi-account pool still funds normally', () => {
+  const funding = cyclesFundableFrom(
+    poolFrom(healthy(), { weekly: 0.55, session: 0.4 }, NOW),
+    { fable: 0.1, general: 0.08, session: 0.25 },
+    0,
+  );
+  // Three accounts, each held to 0.4/0.25 = 1.6 cycles by its 5h window.
+  assert.equal(funding.cycles.toFixed(2), '4.80');
+  assert.equal(funding.binding, 'session');
+});
+
+test('in-flight cycles are reserved from the cycle count, not from any one bucket', () => {
+  const pool = poolFrom(healthy(), { weekly: 0.55, session: 0.4 }, NOW);
+  const cost = { fable: 0.1, general: 0.08, session: 0.25 };
+  assert.equal(cyclesFundableFrom(pool, cost, 2).cycles.toFixed(2), '2.80');
+  // Never negative: more cycles in flight than the pool can fund is a floor, not a debt.
+  assert.equal(cyclesFundableFrom(pool, cost, 99).cycles, 0);
 });
 
 test('a program with a cycle already in flight does not start a second one', () => {

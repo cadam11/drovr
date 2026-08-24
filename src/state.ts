@@ -1,7 +1,7 @@
 import { allocationFor, type Allocation, type BucketName } from './allocation.ts';
 import { hoursToWeeklyReset, poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, effectivePriority, readControl, type Control } from './control.ts';
-import { cyclesFundableFrom, decide, lessReserved, type Verdict } from './decide.ts';
+import { cyclesFundableFrom, decide, type Verdict } from './decide.ts';
 import {
   estimateCycleCost, inFlight, lastDecisionAt, readCycles, spentSince, type CycleRecord,
 } from './ledger.ts';
@@ -180,11 +180,10 @@ export const buildState = (input: StateInput): DrovrState => {
   // default), so the reservation and bar segments never disagree with the verdict.
   const running = inFlight(cycles, now, control.maxCycleHours).length;
   const cost = estimateCycleCost(cycles, control.seedCycleCost);
-  // Mirrors decide()'s own admission math: in-flight cycles have not shown up as
-  // spent quota yet, so funding off the raw pool would let N concurrent programs
+  // The same call decide() makes, reservation included: in-flight cycles have not shown
+  // up as spent quota yet, so funding off the raw pool would let N concurrent programs
   // each claim the whole thing.
-  const available = lessReserved(pool, cost, running);
-  const funding = cyclesFundableFrom(available, cost);
+  const funding = cyclesFundableFrom(pool, cost, running);
   const hoursLeft = hoursToWeeklyReset(status, now);
   const windowStart = hoursLeft === null ? now : now - (168 - hoursLeft) * 3_600_000;
   const spent = spentSince(cycles, windowStart);

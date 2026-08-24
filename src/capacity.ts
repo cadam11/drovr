@@ -5,11 +5,23 @@ import type { TeamclaudeAccount, TeamclaudeStatus } from './teamclaude.ts';
  * used-fractions and never exposes an absolute quota size, so a cycle's cost is
  * only ever knowable as the pool delta it produced.
  */
+export type AccountHeadroom = {
+  name: string;
+  fable: number;
+  general: number;
+  session: number;
+};
+
 export type Pool = {
   fable: number;
   general: number;
   session: number;
   usableAccounts: number;
+  /**
+   * Headroom kept unsummed, because fundability cannot be recovered from the sums:
+   * min-of-sums is not sum-of-mins. Only this can answer what an account may spend.
+   */
+  perAccount: AccountHeadroom[];
   /**
    * Soonest future reset per bucket. The buckets are not interchangeable: a 5h
    * window recovers in hours, a weekly one in days, so which bucket binds decides
@@ -34,11 +46,16 @@ export const isUsable = (account: TeamclaudeAccount, now: number): boolean => {
 };
 
 /**
- * The Fable runner spawns Opus/Sonnet/Haiku subagents, so a cycle draws on the
- * general weekly bucket as well as the Fable one. An account with Fable headroom
- * but no general headroom contributes capacity that cannot actually be spent —
- * summing both pools independently and taking the min at the decision point is
- * what encodes that coupling.
+ * The Fable runner spawns Opus/Sonnet/Haiku subagents, and one Fable token decrements
+ * all three buckets on whichever account served the request. An account is therefore
+ * spendable only where it has room in all three at once.
+ *
+ * The per-bucket sums below do **not** encode that, and an earlier version of this
+ * comment claimed they did. Summing a bucket across accounts lets an account donate
+ * headroom it can never spend because it is exhausted in another bucket, and taking a
+ * min afterwards does not put it back: min-of-sums is not sum-of-mins. The sums are the
+ * display figure — how much of each bucket is spent pool-wide. Fundability is computed
+ * per account from `perAccount`, in decide.ts.
  */
 export const poolFrom = (
   status: TeamclaudeStatus,
@@ -56,11 +73,19 @@ export const poolFrom = (
     session: soonest(usable.map((a) => a.quota.unified5hReset)),
   };
 
+  const perAccount = usable.map((a) => ({
+    name: a.name,
+    fable: headroom(a.quota.unified7dFable, ceilings.weekly),
+    general: headroom(a.quota.unified7d, ceilings.weekly),
+    session: headroom(a.quota.unified5h, ceilings.session),
+  }));
+
   return {
-    fable: sum(usable.map((a) => headroom(a.quota.unified7dFable, ceilings.weekly))),
-    general: sum(usable.map((a) => headroom(a.quota.unified7d, ceilings.weekly))),
-    session: sum(usable.map((a) => headroom(a.quota.unified5h, ceilings.session))),
+    fable: sum(perAccount.map((a) => a.fable)),
+    general: sum(perAccount.map((a) => a.general)),
+    session: sum(perAccount.map((a) => a.session)),
     usableAccounts: usable.length,
+    perAccount,
     resetAt,
     earliestRecoveryAt: soonest([resetAt.fable, resetAt.general, resetAt.session]),
   };

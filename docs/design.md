@@ -48,6 +48,9 @@ poolSession = Σ max(0, sessionCeiling - sessionUsed)
 An account is usable unless it is disabled, rate-limited, or paused. A `null` bucket means no
 window is open — nothing used, not nothing available.
 
+Those three sums are a **display figure** — how much of each bucket is spent pool-wide, which is
+what the allocation bars draw. They are not what admission may spend; see the next section.
+
 ### The Fable↔general coupling
 
 The Fable runner spawns Opus/Sonnet/Haiku subagents, so a cycle draws on **both** the Fable weekly
@@ -64,13 +67,38 @@ The consequence is a real trap. Observed 2026-08-22:
 
 karen has 21% Fable headroom, so rotation would happily serve a runner from it — and the runner's
 first Opus subagent would hit a wall. Encoding the coupling makes karen contribute nothing without
-any account being disabled:
+any account being disabled.
+
+**The coupling is per account, and pooling cannot express it.** Rotation is per request, but a
+single request is served by one account, and that one account's Fable token decrements all three
+of its buckets. An account is therefore spendable only where it has room in **all three at once**:
 
 ```
-cyclesFundable = min(poolFable/F, poolGeneral/G, poolSession/S)
+cyclesFundable = Σ_accounts min(fableHeadroom/F, generalHeadroom/G, sessionHeadroom/S)
 ```
 
-An earlier draft solved this by calling `teamclaude disable` on such accounts. That was wrong:
+The first version of this instead wrote `min(poolFable/F, poolGeneral/G, poolSession/S)` and a
+comment in `capacity.ts` claiming the min-at-the-decision-point encoded the coupling. It does not:
+**min-of-sums is not sum-of-mins.** Summing a bucket across accounts lets an account donate
+headroom it can never spend because it is exhausted in another bucket, and the later min does not
+put it back. Observed live 2026-08-24, ceilings 0.55/0.40:
+
+| account | fable | general | 5h | that account alone funds |
+|---|---|---|---|---|
+| craig.adam | 0.22 | 0.20 | 0.98 | min(13.2, 17.5, 0) = **0** |
+| karen.adam | 0.07 | 0.08 | 0.66 | min(19.2, 23.5, 0) = **0** |
+| memberjunction | 0.98 | 0.90 | 0.00 | min(0, 0, 6.3) = **0** |
+
+Per-bucket sums: fable 0.81, general 0.82, session 0.40. `min(0.81/F, 0.82/G, 0.40/S)` at the
+measured cost is **6.3 cycles**, and drovr offered exactly that while nothing could run. Summed
+per account it is **0**.
+
+The bars still draw the per-bucket sums, deliberately: they answer *how much of each bucket is
+spent*, which is a real question. The verdict answers *can a cycle run*. When those two disagree
+the reason string says so and names which bucket pins which accounts, because free-looking bars
+beside a healthy-looking verdict is exactly what got misread as capacity.
+
+An earlier draft solved the original coupling by calling `teamclaude disable` on such accounts. That was wrong:
 `disable` mutates global state shared with Craig's foreground sessions, and a supervisor that
 crashes between disable and enable silently takes an account away from him. Model the capacity
 honestly instead of manipulating the pool.
@@ -91,8 +119,8 @@ skew every admission decision afterward.
 It is tempting to read `unified5h`, `unified7d` and `unified7dFable` as nested — 5h inside
 weekly, Fable inside weekly. They are not a precedence order. **One Fable token decrements all
 three counters**: they are overlapping windows on the same spend, so they bind simultaneously
-and the tightest wins. That is what `min()` in `cyclesFundableFrom` expresses, and no
-precedence logic is needed.
+and the tightest wins. That is what the inner `min()` in `cyclesFundableFrom` expresses — per
+account, over that account's own three buckets — and no precedence logic is needed.
 
 But they are not interchangeable either, and treating them as symmetric caused two defects:
 
@@ -101,6 +129,12 @@ days. The first version reported the soonest reset across all three, so a weekly
 would claim it recovered in two hours. `Pool` now carries a reset per bucket, `cyclesFundableFrom`
 returns which bucket binds, and the WAIT reason names it: `general tightest — funds 0.40 cycles,
 need 1.50, recovers in 90h`.
+
+With capacity summed per account there is a bucket per account to choose between. Above zero the
+reported bucket is the one pinning the account that would serve next — the one with the most to
+give. At zero no account serves anything, so the reported bucket is the one whose reset comes
+soonest: that is the account that unblocks first, and it is the difference between a two-hour wait
+and writing the week off.
 
 **The 5h bucket resets mid-cycle, which corrupts cost measurement.** Cycles run for hours, so a
 5h window resetting during one is the normal case, not an edge case. The pool then *grows* over
@@ -117,8 +151,13 @@ own sample count: the 5h bucket can fall back to the seed while the weekly bucke
 **Affordability** — can the pool fund a whole cycle, plus a reserve?
 
 ```
-cyclesFundable >= 1 + reserveCycles
+cyclesFundable - cyclesInFlight >= 1 + reserveCycles
 ```
+
+In-flight cycles are subtracted from the **cycle count**, not from the pool. They have not shown
+up as spent quota yet, so without the subtraction N concurrent programs each claim the whole pool.
+Deducting a per-bucket cost from a per-bucket pool no longer models anything once fundability is
+summed per account, so the reservation is counted in cycles, where it belongs.
 
 Admission is about *runway*, not headroom. A cycle that starts and cannot finish pays full
 onboarding cost for partial delivery, then the next cycle pays it again. The reserve is what

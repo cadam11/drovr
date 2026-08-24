@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, effectivePriority, parseControl, readControl } from './control.ts';
-import { decide } from './decide.ts';
+import { cyclesFundableFrom, decide, type Funding } from './decide.ts';
 import {
   consecutiveZeroYield,
   estimateCycleCost,
@@ -149,6 +149,24 @@ const poolPayload = (pool: ReturnType<typeof poolFrom>) => ({
   units: 'account-fractions of headroom; one usable account contributes at most 1.0',
 });
 
+/**
+ * The pool's per-bucket sums cannot be divided by cost to get this: an account is
+ * spendable only where it has room in all three buckets at once, so capacity is summed
+ * per account, each contributing only what its own tightest bucket allows.
+ */
+const fundingPayload = (funding: Funding) => ({
+  cyclesFundable: roundFinite(funding.cycles),
+  bindingBucket: funding.binding,
+  perAccount: funding.accounts.map((account) => ({
+    name: account.name,
+    cyclesFundable: roundFinite(account.cycles),
+    bindingBucket: account.binding,
+  })),
+  units:
+    'whole delivery cycles, net of cycles already in flight; the total is the sum over ' +
+    'accounts of each account\u2019s own tightest bucket, never the min of the pool sums',
+});
+
 const statusPayload = async () => {
   const control = readControl(p.control);
   const status = await readStatus();
@@ -171,6 +189,13 @@ const statusPayload = async () => {
         : `programs may use up to ${round((control.ceilings[control.mode]?.weekly ?? 0) * 100)}% of each account's weekly quota; the rest stays available to Craig`,
     pausedUntil: control.pauseUntil,
     pool: ceilings === null ? null : poolPayload(poolFrom(status, ceilings, now)),
+    capacity: ceilings === null ? null : fundingPayload(
+      cyclesFundableFrom(
+        poolFrom(status, ceilings, now),
+        estimateCycleCost(cycles, control.seedCycleCost),
+        inFlightCycles().length,
+      ),
+    ),
     estimatedCycleCost: {
       ...roundCost(estimateCycleCost(cycles, control.seedCycleCost)),
       units: 'account-fractions consumed by one typical delivery cycle',
@@ -199,6 +224,16 @@ const statusPayload = async () => {
   };
 };
 
+/** Non-finite only when every bucket's estimated cost is zero, which JSON cannot carry. */
+const roundFinite = (value: number): number | null => (Number.isFinite(value) ? round(value) : null);
+
+const describeFunding = (funding: Funding): string => {
+  const perAccount = funding.accounts
+    .map((account) => `${account.name} ${account.cycles.toFixed(2)} (${account.binding})`)
+    .join(' · ');
+  return `${funding.cycles.toFixed(2)} cycles fundable, ${funding.binding} binding — ${perAccount}`;
+};
+
 const VERDICT_MEANING: Record<string, string> = {
   GO: 'a cycle would launch on the next tick',
   WAIT: 'transient — a later tick will retry, no action needed',
@@ -217,13 +252,20 @@ const showStatus = async (): Promise<void> => {
   if (ceilings !== null) {
     const pool = poolFrom(status, ceilings, now);
     const cost = estimateCycleCost(cycles, control.seedCycleCost);
+    // Account-units, never a percentage: 0.81 across 3 accounts is 27% of the theoretical
+    // pool, and printing it as "81%" reads as four fifths of the quota still free.
     console.log(
-      `pool: fable ${(pool.fable * 100).toFixed(0)}% · general ${(pool.general * 100).toFixed(0)}%` +
-        ` · session ${(pool.session * 100).toFixed(0)}% across ${pool.usableAccounts} accounts`,
+      `pool: fable ${pool.fable.toFixed(2)} · general ${pool.general.toFixed(2)}` +
+        ` · session ${pool.session.toFixed(2)} account-units of headroom across` +
+        ` ${pool.usableAccounts} accounts (1.00 = one whole account)`,
     );
     console.log(
       `cycle cost estimate: fable ${cost.fable.toFixed(3)} · general ${cost.general.toFixed(3)} · session ${cost.session.toFixed(3)}`,
     );
+    // Printed next to the pool line because the pool line is what misleads: an account is
+    // spendable only where it has room in all three buckets, so free-looking sums can fund
+    // nothing at all.
+    console.log(`capacity: ${describeFunding(cyclesFundableFrom(pool, cost, inFlightCycles().length))}`);
   }
   console.log(`cycles recorded: ${cycles.length} · zero-yield streak: ${consecutiveZeroYield(cycles)}`);
 

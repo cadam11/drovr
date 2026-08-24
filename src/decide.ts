@@ -1,4 +1,4 @@
-import { hoursToWeeklyReset, poolFrom, type Pool } from './capacity.ts';
+import { hoursToWeeklyReset, poolFrom, type AccountHeadroom, type Pool } from './capacity.ts';
 import { ceilingsFor, isPaused, type Control } from './control.ts';
 import {
   consecutiveFailures,
@@ -47,32 +47,100 @@ export type DecideInput = {
 const ratio = (available: number, cost: number): number =>
   cost <= 0 ? Number.POSITIVE_INFINITY : available / cost;
 
-export type Funding = { cycles: number; binding: BucketName };
+const BUCKETS: BucketName[] = ['fable', 'general', 'session'];
+
+/** What one account could fund alone, and which of its buckets stopped it there. */
+export type AccountFunding = { name: string; cycles: number; binding: BucketName };
+
+export type Funding = { cycles: number; binding: BucketName; accounts: AccountFunding[] };
 
 /**
- * The buckets are not a hierarchy: one Fable token decrements all three, so they
- * are simultaneous constraints and the tightest binds. Which one binds matters —
- * a 5h window is hours from recovery, a weekly one is days.
+ * The buckets are not a hierarchy: one Fable token decrements all three, so they are
+ * simultaneous constraints on the account that served the request and the tightest binds.
  */
-export const cyclesFundableFrom = (pool: Pool, cost: CycleCost): Funding => {
-  const buckets: BucketName[] = ['fable', 'general', 'session'];
-  return buckets
-    .map((bucket) => ({ cycles: ratio(pool[bucket], cost[bucket]), binding: bucket }))
+const fundingFor = (account: AccountHeadroom, cost: CycleCost): AccountFunding =>
+  BUCKETS
+    .map((bucket) => ({
+      name: account.name,
+      cycles: ratio(account[bucket], cost[bucket]),
+      binding: bucket,
+    }))
     .reduce((tightest, candidate) => (candidate.cycles < tightest.cycles ? candidate : tightest));
+
+const resetOrder = (pool: Pool, bucket: BucketName): number =>
+  pool.resetAt[bucket] ?? Number.POSITIVE_INFINITY;
+
+/**
+ * Which bucket to report, since earliestRecoveryAt is read from it. Above zero it is
+ * the bucket pinning the account that would serve next — the one with the most to give.
+ * At zero no account serves any request, so the useful answer is which bucket frees one
+ * up first: a 5h hold is hours away, a weekly one days, and saying the wrong one turns a
+ * short wait into an apparent write-off.
+ */
+const bindingOf = (accounts: AccountFunding[], pool: Pool): BucketName => {
+  const best = accounts.reduce((most, account) => (account.cycles > most.cycles ? account : most));
+  if (best.cycles > 0) return best.binding;
+  return accounts
+    .map((account) => account.binding)
+    .reduce((soonest, bucket) => (resetOrder(pool, bucket) < resetOrder(pool, soonest) ? bucket : soonest));
 };
 
 /**
- * Cycles already running have not yet shown up as spent quota, so admitting
- * against the raw pool would let N concurrent programs each claim all of it.
- * Exported so state.ts's headline funding number applies the same reservation
- * this module does, rather than a second copy of the arithmetic drifting apart.
+ * Fundability is the sum over accounts of each account's own tightest bucket, never the
+ * min of the per-bucket sums — those let an account donate headroom it cannot spend
+ * because it is exhausted elsewhere (see capacity.ts).
+ *
+ * `running` is subtracted here rather than from the pool: cycles already in flight have
+ * not shown up as spent quota yet, so without it N concurrent programs each claim the
+ * whole pool. It is a count of cycles because fundability is now counted in cycles —
+ * there is no per-bucket pool left to deduct a per-bucket cost from.
  */
-export const lessReserved = (pool: Pool, cost: CycleCost, running: number): Pool => ({
-  ...pool,
-  fable: Math.max(0, pool.fable - running * cost.fable),
-  general: Math.max(0, pool.general - running * cost.general),
-  session: Math.max(0, pool.session - running * cost.session),
-});
+export const cyclesFundableFrom = (pool: Pool, cost: CycleCost, running: number): Funding => {
+  const accounts = pool.perAccount.map((account) => fundingFor(account, cost));
+  // A pool with no usable accounts funds nothing. It still has to name a bucket, and
+  // session is the shortest wait, so it is the least misleading one to claim.
+  if (accounts.length === 0) return { cycles: 0, binding: 'session', accounts };
+
+  const gross = accounts.reduce((total, account) => total + account.cycles, 0);
+  return { cycles: Math.max(0, gross - running), binding: bindingOf(accounts, pool), accounts };
+};
+
+/**
+ * Account names are addresses and two of them differ only by domain, so the local part
+ * alone is ambiguous. Dropping just the TLD shortens every name by the same rule and
+ * still tells two accounts apart: craig@memberjunction, craig.adam@propra.
+ */
+const shortName = (name: string): string => name.replace(/\.[^.@]+$/, '');
+
+const listOf = (names: string[]): string =>
+  names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+
+/**
+ * The allocation bars and this verdict answer different questions — the bars show how
+ * much of each bucket is spent pool-wide, which reads as free while no single account
+ * has room in all three at once. That gap is what got misread as capacity, so when it is
+ * what refuses a cycle the reason has to name it and say which bucket pins whom.
+ *
+ * Silent for a single-account pool: with one account min-of-sums and sum-of-mins agree,
+ * so there is no discrepancy to explain and "session tightest" already says it.
+ */
+const couplingNote = (funding: Funding): string | null => {
+  if (funding.accounts.length < 2) return null;
+  const pinned = funding.accounts.filter((account) => account.cycles <= 0);
+  if (pinned.length === 0) return null;
+
+  const pins = BUCKETS
+    .map((bucket) => pinned.filter((account) => account.binding === bucket))
+    .filter((group) => group.length > 0)
+    .map((group) => `${group[0]!.binding} pins ${listOf(group.map((account) => shortName(account.name)))}`)
+    .join(', ');
+
+  if (pinned.length === funding.accounts.length) {
+    return `no account has room in all three buckets — ${pins}`;
+  }
+  const spare = funding.accounts.length - pinned.length;
+  return `only ${spare}/${funding.accounts.length} accounts have room in all three — ${pins}`;
+};
 
 /**
  * Linear entitlement across the weekly window, measured against drovr's own
@@ -225,14 +293,15 @@ export const decide = (input: DecideInput): Decision => {
   if (offPace !== null) return hold(offPace, pool, null);
 
   const cost = estimateCycleCost(cycles, control.seedCycleCost);
-  const available = lessReserved(pool, cost, running.length);
-  const funding = cyclesFundableFrom(available, cost);
+  const funding = cyclesFundableFrom(pool, cost, running.length);
   const required = 1 + control.reserveCycles;
   if (funding.cycles < required) {
     const recovers = pool.resetAt[funding.binding];
     const when = recovers === null ? 'unknown' : `${Math.round((recovers - now) / 3_600_000)}h`;
+    const note = couplingNote(funding);
     return hold(
-      `${funding.binding} tightest — funds ${funding.cycles.toFixed(2)} cycles ` +
+      `${note === null ? '' : `${note}. `}` +
+        `${funding.binding} tightest — funds ${funding.cycles.toFixed(2)} cycles ` +
         `(${running.length} ahead of it), need ${required.toFixed(2)}, recovers in ${when}`,
       pool,
       funding,

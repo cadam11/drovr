@@ -9,7 +9,9 @@ const escape = (value: string): string =>
 const stamp = (at: number | null): string =>
   at === null ? '—' : new Date(at).toISOString().replace('T', ' ').slice(0, 16);
 
-const pct = (value: number): string => `${(value * 100).toFixed(0)}%`;
+/** Account-units, not a percentage: 0.81 across three accounts is 27% of the pool, and
+ *  printing "81%" reads as four fifths of the quota still free. */
+const units = (value: number): string => `${value.toFixed(2)} account-units`;
 
 const row = (label: string, value: string): string =>
   `<tr class="noteable" id="row-${label.toLowerCase().replaceAll(' ', '-')}">` +
@@ -54,9 +56,9 @@ export const renderStatus = (input: {
       ${row('Verdict', decision.verdict)}
       ${row('Reason', decision.reason)}
       ${row('Usable accounts', pool === null ? '—' : String(pool.usableAccounts))}
-      ${row('Pool fable', pool === null ? '—' : pct(pool.fable))}
-      ${row('Pool general', pool === null ? '—' : pct(pool.general))}
-      ${row('Pool session', pool === null ? '—' : pct(pool.session))}
+      ${row('Pool fable', pool === null ? '—' : units(pool.fable))}
+      ${row('Pool general', pool === null ? '—' : units(pool.general))}
+      ${row('Pool session', pool === null ? '—' : units(pool.session))}
       ${row('Cycles fundable', decision.cyclesFundable === null ? '—' : decision.cyclesFundable.toFixed(2))}
       ${row('Earliest recovery', stamp(decision.earliestRecoveryAt))}
       ${row('Rendered', stamp(renderedAt))}

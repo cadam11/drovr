@@ -30,8 +30,10 @@ teamclaude reports used-*fractions* and never an absolute quota size, so everyth
 account-units (N usable accounts = N.0) and a cycle's cost is only knowable as the pool delta it
 produced. The three buckets (`unified7dFable`, `unified7d`, `unified5h`) are **not a hierarchy** —
 one Fable token decrements all three, so they bind simultaneously and the tightest wins. Rotation
-is per-request, so the Fable runner and its Opus subagents can land on different accounts; capacity
-is therefore pooled, never per-account. Admission requires funding a *whole* cycle plus a reserve,
+is per-request, so the Fable runner and its Opus subagents can land on different accounts; usage is
+therefore pooled across accounts. But each request is served by *one* account and decrements *its*
+three buckets, so an account is spendable only where it has room in all three at once: fundability
+is `Σ_accounts min_bucket(headroom/cost)`, never the min of the per-bucket sums. Admission requires funding a *whole* cycle plus a reserve,
 because a truncated cycle pays full onboarding cost for partial delivery.
 
 ## Traps that have already bitten
@@ -41,10 +43,12 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | Area | Trap |
 |---|---|
 | `capacity.ts` | Headroom must clamp per account (`max(0, ceiling - used)`) before summing. Computing `ceiling × N - totalUsed` lets one blown account eat another's headroom. |
+| `capacity.ts` | The per-bucket sums are a display figure, never fundability. **Min-of-sums is not sum-of-mins**: summing a bucket across accounts lets an account donate headroom it cannot spend because it is exhausted in another bucket, and a later `min` does not put it back. One Fable token decrements all three buckets *on the one account that served the request*, so capacity is `Σ_accounts min_bucket(headroom/cost)`. Live 2026-08-24 this offered 6.3 cycles while every account was pinned and nothing could run. |
+| `decide.ts` | With capacity summed per account there is a binding bucket per account. Above zero report the one pinning the account that would serve next (most fundable); at zero report the one whose reset comes soonest, since that account unblocks first. Getting this backwards turns a two-hour session hold into an apparent week-long write-off. |
 | `ledger.ts` | The 5h window resets *during* a multi-hour cycle, so `poolAfter > poolBefore` is normal. Recording that as zero cost drags the median to nothing until session stops constraining admission. Discard the sample instead. |
 | `decide.ts` | Report *which* bucket binds. A 5h hold recovers in hours, a weekly one in days; reporting the soonest reset across all three is actively misleading. |
 | `decide.ts` | In-flight cycles have not shown up as spent quota yet. Subtract `running × cost` or N concurrent programs each claim the whole pool. |
-| `allocation.ts` | Bar segments must derive headroom from the same `Pool` `decide()` uses, or the picture contradicts the verdict printed beneath it. |
+| `allocation.ts` | Bar segments must derive headroom from the same `Pool` `decide()` uses, or the picture contradicts the verdict printed beneath it. The bars answer *how much of each bucket is spent* and the verdict answers *can a cycle run* — those legitimately differ, so the reason string has to name the coupling when it is what refuses. |
 | `tick.ts` | Pace and reservations are **global** (one shared pool); daily caps and stuck detection are **per program**. |
 | `watch.ts` | Draw on the **alternate screen** (`?1049h`), home-and-clear-per-line rather than clearing the whole screen, clamp to `stdout.rows`, and never end a frame with a newline. Any one of those missing and the frame scrolls or pollutes shell scrollback. |
 | `watch.ts` | Clip every line to `stdout.columns` using visible length, not string length — a soft-wrapped line shoves the whole frame upward. Wrap the keybar rather than clipping it: a key you cannot see is a key you do not have. |
