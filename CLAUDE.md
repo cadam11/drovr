@@ -66,6 +66,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `ledger.ts` | `stalled` counts toward the failure latch alongside `crash`, and toward nothing else. Leave it out and a program that stalls every cycle loops start → nudge×3 → stalled → start forever, paying full onboarding each round. |
 | `nudge.ts` | SMS sends on the **default** aws profile, with no `--profile`. The named profiles are SSO-backed and their sessions expire — exactly the state an unattended overnight supervisor finds them in, which is how the alert path sat broken. The default profile is a static IAM user and still works at 4am. |
 | `nudge.ts` | SNS accepting a message is not proof a handset got it. Say "accepted", never "delivered", and never build anything that assumes the text arrived — `textCraig` is best-effort on every path. |
+| `nudge.ts` | An `originationNumber` that is not in an End User Messaging **pool** is rejected at delivery time, long after `sns publish` returned success. Nothing in the CLI response says so — the reason only appears in the `DirectPublishToPhoneNumber/Failure` CloudWatch log group. Check delivery logs before believing a send worked. |
 
 ## The CLI is read by agents
 
@@ -96,13 +97,20 @@ Written and type-checked, never seen to fire. Unproven, not done:
 `drovr notify` texts Craig and is the way to prove the alert path before trusting it. Verified
 end to end on 2026-08-24.
 
-drovr sends from its own dedicated Canadian long code, **+1 506 906 8159**
-(`phone-dceeb0a0acc6439dbdd0a08ebc73cb98`, $1/month), set as `originationNumber` in
-`control.json`. Every other number in the account belongs to sunnyt — never borrow one, because
-their two-way channels route replies into sunnyt's own inbound topics, which its cycles poll.
+drovr has its own dedicated Canadian long code, **+1 506 906 8159**
+(`phone-dceeb0a0acc6439dbdd0a08ebc73cb98`, $1/month). Every other number in the account belongs
+to sunnyt — never borrow one, because their two-way channels route replies into sunnyt's own
+inbound topics, which its cycles poll.
 
-Two things that number does not yet have: two-way (a reply goes nowhere) and deletion
-protection. Neither matters for one-way alerts; both are worth knowing before relying on it.
+**`originationNumber` is null until that number is in a pool.** SNS resolves
+`AWS.MM.SMS.OriginationNumber` only against pooled numbers: a pool-less number is rejected with
+"The provided number does not exist or does not belong to the account" *after* `sns publish`
+has already returned a MessageId and exit 0. Measured on 2026-08-24 across three CA long codes
+identical in every other attribute — two-way, capabilities, country, international sending —
+where only the pooled one delivered. Left null, SNS picks a number itself and delivery works,
+which is why null is the safe default rather than a missing setting.
+
+That number also has no two-way (a reply goes nowhere) and no deletion protection.
 
 ## The repo is local-only
 
