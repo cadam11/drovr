@@ -49,3 +49,30 @@ test('parsePreview returns null rather than throwing on an unrecognised shape', 
   assert.equal(parsePreview(''), null);
   assert.equal(parsePreview('claude: command not found'), null);
 });
+
+test('parsePreview takes the last gauge and monitor match, not the first', () => {
+  const raw = `ctx:9% (88k)
+3 monitors here
+
+⏺ early line
+⏺ later line
+ctx:41% (402k)
+1 monitor there`;
+  const preview = parsePreview(raw)!;
+  assert.equal(preview.contextPercent, 41);
+  assert.equal(preview.contextTokens, 402_000);
+  assert.equal(preview.subagents, 1);
+});
+
+test('parsePreview scans only the last MAX_SCAN lines and returns null if no turns in that tail', () => {
+  const lines: string[] = [];
+  for (let i = 0; i < 50; i++) {
+    lines.push(`⏺ line ${i}`);
+  }
+  for (let i = 50; i < 500; i++) {
+    lines.push(`line ${i} with no turn marker`);
+  }
+  const raw = lines.join('\n');
+  const preview = parsePreview(raw);
+  assert.equal(preview, null);
+});
