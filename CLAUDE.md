@@ -94,10 +94,15 @@ Written and type-checked, never seen to fire. Unproven, not done:
 ## Notifications
 
 `drovr notify` texts Craig and is the way to prove the alert path before trusting it. Verified
-end to end on 2026-08-24: three messages sent and received. `originationNumber` in
-`control.json` picks the number they come *from*; left null, SNS chooses one per send.
-All four numbers in the account belong to sunnyt — do not borrow one, because their two-way
-channels route replies into sunnyt's own inbound topics.
+end to end on 2026-08-24.
+
+drovr sends from its own dedicated Canadian long code, **+1 506 906 8159**
+(`phone-dceeb0a0acc6439dbdd0a08ebc73cb98`, $1/month), set as `originationNumber` in
+`control.json`. Every other number in the account belongs to sunnyt — never borrow one, because
+their two-way channels route replies into sunnyt's own inbound topics, which its cycles poll.
+
+Two things that number does not yet have: two-way (a reply goes nowhere) and deletion
+protection. Neither matters for one-way alerts; both are worth knowing before relying on it.
 
 ## The repo is local-only
 
