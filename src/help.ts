@@ -104,8 +104,8 @@ export const COMMANDS: Command[] = [
       'gives up at 60s and leaves the rest for the next tick.',
       'A launched cycle opens as an interactive claude tab in that program’s own herdr workspace,',
       'so a human can read it and talk to it while it runs. drovr watches it but never kills it.',
-      'Before deciding anything it drains the intents left as shared notes on drovr\'s intents',
-      'page — an intent changes the very inputs admission reads. At most ' +
+      'Before deciding anything it drains the intents left as shared notes on',
+      'craig/intents.html — an intent changes the very inputs admission reads. At most ' +
         `${MAX_INTENTS_PER_TICK} a tick and 60s of`,
       'wall clock, whichever comes first; either way the remainder is logged and waits.',
       'Each one is resolved, then applied, then answered in its own thread, refusals included. In',
@@ -116,8 +116,10 @@ export const COMMANDS: Command[] = [
       'be in the future, and must be no more than 24h out. Actions: mode <off|low|normal|away>,',
       'pause <1-72>h, reserve <-0.95..0.95>, concurrency <-7..7>, enable <program>, disable',
       '<program>, priority <program> <-9..9>.',
-      'Shared notes must be enabled on that page by its owner. While they are off the read',
-      'succeeds and returns nothing, so the tick reports the page as unreadable rather than empty.',
+      'The page is craig/intents.html on the drovr aice install, and its owner must enable shared',
+      'notes on it from the notes widget there — it cannot be done from the CLI. While they are',
+      'off the read succeeds and returns nothing, so the tick reports the page as unreadable',
+      'rather than empty.',
     ],
     writes:
       'control.json (any intent drained from the intents page), decisions.jsonl, cycles.jsonl, and launches cycle processes',

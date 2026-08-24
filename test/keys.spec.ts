@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -254,11 +255,36 @@ test('a control write is staged and renamed, so no reader can see a half-written
   assert.equal(read(path).mode, 'away');
 });
 
-test('a refused write leaves no staging file and no change', () => {
+test('a write refused before it starts leaves no staging file and no change', () => {
   const path = scratch();
   const dir = join(path, '..');
   const before = readFileSync(path, 'utf8');
   assert.throws(() => setEnabled(path, 'nope', false), /no program named/);
   assert.deepEqual(readdirSync(dir).filter((entry) => entry.endsWith('.tmp')), []);
   assert.equal(readFileSync(path, 'utf8'), before);
+});
+
+/**
+ * The rename is the step that can fail with a staging file already on disk, so the
+ * cleanup path only runs if the failure happens there. macOS's immutable flag makes
+ * the destination unreplaceable while leaving it readable, which is exactly that
+ * shape: the read succeeds, the staging write succeeds, the rename gets EPERM.
+ */
+test('a write that fails at the rename cleans up its staging file', () => {
+  const path = scratch();
+  const dir = join(path, '..');
+  const before = readFileSync(path, 'utf8');
+  execFileSync('chflags', ['uchg', path]);
+
+  try {
+    assert.throws(() => setMode(path, 'away'), /EPERM/);
+    assert.deepEqual(
+      readdirSync(dir).filter((entry) => entry.endsWith('.tmp')),
+      [],
+      'the staging file survived a failed rename',
+    );
+    assert.equal(readFileSync(path, 'utf8'), before, 'the control file was damaged');
+  } finally {
+    execFileSync('chflags', ['nouchg', path]);
+  }
 });

@@ -12,7 +12,12 @@ import { unansweredAsks } from './ledger.ts';
 
 import { poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, readControl, type Program } from './control.ts';
-import { MAX_INTENTS_PER_TICK, parseIntent, type Action as IntentAction } from './intents.ts';
+import {
+  MAX_INTENTS_PER_TICK,
+  isIntent,
+  parseIntent,
+  type Action as IntentAction,
+} from './intents.ts';
 import {
   adjustConcurrency,
   nudgePriority,
@@ -142,9 +147,15 @@ export const applyIntent = (controlPath: string, action: IntentAction): string =
 
 type Answer = { outcome: 'applied' | 'rejected'; message: string };
 
-/** A refusal — a stranger's thread, or a setter saying no — is Craig's answer, not
- *  a tick failure, so it comes back as the text to reply with. */
-const answerFor = (controlPath: string, author: string, action: IntentAction): Answer => {
+/**
+ * The one place an intent reaches control.json. Named for the write it performs
+ * rather than for the string it returns, and called as a statement of its own so
+ * the side effect is visible at the call site instead of buried in an expression.
+ *
+ * A refusal — a stranger's thread, or a setter saying no — is Craig's answer, not
+ * a tick failure, so it comes back as the text to reply with.
+ */
+const applyAndAnswer = (controlPath: string, author: string, action: IntentAction): Answer => {
   if (author !== PANEL_OWNER) {
     return {
       outcome: 'rejected',
@@ -161,42 +172,75 @@ const answerFor = (controlPath: string, author: string, action: IntentAction): A
 };
 
 /**
+ * The reply is the last step and the only one allowed to fail quietly: by the time
+ * it runs the thread is resolved and the change is made, so a failure costs Craig
+ * the explanation on the page, not the outcome. It still has to reach the log.
+ */
+const answerThread = async (threadId: string, message: string): Promise<void> => {
+  await replyToNote(DROVR_REPO, PANEL_PAGE, threadId, message).catch((error: unknown) => {
+    console.error(
+      `panel intent ${threadId}: ${message} — but the thread got no reply ` +
+        `(${explain(error)}). It is resolved, so it will not be retried and Craig will not ` +
+        'see this on the page.',
+    );
+  });
+};
+
+/**
  * Resolve, then apply, then reply — in that order, and the order is the whole
  * point. Resolving first is what makes an intent at-most-once: the process can die
  * anywhere after it, or the reply can fail, and the worst outcome is an
  * instruction lost with a line in the log. Applying first would leave the thread
  * open on any later failure, and the next tick would rewrite `pause 3h` to another
  * three hours from then — a supervisor paused indefinitely, silently.
- *
- * A thread that is not an intent is Craig talking, so it is left entirely alone:
- * replying would be spam and resolving would bury his own comment.
  */
 const drainThread = async (
   controlPath: string,
   thread: NoteThread,
   now: number,
-): Promise<'applied' | 'rejected' | 'ignored'> => {
+): Promise<'applied' | 'rejected'> => {
   const parsed = parseIntent(thread.text, thread.id, now);
-  if ('rejected' in parsed && parsed.rejected === 'not an intent') return 'ignored';
 
   await resolveNote(DROVR_REPO, PANEL_PAGE, thread.id);
 
-  const answer: Answer =
-    'rejected' in parsed
-      ? { outcome: 'rejected', message: `not applied: ${parsed.rejected}` }
-      : answerFor(controlPath, thread.author, parsed.action);
+  if ('rejected' in parsed) {
+    await answerThread(thread.id, `not applied: ${parsed.rejected}`);
+    return 'rejected';
+  }
 
-  await replyToNote(DROVR_REPO, PANEL_PAGE, thread.id, answer.message).catch((error: unknown) => {
-    console.error(
-      `panel intent ${thread.id}: ${answer.message} — but the thread got no reply ` +
-        `(${explain(error)}). It is resolved, so it will not be retried and Craig will not ` +
-        'see this on the page.',
-    );
-  });
+  const answer = applyAndAnswer(controlPath, thread.author, parsed.action);
+  await answerThread(thread.id, answer.message);
   return answer.outcome;
 };
 
+/**
+ * The at-most-once guarantee rests on a resolve that did not throw having actually
+ * persisted, and this repo's own asks.ts trap says an aice write's exit code is not
+ * proof of that. So check rather than assume: one extra list, only when something
+ * was drained, turning a silent assumption into a line in the log.
+ */
+const confirmResolved = async (drained: string[]): Promise<void> => {
+  const listing = await listNotes(DROVR_REPO, PANEL_PAGE);
+  const stillOpen = listing.threads.filter(
+    (thread) => !thread.resolved && drained.includes(thread.id),
+  );
+  if (stillOpen.length === 0) return;
+  console.error(
+    `panel intents: ${stillOpen.length} thread(s) reported themselves resolved but are still ` +
+      `open (${stillOpen.map((thread) => thread.id).join(', ')}). The next tick will drain them ` +
+      'again, so an intent already applied may repeat until its expires= stamp lapses.',
+  );
+};
+
+/** `capped` is "more was queued than this tick got through", whatever the reason —
+ *  the count cap, the clock, or a thread that could not be claimed. */
 export type Drained = { applied: number; rejected: number; capped: boolean };
+
+const capReason = (queued: number, batched: number, timedOut: boolean): string => {
+  if (batched < queued) return `capped at ${MAX_INTENTS_PER_TICK} a tick`;
+  if (timedOut) return `stopped after ${DRAIN_BUDGET_MS / 1000}s`;
+  return 'could not claim every thread';
+};
 
 /**
  * Applies the intents a human left on the panel. Bounded by both a count and a
@@ -214,16 +258,22 @@ export const drainIntents = async (now = Date.now()): Promise<Drained> => {
     return { applied: 0, rejected: 0, capped: false };
   }
 
-  const open = listing.threads.filter((thread) => !thread.resolved);
-  const batch = open.slice(0, MAX_INTENTS_PER_TICK);
+  // Only intent-shaped threads compete for the batch. Ordinary comments are never
+  // resolved and aice lists oldest first, so counting them would let a page's first
+  // twenty conversations fill the batch forever and starve every intent behind them.
+  const queue = listing.threads.filter((thread) => !thread.resolved && isIntent(thread.text));
+  const batch = queue.slice(0, MAX_INTENTS_PER_TICK);
   const startedAt = Date.now();
+  const drained: string[] = [];
   let applied = 0;
   let rejected = 0;
-  let seen = 0;
+  let timedOut = false;
 
   for (const thread of batch) {
-    if (Date.now() - startedAt >= DRAIN_BUDGET_MS) break;
-    seen += 1;
+    if (Date.now() - startedAt >= DRAIN_BUDGET_MS) {
+      timedOut = true;
+      break;
+    }
     // A throw here is the resolve failing, which is the one path that applies
     // nothing: the thread stays open and the next tick sees it again.
     const outcome = await drainThread(controlPath, thread, now).catch((error: unknown) => {
@@ -231,18 +281,23 @@ export const drainIntents = async (now = Date.now()): Promise<Drained> => {
         `panel intent ${thread.id} was not claimed, so nothing was applied — it stays open ` +
           `for the next tick: ${explain(error)}`,
       );
-      return 'ignored' as const;
+      return null;
     });
+    if (outcome === null) continue;
+    drained.push(thread.id);
     if (outcome === 'applied') applied += 1;
-    if (outcome === 'rejected') rejected += 1;
+    else rejected += 1;
   }
 
-  const left = open.length - seen;
+  if (drained.length > 0) {
+    await confirmResolved(drained).catch((error: unknown) => {
+      console.error(`panel intents: could not confirm the resolves landed (${explain(error)})`);
+    });
+  }
+
+  const left = queue.length - drained.length;
   if (left > 0) {
-    const why =
-      seen < batch.length
-        ? `stopped after ${DRAIN_BUDGET_MS / 1000}s`
-        : `capped at ${MAX_INTENTS_PER_TICK} a tick`;
+    const why = capReason(queue.length, batch.length, timedOut);
     console.error(`panel intents ${why}; ${left} left for the next tick`);
   }
   return { applied, rejected, capped: left > 0 };

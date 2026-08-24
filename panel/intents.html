@@ -34,10 +34,17 @@
         <span id="copied" hidden>copied</span>
       </p>
       <p class="muted">
+        That example is deliberately inert: a zero delta against a real program exercises the
+        whole grammar — prefix, verb, program, delta, stamp — and changes nothing, so you can
+        paste it to prove the loop works without altering what drovr does. Every action that
+        <em>does</em> something is in the table below.
+      </p>
+      <p class="muted">
         The <code>expires=</code> stamp is required and must be ISO 8601, in the future, and no
-        more than 24 hours out. That is what stops an old thread being reopened and applied a
-        second time. The example above is generated fresh each time this page loads, an hour out,
-        so it is always valid — do not hand-write one from memory.
+        more than 24 hours out — that is what bounds a reopened thread being applied a second
+        time. The stamp above is generated an hour out when the page loads, and again each time
+        you press Copy, so what you paste is current even on a tab left open overnight. Do not
+        hand-write one from memory.
       </p>
     </div>
 
@@ -160,17 +167,28 @@
     // absent, past, or more than 24h out, so a hardcoded example would stop working the
     // day after it was published and fail in a way that reads as drovr being broken.
     (function () {
-      const stamp = new Date(Date.now() + 3_600_000).toISOString();
-      const line = `drovr-intent v1 pause 2h expires=${stamp}`;
       const target = document.getElementById('example-text');
-      target.textContent = line;
+
+      // Regenerated on every copy, not just on load: the stamp lives an hour and the
+      // parser refuses a stale one, so a tab left open overnight would otherwise hand
+      // out an example that fails in a way reading as drovr being broken.
+      const fresh = () => {
+        const stamp = new Date(Date.now() + 3_600_000).toISOString();
+        const line = `drovr-intent v1 priority sunnyt 0 expires=${stamp}`;
+        target.textContent = line;
+        return line;
+      };
+
+      fresh();
 
       document.getElementById('copy').addEventListener('click', async () => {
+        const line = fresh();
         const flag = document.getElementById('copied');
         try {
           await navigator.clipboard.writeText(line);
         } catch {
-          // Clipboard access can be denied; the text is on the page either way.
+          // Clipboard access can be denied; the text is on the page either way, so
+          // select it and let the reader copy it by hand.
           const range = document.createRange();
           range.selectNodeContents(target);
           window.getSelection().removeAllRanges();

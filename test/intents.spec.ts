@@ -1,7 +1,7 @@
 // test/intents.spec.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_INTENTS_PER_TICK, parseIntent } from '../src/intents.ts';
+import { MAX_INTENTS_PER_TICK, isIntent, parseIntent } from '../src/intents.ts';
 
 const NOW = Date.parse('2026-08-24T12:00:00.000Z');
 const at = (offsetMinutes: number) => new Date(NOW + offsetMinutes * 60_000).toISOString();
@@ -298,4 +298,36 @@ test('an expires= stamp exactly 24h out is still accepted', () => {
   const stamp = new Date(now + 86_400_000).toISOString();
   const parsed = parseIntent(`drovr-intent v1 pause 3h expires=${stamp}`, 'n-1', now);
   assert.ok(!('rejected' in parsed));
+});
+
+/**
+ * The drainer filters on isIntent before it takes its batch and parses afterwards.
+ * If the two ever disagreed, one direction would drop real intents and the other
+ * would resolve Craig's own comments, so they are pinned together here.
+ */
+test('isIntent agrees with the parser about what is even an intent', () => {
+  const now = Date.parse('2026-08-24T12:00:00.000Z');
+  const stamp = new Date(now + 600_000).toISOString();
+  const samples = [
+    `drovr-intent v1 pause 3h expires=${stamp}`,
+    '  drovr-intent v1 mode away expires=nonsense  ',
+    'drovr-intent v1',
+    'drovr-intent v2 pause 3h',
+    'can we bump sunnyt up the queue?',
+    '',
+    'see drovr-intent v1 for the format',
+  ];
+  for (const text of samples) {
+    const parsedAsComment = 'rejected' in parseIntent(text, 'n-1', now)
+      && (parseIntent(text, 'n-1', now) as { rejected: string }).rejected === 'not an intent';
+    assert.equal(isIntent(text), !parsedAsComment, `disagreed on ${JSON.stringify(text)}`);
+  }
+});
+
+test('a note that merely mentions the prefix mid-sentence is conversation, not an intent', () => {
+  assert.equal(isIntent('see drovr-intent v1 for the format'), false);
+  assert.deepEqual(
+    parseIntent('see drovr-intent v1 for the format', 'n-1', Date.now()),
+    { rejected: 'not an intent' },
+  );
 });

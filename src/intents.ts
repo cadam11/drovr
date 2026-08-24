@@ -87,13 +87,21 @@ const toAction = (words: string[]): Action | string => {
   return `unknown action "${verb ?? ''}"`;
 };
 
+/**
+ * The prefix test on its own, so a caller can tell an intent from ordinary
+ * conversation without parsing it. The drainer needs that separation *before* it
+ * takes its batch: comments are never resolved, so counting them toward the cap
+ * would let a handful of them fill it forever and starve every intent behind them.
+ */
+export const isIntent = (text: string): boolean => text.trim().startsWith(PREFIX);
+
 export const parseIntent = (
   text: string,
   id: string,
   now: number,
 ): Intent | { rejected: string } => {
   const trimmed = text.trim();
-  if (!trimmed.startsWith(PREFIX)) return { rejected: 'not an intent' };
+  if (!isIntent(trimmed)) return { rejected: 'not an intent' };
 
   const body = trimmed.slice(PREFIX.length).trim();
 
