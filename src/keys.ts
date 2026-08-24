@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { DEFAULT_CEILINGS, parseControl, readControl, type Control } from './control.ts';
 import { MODES } from './modes.ts';
 const PAUSES = [
@@ -19,7 +19,18 @@ const mutate = (path: string, change: (raw: Record<string, unknown>) => void): C
   const raw: Record<string, unknown> = JSON.parse(readFileSync(path, 'utf8'));
   change(raw);
   const validated = parseControl(raw);
-  writeFileSync(path, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+
+  // Staged and renamed rather than truncated in place: rename is atomic within a
+  // filesystem, so no reader can catch a half-written control file. The 20s
+  // snapshot job calls readControl on a cadence the tick's own writes now overlap.
+  const staging = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(staging, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+    renameSync(staging, path);
+  } catch (error) {
+    rmSync(staging, { force: true });
+    throw error;
+  }
   return validated;
 };
 

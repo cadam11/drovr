@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -243,4 +243,22 @@ test('concurrency and priority: the widest delta the parser passes still lands i
   assert.equal(read(path).programs[0]!.priority, 9);
   nudgePriority(path, 'sunnyt', -9);
   assert.equal(read(path).programs[0]!.priority, 0);
+});
+
+test('a control write is staged and renamed, so no reader can see a half-written file', () => {
+  const path = scratch();
+  const dir = join(path, '..');
+  setMode(path, 'away');
+  const strays = readdirSync(dir).filter((entry) => entry.endsWith('.tmp'));
+  assert.deepEqual(strays, [], `staging files left behind: ${strays.join(', ')}`);
+  assert.equal(read(path).mode, 'away');
+});
+
+test('a refused write leaves no staging file and no change', () => {
+  const path = scratch();
+  const dir = join(path, '..');
+  const before = readFileSync(path, 'utf8');
+  assert.throws(() => setEnabled(path, 'nope', false), /no program named/);
+  assert.deepEqual(readdirSync(dir).filter((entry) => entry.endsWith('.tmp')), []);
+  assert.equal(readFileSync(path, 'utf8'), before);
 });

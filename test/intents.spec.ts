@@ -285,3 +285,17 @@ test('expires= still rejects date-only form (ambiguous local time)', () => {
   const intent = parseIntent(`drovr-intent v1 pause 3h expires=2026-08-24`, 'n-date-only', NOW);
   assert.match('rejected' in intent ? intent.rejected : '', /ISO 8601/);
 });
+
+test('an expires= stamp more than 24h out is refused, so a reopened thread cannot replay forever', () => {
+  const now = Date.parse('2026-08-24T12:00:00.000Z');
+  const stamp = new Date(now + 86_400_000 + 1000).toISOString();
+  const parsed = parseIntent(`drovr-intent v1 pause 3h expires=${stamp}`, 'n-1', now);
+  assert.deepEqual(parsed, { rejected: 'expires= is more than 24h out; an intent must be short-lived' });
+});
+
+test('an expires= stamp exactly 24h out is still accepted', () => {
+  const now = Date.parse('2026-08-24T12:00:00.000Z');
+  const stamp = new Date(now + 86_400_000).toISOString();
+  const parsed = parseIntent(`drovr-intent v1 pause 3h expires=${stamp}`, 'n-1', now);
+  assert.ok(!('rejected' in parsed));
+});

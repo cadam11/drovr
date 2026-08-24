@@ -77,7 +77,9 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `panel/index.html` | The snapshot fetch needs a cache-buster (`?t=${Date.now()}`) alongside `cache: 'no-store'`. CloudFront happily serves a stale object to a plain URL, and a panel showing minute-old capacity as current is worse than one showing nothing. |
 | `preview.ts` | The preview parser is lenient **because it is a scrape** of claude's TUI — an undeclared format that changes between releases, where an unrecognised shape must yield `null` and cost the panel a preview, never fail a tick. This is the exact inverse of `herdr.ts`'s `agent_status` rule: parse a declared interface strictly and let a surprise throw, parse a scrape leniently and let it return nothing. Know which one you are reading before choosing. |
 | `asks.ts` | Two note shapes on purpose. `readAsks` parses leniently for a liveness heuristic; `listNotes` parses strictly because what it returns is applied to `control.json`. Do not merge them into one tolerant shape — that would make an unrecognised payload look like a page with no intents on it. |
-| `tick.ts` | Resolve a drained intent thread *before* replying to it. A reply that fails costs Craig an explanation the log still holds; a thread left open is drained again on the next tick, and a delta like `concurrency +1` applies a second time. |
+| `asks.ts` | A zero exit from an `aice notes` **write** is not proof the note exists. Measured 2026-08-24 against drovr.aicex.app: `notes add` to a page whose notes are not shared exits 0 and prints `added: true` — with **no `id`**, which is the tell, since a persisted entry comes back carrying a server-minted one. Reproduced twice with an explicit `--prefix` on both calls, each naming the identical resolved page, so it is not the path-ambiguity asymmetry it first looks like. aice's source *does* gate writes (`aice-manage/src/notes.ts` returns 403 `sharing_off`, and the client maps that to `SHARING_OFF`), so the deployed install appears to be behind that tree — inferred, not confirmed. Either way: to know a page is writable read it and check `shared: true`, never the write's exit code. |
+| `panel/index.html` | A page of custom HTML has no notes widget. The affordance ships inside `<aice-page>`, which loads `/_aice/widgets.js`; a hand-rolled page never loads it, so it has no comment control and — the part that actually bites — **no Share control**, which is the only place sharing can be switched on. That is why intents live on `intents.html` (shell-wrapped) rather than on the panel, which stays custom. |
+| `tick.ts` | A drained intent goes **resolve → apply → reply**, and the order is the whole guarantee. Resolving first is what makes it at-most-once: the process can die, or the reply can fail, and the cost is an instruction lost with a line in the log. Apply first and every later failure leaves the thread open, so the next tick rewrites `pause 3h` to another three hours from *then* — a supervisor paused indefinitely with nothing but `tick.err` to say so. For a file that governs autonomous work, losing an instruction loudly beats repeating one quietly. The parser's 24h `expires=` ceiling closes the same hole from the other side: `notes resolve --reopen` can requeue a thread, and nothing else bounds a replay. |
 
 ## The CLI is read by agents
 
@@ -103,10 +105,9 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **`headless` runner mode** — a fallback, exercised once early, untouched since the herdr runner
   landed.
 - **A panel intent applied end to end.** Every piece is tested against a real control file, but no
-  intent has been read off the live page, because shared notes are **off** on `craig/index.html`
+  intent has been read off the live page, because shared notes are **off** on `craig/intents.html`
   and only Craig can turn them on, from the notes widget on the page itself. Until he does, every
-  tick logs the page as unreadable and nothing can be sent from the panel. `notes add` still
-  reports success against an unshared page, so a written note is not evidence the loop works.
+  tick logs the page as unreadable and nothing can be sent from the panel.
 
 ## Notifications
 

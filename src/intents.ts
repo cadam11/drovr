@@ -3,6 +3,14 @@ import { MODES } from './modes.ts';
 export const MAX_INTENTS_PER_TICK = 20;
 
 const PREFIX = 'drovr-intent v1';
+
+/**
+ * An intent is an instruction for the next tick or two, not a standing order. The
+ * ceiling is what keeps a drained thread from being replayed: `notes resolve
+ * --reopen` puts one back in the queue, and a stamp years out would let it apply
+ * again with nothing else to stop it.
+ */
+const MAX_LIFETIME_MS = 86_400_000;
 const ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(Z|[+-]\d{2}:\d{2})$/;
 
 export type Action =
@@ -103,6 +111,9 @@ export const parseIntent = (
   const expiresAt = Date.parse(expiresStamp);
   if (Number.isNaN(expiresAt)) return { rejected: 'unparseable expires= stamp' };
   if (expiresAt <= now) return { rejected: 'expired before it was drained' };
+  if (expiresAt - now > MAX_LIFETIME_MS) {
+    return { rejected: 'expires= is more than 24h out; an intent must be short-lived' };
+  }
 
   const action = toAction(body.replace(/(?:^|\s)expires=\S+/, '').trim().split(/\s+/).filter(Boolean));
   if (typeof action === 'string') return { rejected: action };

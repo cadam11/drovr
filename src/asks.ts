@@ -53,6 +53,8 @@ export const splitPage = (asksPage: string): { page: string; prefix: string | nu
 const prefixArgs = (prefix: string | null): string[] =>
   prefix === null ? [] : ['--prefix', prefix];
 
+const NOTES_MAX_BYTES = 16 * 1024 * 1024;
+
 const aiceErrorShape = z.object({ error: z.object({ message: z.string() }) });
 
 /**
@@ -81,7 +83,10 @@ const notesJson = async (cwd: string, argv: string[]): Promise<string> => {
   const { stdout } = await run(
     'direnv',
     ['exec', cwd, 'aice', 'notes', ...argv, '--json'],
-    { cwd },
+    // execFile's 1 MB default applies to `notes list`, where aice allows 4 KB a note
+    // and 64 KB a participant: a busy page overruns it and throws ENOBUFS, which
+    // reads as a notes outage rather than as the page being too big to fetch.
+    { cwd, maxBuffer: NOTES_MAX_BYTES },
   ).catch((error: unknown) => {
     const reason = aiceReason((error as { stdout?: unknown }).stdout);
     if (reason === null) throw explainSpawn('direnv', error);
@@ -132,6 +137,7 @@ const readAsksUncached = async (program: Program): Promise<AsksState | null> => 
  */
 const noteThreadShape = z.object({
   id: z.string(),
+  author: z.string(),
   text: z.string(),
   resolved: z.boolean(),
 });

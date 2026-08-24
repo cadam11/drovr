@@ -108,8 +108,24 @@ const reconcileAbandoned = (now: number): number => {
   return abandoned.length;
 };
 
-/** drovr has exactly one panel, so a control-file field for it would be surface nothing reads. */
-const PANEL_PAGE = 'craig/index.html';
+/**
+ * The panel's companion inbox, and the only page drovr reads intents from. It is a
+ * separate page because the panel is custom HTML with no `<aice-page>` shell, so it
+ * never loads the notes widget — and the widget is the only place a note can be
+ * written or sharing switched on. One page, so a control-file field would be
+ * surface nothing reads.
+ */
+const PANEL_PAGE = 'craig/intents.html';
+
+/**
+ * Only this slug's own threads are applied. The page's default visibility is the
+ * whole adam11.ca tenant, so without this any reader who can open it could set
+ * `mode off` or `pause 72h` on Craig's supervisor.
+ */
+const PANEL_OWNER = 'craig';
+
+/** Wall-clock ceiling on one drain. The count cap bounds aice calls, not seconds. */
+const DRAIN_BUDGET_MS = 60_000;
 
 /** The whole intent -> writer routing. Exported so the six-way dispatch is covered
  *  against a real control file rather than only through the notes I/O around it. */
@@ -124,29 +140,36 @@ export const applyIntent = (controlPath: string, action: IntentAction): string =
   return nudgePriority(controlPath, action.program, action.delta).message;
 };
 
-/** A setter's refusal is Craig's answer, not a tick failure, so it comes back as text. */
-const attempt = (controlPath: string, action: IntentAction): { ok: boolean; message: string } => {
+type Answer = { outcome: 'applied' | 'rejected'; message: string };
+
+/** A refusal — a stranger's thread, or a setter saying no — is Craig's answer, not
+ *  a tick failure, so it comes back as the text to reply with. */
+const answerFor = (controlPath: string, author: string, action: IntentAction): Answer => {
+  if (author !== PANEL_OWNER) {
+    return {
+      outcome: 'rejected',
+      message:
+        `not applied: only ${PANEL_OWNER} can send intents from this page, ` +
+        `and this thread is ${author}'s`,
+    };
+  }
   try {
-    return { ok: true, message: `applied: ${applyIntent(controlPath, action)}` };
+    return { outcome: 'applied', message: `applied: ${applyIntent(controlPath, action)}` };
   } catch (error) {
-    return { ok: false, message: `not applied: ${explain(error)}` };
+    return { outcome: 'rejected', message: `not applied: ${explain(error)}` };
   }
 };
 
 /**
- * Resolve first, then reply. A reply that fails costs Craig an explanation he can
- * still read in the log; a thread left open is drained again on the next tick, and
- * a delta like `concurrency +1` would then be applied a second time.
- */
-const settle = async (threadId: string, message: string): Promise<void> => {
-  await resolveNote(DROVR_REPO, PANEL_PAGE, threadId);
-  await replyToNote(DROVR_REPO, PANEL_PAGE, threadId, message);
-};
-
-/**
- * A thread that is not an intent is Craig talking, so it is left entirely alone —
- * replying would be spam and resolving would bury his own comment. Every other
- * outcome is answered and closed: an unparseable note left open is retried forever.
+ * Resolve, then apply, then reply — in that order, and the order is the whole
+ * point. Resolving first is what makes an intent at-most-once: the process can die
+ * anywhere after it, or the reply can fail, and the worst outcome is an
+ * instruction lost with a line in the log. Applying first would leave the thread
+ * open on any later failure, and the next tick would rewrite `pause 3h` to another
+ * three hours from then — a supervisor paused indefinitely, silently.
+ *
+ * A thread that is not an intent is Craig talking, so it is left entirely alone:
+ * replying would be spam and resolving would bury his own comment.
  */
 const drainThread = async (
   controlPath: string,
@@ -155,21 +178,30 @@ const drainThread = async (
 ): Promise<'applied' | 'rejected' | 'ignored'> => {
   const parsed = parseIntent(thread.text, thread.id, now);
   if ('rejected' in parsed && parsed.rejected === 'not an intent') return 'ignored';
-  if ('rejected' in parsed) {
-    await settle(thread.id, `not applied: ${parsed.rejected}`);
-    return 'rejected';
-  }
-  const outcome = attempt(controlPath, parsed.action);
-  await settle(thread.id, outcome.message);
-  return outcome.ok ? 'applied' : 'rejected';
+
+  await resolveNote(DROVR_REPO, PANEL_PAGE, thread.id);
+
+  const answer: Answer =
+    'rejected' in parsed
+      ? { outcome: 'rejected', message: `not applied: ${parsed.rejected}` }
+      : answerFor(controlPath, thread.author, parsed.action);
+
+  await replyToNote(DROVR_REPO, PANEL_PAGE, thread.id, answer.message).catch((error: unknown) => {
+    console.error(
+      `panel intent ${thread.id}: ${answer.message} — but the thread got no reply ` +
+        `(${explain(error)}). It is resolved, so it will not be retried and Craig will not ` +
+        'see this on the page.',
+    );
+  });
+  return answer.outcome;
 };
 
 export type Drained = { applied: number; rejected: number; capped: boolean };
 
 /**
- * Applies the intents a human left on the panel. Bounded per tick, and a page whose
- * owner has not enabled shared notes reads as an empty, healthy page — so that case
- * is reported as unreadable rather than counted as nothing to do.
+ * Applies the intents a human left on the panel. Bounded by both a count and a
+ * clock, and a page whose owner has not enabled shared notes reads as an empty,
+ * healthy page — so that case is reported as unreadable, not as nothing to do.
  */
 export const drainIntents = async (now = Date.now()): Promise<Drained> => {
   const controlPath = paths().control;
@@ -184,26 +216,36 @@ export const drainIntents = async (now = Date.now()): Promise<Drained> => {
 
   const open = listing.threads.filter((thread) => !thread.resolved);
   const batch = open.slice(0, MAX_INTENTS_PER_TICK);
-  const capped = open.length > batch.length;
+  const startedAt = Date.now();
   let applied = 0;
   let rejected = 0;
+  let seen = 0;
 
   for (const thread of batch) {
+    if (Date.now() - startedAt >= DRAIN_BUDGET_MS) break;
+    seen += 1;
+    // A throw here is the resolve failing, which is the one path that applies
+    // nothing: the thread stays open and the next tick sees it again.
     const outcome = await drainThread(controlPath, thread, now).catch((error: unknown) => {
-      console.error(`panel intent ${thread.id} left open: ${explain(error)}`);
+      console.error(
+        `panel intent ${thread.id} was not claimed, so nothing was applied — it stays open ` +
+          `for the next tick: ${explain(error)}`,
+      );
       return 'ignored' as const;
     });
     if (outcome === 'applied') applied += 1;
     if (outcome === 'rejected') rejected += 1;
   }
 
-  if (capped) {
-    console.error(
-      `panel intents capped at ${MAX_INTENTS_PER_TICK} this tick; ` +
-        `${open.length - batch.length} left for the next one`,
-    );
+  const left = open.length - seen;
+  if (left > 0) {
+    const why =
+      seen < batch.length
+        ? `stopped after ${DRAIN_BUDGET_MS / 1000}s`
+        : `capped at ${MAX_INTENTS_PER_TICK} a tick`;
+    console.error(`panel intents ${why}; ${left} left for the next tick`);
   }
-  return { applied, rejected, capped };
+  return { applied, rejected, capped: left > 0 };
 };
 
 export const tick = async (): Promise<void> => {
