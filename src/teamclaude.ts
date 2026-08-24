@@ -16,12 +16,18 @@ const bucketFields = z.object({
   unified7dReset: z.number().nullable(),
   unified7dFable: z.number().nullable(),
   unified7dFableReset: z.number().nullable(),
+  unifiedStatus: z.string().nullable().default(null),
 });
 
 const accountShape = z.object({
   name: z.string(),
+  type: z.string().default('oauth'),
+  orgName: z.string().nullable().default(null),
+  status: z.string().nullable().default(null),
+  sessions: z.number().default(0),
   disabled: z.boolean(),
   quota: bucketFields,
+  usage: z.object({ lastUsed: z.string().nullable().default(null) }).default({ lastUsed: null }),
   rateLimitedUntil: z.number().nullable(),
   pausedUntil: z.number().nullable(),
 });

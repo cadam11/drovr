@@ -16,6 +16,10 @@ type AccountInput = {
 
 export const account = (input: AccountInput) => ({
   name: input.name,
+  type: 'oauth',
+  orgName: null,
+  status: input.disabled ? 'disabled' : 'active',
+  sessions: 0,
   disabled: input.disabled ?? false,
   quota: {
     unified5h: input.session ?? null,
@@ -24,7 +28,9 @@ export const account = (input: AccountInput) => ({
     unified7dReset: NOW + (input.weeklyResetInHours ?? 84) * HOUR,
     unified7dFable: input.fable ?? 0,
     unified7dFableReset: NOW + (input.weeklyResetInHours ?? 84) * HOUR,
+    unifiedStatus: null,
   },
+  usage: { lastUsed: null },
   rateLimitedUntil: input.rateLimitedUntil ?? null,
   pausedUntil: null,
 });
