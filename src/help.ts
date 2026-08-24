@@ -46,8 +46,8 @@ export const AGENT_NOTES = {
     'A WAIT reason naming another program means it is queued behind it, not short of quota.',
     'The three quota buckets bind simultaneously; the reason names whichever is tightest.',
     'A 5h (session) hold recovers in hours. A weekly hold recovers in days. Read the binding bucket.',
-    'Pool headroom is summed per bucket and is a display figure. It can look free while no single',
-    'account has room in all three at once — read capacity.cyclesFundable, never pool \u00f7 cost.',
+    'Pool headroom is summed per bucket and is a display figure: it can look free while no ' +
+      'single account has room in all three at once. Read capacity.cyclesFundable, never pool \u00f7 cost.',
     'run-cycle blocks for hours. Use tick, which detaches, or read cycles.jsonl to follow progress.',
   ],
 };

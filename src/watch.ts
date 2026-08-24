@@ -33,6 +33,30 @@ const osc8 = (url: string, text: string): string =>
 export const visibleLength = (text: string): number =>
   text.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').length;
 
+/**
+ * Bounded word wrap, for text that must not lose its tail. A WAIT reason can run past 200
+ * characters — a coupling explanation naming which bucket pins which accounts, or a crash
+ * latch carrying a log path and the command that retries it — and clipping one to a program
+ * row drops exactly the half that says what to do about it.
+ *
+ * `maxLines` is a hard cap rather than "however many it takes": the frame is sliced to
+ * `stdout.rows - 1`, so lines spent here come off the bottom, and the bottom is the keybar.
+ * The final line absorbs whatever is left and is clipped by the caller like any other.
+ */
+export const wrapText = (text: string, width: number, maxLines: number): string[] => {
+  if (width < 1 || maxLines < 1) throw new Error(`wrapText needs width>=1 and maxLines>=1, got ${width}/${maxLines}`);
+  const lines: string[] = [];
+  let rest = text;
+  while (rest.length > width && lines.length < maxLines - 1) {
+    const space = rest.lastIndexOf(' ', width);
+    const at = space > 0 ? space : width;
+    lines.push(rest.slice(0, at));
+    rest = rest.slice(at).trimStart();
+  }
+  lines.push(rest);
+  return lines;
+};
+
 /** Clip to the terminal width so nothing soft-wraps and pushes the frame around. */
 export const clip = (text: string, width: number): string => {
   if (visibleLength(text) <= width) return text;
@@ -212,13 +236,18 @@ const allocationLines = (input: {
   ];
 };
 
+/** Two: enough for the longest reason drovr emits, few enough not to cost the keybar. */
+const DETAIL_LINES = 2;
+const DETAIL_INDENT = 6;
+
 const programLines = (input: {
   programs: ProgramState[];
   now: number;
   selected: number;
   narrow: boolean;
+  width: number;
 }): string[] => {
-  const { programs, now, selected, narrow } = input;
+  const { programs, now, selected, narrow, width } = input;
   const nameWidth = Math.max(8, ...programs.map((program) => program.name.length)) + 6;
 
   return programs.map((program, index) => {
@@ -229,23 +258,30 @@ const programLines = (input: {
     const label = `${program.name}${program.enabled ? '' : ' (off)'}`.padEnd(nameWidth);
     const isSelected = index === selected;
 
-    const row =
+    const head =
       ` ${isSelected ? paint(36, '▸') : ' '}${dim(`p${String(program.priority).padStart(2)}`)} ` +
       `${isSelected ? invert(label) : label} ` +
-      `${paint(VERDICT_COLOUR[program.verdict] ?? 37, program.verdict.padEnd(4))}${narrow ? '' : `  ${dim(detail)}`}`;
+      `${paint(VERDICT_COLOUR[program.verdict] ?? 37, program.verdict.padEnd(4))}`;
+
+    // Beside the row only while it fits whole. A reason clipped to the row loses its tail,
+    // and the tail is where a long one keeps the coupling explanation or the retry command.
+    const inline = !narrow && visibleLength(head) + 2 + detail.length <= width;
+    const row = inline ? `${head}  ${dim(detail)}` : head;
+    const detailLines = inline
+      ? []
+      : wrapText(detail, Math.max(8, width - DETAIL_INDENT), DETAIL_LINES)
+          .map((line) => `${' '.repeat(DETAIL_INDENT)}${dim(line)}`);
 
     const askLine =
       program.asksUrl === null
         ? []
         : [
-            `${' '.repeat(6)}${osc8(
+            `${' '.repeat(DETAIL_INDENT)}${osc8(
               program.asksUrl,
               narrow ? 'asks ›' : program.asksUrl.replace(/^https:\/\//, ''),
             )}`,
           ];
-    // On a phone the reason never fits beside the row, so give it its own line.
-    const reasonLine = narrow ? [`${' '.repeat(6)}${dim(detail)}`] : [];
-    return [row, ...reasonLine, ...askLine].join('\n');
+    return [row, ...detailLines, ...askLine].join('\n');
   });
 };
 
@@ -316,7 +352,7 @@ export const frame = (state: DrovrState, view: ViewState, columns?: number): str
   lines.push(
     '',
     `  ${bold('PROGRAMS')}  ${dim(`${state.cyclesInFlight}/${state.maxConcurrentCycles} in flight`)}`,
-    ...programLines({ programs: state.programs, now, selected: view.selected, narrow }),
+    ...programLines({ programs: state.programs, now, selected: view.selected, narrow, width }),
   );
 
   const recent = state.recentCycles.slice(0, 5);

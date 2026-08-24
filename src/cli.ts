@@ -9,6 +9,7 @@ import { cyclesFundableFrom, decide, type Funding } from './decide.ts';
 import {
   consecutiveZeroYield,
   estimateCycleCost,
+  inFlight,
   lastDecisionAt,
   readCycles,
   type CycleRecord,
@@ -175,6 +176,12 @@ const statusPayload = async () => {
   const ceilings = ceilingsFor(control);
   const state = serviceState();
   const lastTick = lastDecisionAt(p.decisions);
+  // control.maxCycleHours, never inFlight's own 24h default: decide() and buildState both
+  // cut off there, and a 13h-old cycle with no end record would otherwise have this payload
+  // reserving a cycle the per-program verdicts printed from it do not.
+  const running = inFlight(cycles, now, control.maxCycleHours);
+  const pool = ceilings === null ? null : poolFrom(status, ceilings, now);
+  const cost = estimateCycleCost(cycles, control.seedCycleCost);
 
   return {
     service: {
@@ -188,19 +195,13 @@ const statusPayload = async () => {
         ? 'no cycles will start'
         : `programs may use up to ${round((control.ceilings[control.mode]?.weekly ?? 0) * 100)}% of each account's weekly quota; the rest stays available to Craig`,
     pausedUntil: control.pauseUntil,
-    pool: ceilings === null ? null : poolPayload(poolFrom(status, ceilings, now)),
-    capacity: ceilings === null ? null : fundingPayload(
-      cyclesFundableFrom(
-        poolFrom(status, ceilings, now),
-        estimateCycleCost(cycles, control.seedCycleCost),
-        inFlightCycles().length,
-      ),
-    ),
+    pool: pool === null ? null : poolPayload(pool),
+    capacity: pool === null ? null : fundingPayload(cyclesFundableFrom(pool, cost, running.length)),
     estimatedCycleCost: {
-      ...roundCost(estimateCycleCost(cycles, control.seedCycleCost)),
+      ...roundCost(cost),
       units: 'account-fractions consumed by one typical delivery cycle',
     },
-    inFlight: inFlightCycles().map((cycle) => ({
+    inFlight: running.map((cycle) => ({
       program: cycle.program,
       startedAt: cycle.startedAt,
       kind: cycle.kind,
@@ -246,6 +247,8 @@ const showStatus = async (): Promise<void> => {
   const cycles = readCycles(p.cycles);
   const now = Date.now();
   const ceilings = ceilingsFor(control);
+  // Same cutoff decide() uses, so the capacity line and the verdicts beneath it agree.
+  const running = inFlight(cycles, now, control.maxCycleHours);
 
   console.log(`service: ${describeService(serviceState(), lastDecisionAt(p.decisions), now)}`);
   console.log(`mode: ${control.mode}${control.pauseUntil === null ? '' : ` (paused until ${control.pauseUntil})`}`);
@@ -265,11 +268,10 @@ const showStatus = async (): Promise<void> => {
     // Printed next to the pool line because the pool line is what misleads: an account is
     // spendable only where it has room in all three buckets, so free-looking sums can fund
     // nothing at all.
-    console.log(`capacity: ${describeFunding(cyclesFundableFrom(pool, cost, inFlightCycles().length))}`);
+    console.log(`capacity: ${describeFunding(cyclesFundableFrom(pool, cost, running.length))}`);
   }
   console.log(`cycles recorded: ${cycles.length} · zero-yield streak: ${consecutiveZeroYield(cycles)}`);
 
-  const running = inFlightCycles();
   const names = running.map((cycle) => cycle.program).join(', ');
   console.log(
     `in flight: ${running.length}/${control.maxConcurrentCycles}${running.length === 0 ? '' : ` (${names})`}`,

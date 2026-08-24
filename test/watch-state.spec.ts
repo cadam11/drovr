@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildState } from '../src/state.ts';
-import { frame } from '../src/watch.ts';
+import { frame, visibleLength } from '../src/watch.ts';
 import { payload } from '../src/panel.ts';
-import { control, healthy, NOW } from './fixtures.ts';
+import { account, control, healthy, NOW, status } from './fixtures.ts';
 
 const fixture = (overrides: Record<string, unknown> = {}) => buildState({
   status: healthy(), control: control(overrides), cycles: [], now: NOW,
@@ -79,3 +79,46 @@ test('frame is pure — the same state twice gives byte-identical output', () =>
   const state = fixture();
   assert.equal(frame(state, view), frame(state, view));
 });
+
+/**
+ * The bars surface is the one that most needs the coupling explanation: a session bar
+ * showing free green and marked ' binds' beside a zero verdict is exactly what got
+ * misread as capacity. The first version prefixed the note onto the reason, which pushed
+ * the verdict past the clip and left half a sentence — the explanation relocated rather
+ * than closed. Both halves have to survive at the narrowest width watch draws bars at.
+ */
+const coupledState = () => buildState({
+  status: status([
+    account({ name: 'first@example.com', fable: 0.22, general: 0.2, session: 0.98 }),
+    account({ name: 'second@example.com', fable: 0.07, general: 0.08, session: 0.66 }),
+    account({ name: 'fourth@example.com', fable: 0.98, general: 0.9, session: 0.0 }),
+  ]),
+  control: control({
+    seedCycleCost: { fable: 0.025, general: 0.02, session: 0.063 },
+    programs: [{ name: 'demo', cwd: '/tmp/demo' }],
+  }),
+  cycles: [], now: NOW,
+  service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
+  previews: new Map(), locks: new Map(), asksUrls: new Map(), queuedIntents: [],
+});
+
+for (const width of [100, 120]) {
+  test(`the whole WAIT reason survives a ${width}-column frame, verdict and coupling note both`, () => {
+    const text = frame(coupledState(), view, width);
+    // A wrapped reason is split across lines with an indent, so the sentence is matched
+    // against a plain, whitespace-collapsed projection; widths are checked on the real lines.
+    const flat = text
+      .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
+      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+      .replace(/\s+/g, ' ');
+    assert.match(flat, /session tightest — funds 0\.00 cycles/, 'the verdict half was clipped');
+    assert.match(flat, /need 1\.50, recovers in/, 'the verdict half was truncated');
+    assert.match(flat, /no account has room in all three buckets/, 'the note half was clipped');
+    assert.match(flat, /karen\.adam/, 'the note lost its last account name');
+    // The keybar is drawn last, so wrapped reasons eating the frame shows up here first.
+    assert.match(flat, /q quit/, 'the keybar was pushed out of the frame');
+    for (const line of text.split('\n')) {
+      assert.ok(visibleLength(line) <= width, `line over ${width} columns: ${line}`);
+    }
+  });
+}

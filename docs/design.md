@@ -216,7 +216,10 @@ child owns that program's lock and writes its own ledger entries.
 
 **In-flight cycles must reserve capacity.** A running cycle has not yet shown up as spent quota,
 so admitting against the raw pool would let every program independently claim all of it.
-Admission subtracts `running × estimatedCost` before testing affordability.
+Admission subtracts the count of running cycles from `cyclesFundable` before testing
+affordability — see "Two independent gates" above. An earlier version deducted
+`running × estimatedCost` from each bucket of the pool instead; that stopped modelling anything
+once fundability became a per-account sum, and the helper that did it is gone.
 
 **Scope of each gate differs.** Pace and reservations are global (one pool); daily caps and
 stuck detection are per program (one program going quiet should not stop the others). The daily

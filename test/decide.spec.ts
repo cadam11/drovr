@@ -204,8 +204,50 @@ test('the coupled pool holds the loop and the reason names who is pinned by what
   assert.equal(decision.binding, 'session');
   assert.equal(decision.earliestRecoveryAt, NOW + 2 * HOUR);
   assert.match(decision.reason, /no account has room in all three buckets/);
-  assert.match(decision.reason, /session pins craig\.adam@propra and karen\.adam@propra/);
-  assert.match(decision.reason, /fable pins craig@memberjunction/);
+  assert.match(decision.reason, /session pins craig\.adam and karen\.adam/);
+  assert.match(decision.reason, /fable pins craig/);
+  // Appended, not prefixed: every surface clips from the right, so the verdict — what it
+  // funds, what it needs, when it recovers — has to be the half that always survives.
+  assert.ok(decision.reason.startsWith('session tightest —'), decision.reason);
+  // Two wrapped lines at drovr watch's narrowest useful width (100 columns, 6 of indent).
+  // Past this the note stops fitting on the one surface that also draws the free-looking
+  // bars it exists to explain.
+  assert.ok(decision.reason.length <= 188, `reason is ${decision.reason.length} chars`);
+});
+
+test('at zero the reported bucket is the soonest reset, not whichever account is listed first', () => {
+  // Every account funds zero, so "the account with the most to give" degenerates to the
+  // first one — and here that is memberjunction, pinned on fable with a weekly reset 60h
+  // out. The propra account is pinned on the 5h window and recovers in two. Reporting fable
+  // would read as the week written off; CLAUDE.md calls getting this wrong actively
+  // misleading, and it is what earliestRecoveryAt is read from.
+  const fablePinnedFirst = status([
+    account({
+      name: 'fourth@example.com',
+      fable: 0.98, general: 0.9, session: 0.0, weeklyResetInHours: 60,
+    }),
+    account({ name: 'first@example.com', fable: 0.22, general: 0.2, session: 0.98 }),
+  ]);
+  const pool = poolFrom(fablePinnedFirst, { weekly: 0.55, session: 0.4 }, NOW);
+  const funding = cyclesFundableFrom(pool, COUPLED_COST, 0);
+
+  assert.equal(funding.cycles, 0);
+  assert.equal(funding.accounts[0]!.binding, 'fable');
+  assert.equal(pool.resetAt.fable, NOW + 60 * HOUR);
+  assert.equal(pool.resetAt.session, NOW + 2 * HOUR);
+  assert.equal(funding.binding, 'session');
+});
+
+test('a wait shorter than an hour is reported in minutes, not rounded to 0h', () => {
+  // Math.round on 26 minutes gave "recovers in 0h", which reads as any moment now for a
+  // wait that is not — the same class of misreport as naming the wrong bucket.
+  const soon = status([
+    account({ name: 'a', fable: 0.05, general: 0.05, session: 0.39 }),
+  ]);
+  soon.accounts[0]!.quota.unified5hReset = NOW + 26 * 60_000;
+  const decision = run({ status: soon });
+  assert.equal(decision.binding, 'session');
+  assert.match(decision.reason, /recovers in 26m/);
 });
 
 test('one account with room in all three funds its own minimum, not the pooled sum', () => {

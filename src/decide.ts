@@ -106,11 +106,17 @@ export const cyclesFundableFrom = (pool: Pool, cost: CycleCost, running: number)
 };
 
 /**
- * Account names are addresses and two of them differ only by domain, so the local part
- * alone is ambiguous. Dropping just the TLD shortens every name by the same rule and
- * still tells two accounts apart: craig@memberjunction, craig.adam@propra.
+ * The local part, unless two accounts share one, in which case neither is abbreviated.
+ * Length is a hard constraint here and not a preference: this note has to survive beside
+ * a program row in `drovr watch`, which is the one surface that also draws the free-looking
+ * bars it exists to explain. Keeping the domains costs about thirty columns and pushes the
+ * verdict itself off the frame.
  */
-const shortName = (name: string): string => name.replace(/\.[^.@]+$/, '');
+const shortName = (name: string, all: AccountFunding[]): string => {
+  const local = (candidate: string): string => candidate.split('@')[0] ?? candidate;
+  const collides = all.filter((account) => local(account.name) === local(name)).length > 1;
+  return collides ? name : local(name);
+};
 
 const listOf = (names: string[]): string =>
   names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
@@ -120,6 +126,10 @@ const listOf = (names: string[]): string =>
  * much of each bucket is spent pool-wide, which reads as free while no single account
  * has room in all three at once. That gap is what got misread as capacity, so when it is
  * what refuses a cycle the reason has to name it and say which bucket pins whom.
+ *
+ * Appended, never prefixed: every surface clips a long reason from the right, so whichever
+ * half goes last is the half that can be lost. The verdict — what it funds, what it needs,
+ * when it recovers — is the half that must always survive.
  *
  * Silent for a single-account pool: with one account min-of-sums and sum-of-mins agree,
  * so there is no discrepancy to explain and "session tightest" already says it.
@@ -132,14 +142,14 @@ const couplingNote = (funding: Funding): string | null => {
   const pins = BUCKETS
     .map((bucket) => pinned.filter((account) => account.binding === bucket))
     .filter((group) => group.length > 0)
-    .map((group) => `${group[0]!.binding} pins ${listOf(group.map((account) => shortName(account.name)))}`)
+    .map((group) => `${group[0]!.binding} pins ${listOf(group.map((account) => shortName(account.name, funding.accounts)))}`)
     .join(', ');
 
   if (pinned.length === funding.accounts.length) {
-    return `no account has room in all three buckets — ${pins}`;
+    return `no account has room in all three buckets: ${pins}`;
   }
   const spare = funding.accounts.length - pinned.length;
-  return `only ${spare}/${funding.accounts.length} accounts have room in all three — ${pins}`;
+  return `only ${spare}/${funding.accounts.length} accounts have room in all three: ${pins}`;
 };
 
 /**
@@ -163,6 +173,17 @@ const paceExceeded = (
   const over = (['fable', 'general'] as const).find((bucket) => spent[bucket] > entitlement);
   if (over === undefined) return null;
   return `ahead of pace on ${over} (${spent[over].toFixed(2)} spent vs ${entitlement.toFixed(2)} entitled, all programs)`;
+};
+
+/**
+ * Hours, until an hour is the wrong unit. `Math.round` turned a 26-minute session hold into
+ * "recovers in 0h", which reads as "any moment now" for a wait that is not — the same class
+ * of misreport as naming the wrong bucket, and on the same line.
+ */
+const untilText = (at: number | null, now: number): string => {
+  if (at === null) return 'unknown';
+  const minutes = Math.max(0, Math.round((at - now) / 60_000));
+  return minutes < 60 ? `${minutes}m` : `${Math.round(minutes / 60)}h`;
 };
 
 const halt = (reason: string): Decision => ({
@@ -296,13 +317,12 @@ export const decide = (input: DecideInput): Decision => {
   const funding = cyclesFundableFrom(pool, cost, running.length);
   const required = 1 + control.reserveCycles;
   if (funding.cycles < required) {
-    const recovers = pool.resetAt[funding.binding];
-    const when = recovers === null ? 'unknown' : `${Math.round((recovers - now) / 3_600_000)}h`;
     const note = couplingNote(funding);
     return hold(
-      `${note === null ? '' : `${note}. `}` +
-        `${funding.binding} tightest — funds ${funding.cycles.toFixed(2)} cycles ` +
-        `(${running.length} ahead of it), need ${required.toFixed(2)}, recovers in ${when}`,
+      `${funding.binding} tightest — funds ${funding.cycles.toFixed(2)} cycles ` +
+        `(${running.length} ahead of it), need ${required.toFixed(2)}, ` +
+        `recovers in ${untilText(pool.resetAt[funding.binding], now)}` +
+        `${note === null ? '' : ` — ${note}`}`,
       pool,
       funding,
     );
