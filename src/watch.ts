@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { type Allocation, type BucketName } from './allocation.ts';
 import { byPriority, readControl, type Program } from './control.ts';
-import { interruptAgent } from './herdr.ts';
+import { agentNameFor, interruptAgent } from './herdr.ts';
 import {
   adjustConcurrency,
   cycleMode,
@@ -15,7 +15,7 @@ import {
 } from './keys.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
-import { agentNameFor, collectState, type DrovrState, type ProgramState } from './state.ts';
+import { collectState, type DrovrState, type ProgramState } from './state.ts';
 
 const ESC = '\x1b[';
 const CTRL_C = '\x03';
@@ -132,8 +132,18 @@ export const keybarLines = (width: number, narrow: boolean): string[] => {
   return rows.map((row) => `  ${row.join(dim(' · '))}`);
 };
 
-/** View-only concerns: never persisted, never fetched — the opposite of DrovrState. */
-type ViewState = { selected: number; message: string; confirmStop: boolean; help: boolean };
+/**
+ * View-only concerns: never persisted, never fetched — the opposite of DrovrState.
+ * `previewWarning` is optional so a caller that never drives the preview-reading
+ * path (every existing test) can omit it entirely; `watch()` always supplies it.
+ */
+type ViewState = {
+  selected: number;
+  message: string;
+  confirmStop: boolean;
+  help: boolean;
+  previewWarning?: string | null;
+};
 
 /** Explains what the view means, not only which key does what — modes especially. */
 const helpLines = (): string[] => [
@@ -173,16 +183,22 @@ const allocationLines = (input: {
   allocation: Record<BucketName, Allocation>;
   usableAccounts: number;
   hoursToWeeklyReset: number | null;
+  bindingBucket: BucketName;
   barWidth: number;
   narrow: boolean;
 }): string[] => {
-  const { allocation, usableAccounts, hoursToWeeklyReset, barWidth, narrow } = input;
+  const { allocation, usableAccounts, hoursToWeeklyReset, bindingBucket, barWidth, narrow } = input;
   const rows = BUCKETS.map((bucket) => {
     const alloc = allocation[bucket.name];
     const yours = alloc.yoursSpent + alloc.yoursReserved;
+    // decide()/CLAUDE.md: the three buckets are not a hierarchy, and only one of
+    // them is the reason admission is what it is. Marking it is the only way the
+    // TUI and the panel (which prints bindingBucket directly) can be checked
+    // against each other instead of both just listing three numbers.
+    const binds = bucket.name === bindingBucket ? paint(31, ' binds') : '';
     return (
       `  ${(narrow ? bucket.short : bucket.label).padEnd(narrow ? 4 : 11)}${bar(alloc, barWidth)} ` +
-      `${dim(`you ${percent(yours, alloc.total).padStart(4)}`)}`
+      `${dim(`you ${percent(yours, alloc.total).padStart(4)}`)}${binds}`
     );
   });
 
@@ -206,10 +222,10 @@ const programLines = (input: {
   const nameWidth = Math.max(8, ...programs.map((program) => program.name.length)) + 6;
 
   return programs.map((program, index) => {
-    const live = program.startedAt !== null;
-    const detail = live
-      ? `pid ${program.pid ?? '?'} · ${elapsed(program.startedAt as string, now)} · ${program.kind ?? '?'}`
-      : program.reason;
+    const startedAt = program.startedAt;
+    const detail = startedAt === null
+      ? program.reason
+      : `pid ${program.pid ?? '?'} · ${elapsed(startedAt, now)} · ${program.kind ?? '?'}`;
     const label = `${program.name}${program.enabled ? '' : ' (off)'}`.padEnd(nameWidth);
     const isSelected = index === selected;
 
@@ -253,15 +269,18 @@ const serviceLine = (service: DrovrState['service'], now: number): string => {
 };
 
 /**
- * Pure: every value comes from `state`, never from the clock or the filesystem. This is
- * what guarantees the TUI and the web panel can never show different verdicts — they are
- * two renderers over the one DrovrState collectState() produces.
+ * Pure when `columns` is supplied, which `draw()` always does: every value then comes
+ * from `state` and `view`, never from the clock or the filesystem. This is what
+ * guarantees the TUI and the web panel can never show different verdicts — they are
+ * two renderers over the one DrovrState collectState() produces. `columns` falls back
+ * to reading the terminal width itself only as a convenience for callers — tests,
+ * mainly — that do not care which width they get.
  */
-export const frame = (state: DrovrState, view: ViewState): string => {
+export const frame = (state: DrovrState, view: ViewState, columns?: number): string => {
   if (view.help) return helpLines().join('\n');
 
   const now = Date.parse(state.generatedAt);
-  const width = Math.max(24, Math.min(process.stdout.columns ?? 100, 120));
+  const width = Math.max(24, Math.min(columns ?? process.stdout.columns ?? 100, 120));
   const narrow = width < 72;
 
   const held =
@@ -284,15 +303,19 @@ export const frame = (state: DrovrState, view: ViewState): string => {
           allocation: state.allocation,
           usableAccounts: state.pool.usableAccounts,
           hoursToWeeklyReset: state.hoursToWeeklyReset,
+          bindingBucket: state.bindingBucket,
           barWidth: Math.max(8, width - (narrow ? 16 : 28)),
           narrow,
         })),
   );
 
-  const running = state.programs.filter((program) => program.verdict === 'RUN').length;
+  // state.cyclesInFlight (not a count of state.programs with verdict RUN) — a cycle
+  // whose program was removed or renamed out of control.json while still running is
+  // still counted by decide() and by buildState's own reservation maths, and the
+  // header must agree with the capacity picture, not just the program list.
   lines.push(
     '',
-    `  ${bold('PROGRAMS')}  ${dim(`${running}/${state.maxConcurrentCycles} in flight`)}`,
+    `  ${bold('PROGRAMS')}  ${dim(`${state.cyclesInFlight}/${state.maxConcurrentCycles} in flight`)}`,
     ...programLines({ programs: state.programs, now, selected: view.selected, narrow }),
   );
 
@@ -309,7 +332,11 @@ export const frame = (state: DrovrState, view: ViewState): string => {
     );
   }
 
+  // Its own row, never shared with view.message: readPreview's warning and an action
+  // message (notably the 'x' interrupt confirmation) can each be live at once, and the
+  // confirmation prompt must never be the one that silently disappears.
   lines.push('', view.message === '' ? '  ' : paint(36, `  ${view.message}`));
+  if (view.previewWarning != null) lines.push(paint(33, `  ${view.previewWarning}`));
   lines.push(...keybarLines(width, narrow));
   // Clip last: any single over-long line would soft-wrap and shove the frame upward.
   return lines.flatMap((line) => line.split('\n')).map((line) => clip(line, width)).join('\n');
@@ -417,33 +444,9 @@ const handle = async (
   return { message: '', redraw: false };
 };
 
-/**
- * console.error during collectState() (readPreview's best-effort failure path) would
- * otherwise land mid-frame on the alternate screen, scrolling it and polluting the
- * shell's real scrollback once the screen is left. Captured for the duration of the
- * call and restored on every exit, including rejection — the message becomes the
- * frame's own status line instead of an unsolicited terminal write.
- */
-const collectStateQuietly = async (): Promise<{ state: DrovrState; warning: string | null }> => {
-  const original = console.error;
-  const messages: string[] = [];
-  console.error = (...args: unknown[]): void => {
-    // The status line is one row; execFile's own error messages append the child's raw
-    // stdout after a newline, and that tail must not blow up the frame into extra rows.
-    const [firstLine] = args.map((arg) => String(arg)).join(' ').split('\n');
-    messages.push(firstLine ?? '');
-  };
-  try {
-    const state = await collectState();
-    return { state, warning: messages.at(-1) ?? null };
-  } finally {
-    console.error = original;
-  }
-};
-
 /** Runs until interrupted; the terminal is restored on every exit path. */
 export const watch = async (intervalSeconds: number): Promise<void> => {
-  const view: ViewState = { selected: 0, message: '', confirmStop: false, help: false };
+  const view: ViewState = { selected: 0, message: '', confirmStop: false, help: false, previewWarning: null };
   let lastState: DrovrState | null = null;
 
   const restore = (): void => {
@@ -466,15 +469,37 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
    * whole screen first: a full clear flickers, and a trailing newline on a frame that
    * fills the terminal scrolls the top away one row per redraw. Content is clamped to
    * the terminal height so it can never scroll at all.
+   *
+   * readPreview's own failures are returned, not logged (herdr.ts), specifically so
+   * nothing here has to intercept a global to keep them off the alternate screen — the
+   * warning is threaded straight into view.previewWarning via this call's own callback,
+   * which is fine even with several draws' collectState calls genuinely overlapping:
+   * each call closes over its own `view` write, there is no shared collector to leak
+   * into or clobber. Reset before the call so a since-fixed preview stops complaining.
    */
-  const draw = async (): Promise<void> => {
+  const runDraw = async (): Promise<void> => {
     const rows = Math.max(6, process.stdout.rows ?? 40);
-    const { state, warning } = await collectStateQuietly();
+    const columns = process.stdout.columns ?? 100;
+    view.previewWarning = null;
+    const state = await collectState(undefined, (warning) => {
+      view.previewWarning = warning;
+    });
     lastState = state;
-    if (warning !== null) view.message = warning;
-    const lines = frame(state, view).split('\n').slice(0, rows - 1);
+    const lines = frame(state, view, columns).split('\n').slice(0, rows - 1);
     const painted = lines.map((line) => `${line}${ESC}K`).join('\r\n');
     process.stdout.write(`${ESC}H${painted}${ESC}0J`);
+  };
+
+  // draw() is called fire-and-forget from three independent places (the interval, the
+  // stdin handler, resize) with no guarantee the previous call has settled — collectState
+  // alone is several subprocess round trips. Chaining onto one promise makes every call
+  // wait its turn, so two draws can never paint over each other and a stale one can never
+  // land after a fresher one just because its I/O happened to finish later.
+  let pending: Promise<void> = Promise.resolve();
+  const draw = (): Promise<void> => {
+    const next = pending.then(runDraw, runDraw);
+    pending = next;
+    return next;
   };
 
   // The alternate screen is what keeps frames out of the shell's scrollback.
@@ -507,7 +532,9 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
     });
   }
 
-  await draw();
+  // Unhandled here would propagate to main()'s own .catch in cli.ts, which never
+  // calls restore() — the cursor would stay hidden and the alt screen never left.
+  await draw().catch(die);
   // The interval itself keeps the event loop alive; unref-ing it would exit at once.
   setInterval(() => {
     draw().catch(die);

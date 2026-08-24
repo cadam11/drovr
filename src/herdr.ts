@@ -257,6 +257,14 @@ const waitForIdle = async (agentName: string, attempts = 20): Promise<boolean> =
   return false;
 };
 
+/**
+ * herdr's own agent-name limit is 32 characters, so a long program name is
+ * truncated before it is registered. Anything that needs to address that agent
+ * later (interrupting it, reading its preview) has to build the exact same string,
+ * so this is the one place that does — every other caller imports it from here.
+ */
+export const agentNameFor = (programName: string): string => `drovr-${programName}`.slice(0, 32).toLowerCase();
+
 export const startCycleAgent = async (input: {
   program: Program;
   workspaceId: string;
@@ -266,7 +274,7 @@ export const startCycleAgent = async (input: {
   remembered: string | null;
 }): Promise<StartedCycle> => {
   const { program, prompt } = input;
-  const agentName = `drovr-${program.name}`.slice(0, 32).toLowerCase();
+  const agentName = agentNameFor(program.name);
   const pane = await cyclePane(input);
 
   if (pane.reused) {
@@ -428,9 +436,13 @@ export const interruptAgent = async (agentName: string): Promise<void> => {
 
 /**
  * Best-effort by design: a program with no live pane, a herdr that is down, or a
- * claude whose TUI changed all mean "no preview", never a failed tick.
+ * claude whose TUI changed all mean "no preview", never a failed tick. The failure
+ * is returned rather than logged — a caller drawing a frame is the only one who
+ * knows where a diagnostic can land without becoming an unsolicited terminal write.
  */
-export const readPreview = async (agentName: string): Promise<Preview | null> => {
+export const readPreview = async (
+  agentName: string,
+): Promise<{ preview: Preview | null; warning: string | null }> => {
   try {
     const { stdout } = await run('herdr', [
       'agent', 'read', agentName,
@@ -438,9 +450,14 @@ export const readPreview = async (agentName: string): Promise<Preview | null> =>
       '--lines', '40',
       '--format', 'text',
     ], { maxBuffer: 1024 * 1024 });
-    return parsePreview(stdout);
+    return { preview: parsePreview(stdout), warning: null };
   } catch (error) {
-    console.error(`preview unavailable for ${agentName}: ${explainSpawn('herdr', error).message}`);
-    return null;
+    // execFile's own error message appends the failing child's raw stdout after a
+    // newline — a caller surfacing this as one status line must not inherit that tail.
+    const [firstLine] = explainSpawn('herdr', error).message.split('\n');
+    return {
+      preview: null,
+      warning: `preview unavailable for ${agentName}: ${firstLine ?? ''}`,
+    };
   }
 };

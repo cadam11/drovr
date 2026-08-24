@@ -5,7 +5,7 @@ import { cyclesFundableFrom, decide, lessReserved, type Verdict } from './decide
 import {
   estimateCycleCost, inFlight, lastDecisionAt, readCycles, spentSince, type CycleRecord,
 } from './ledger.ts';
-import { aiceBaseUrl, readPreview } from './herdr.ts';
+import { agentNameFor, aiceBaseUrl, readPreview } from './herdr.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import type { Preview } from './preview.ts';
@@ -49,6 +49,14 @@ export type DrovrState = {
   mode: string;
   pauseUntil: string | null;
   maxConcurrentCycles: number;
+  /**
+   * Every ledger-in-flight cycle within control.maxCycleHours — the same count
+   * decide() caps against (decide.ts) and buildState reserves against below. A count
+   * derived only from state.programs would miss a cycle whose program was removed or
+   * renamed out of control.json while still running, and would then disagree with
+   * both decide() and this very function about how much capacity is spoken for.
+   */
+  cyclesInFlight: number;
   service: { loaded: boolean; intervalSeconds: number | null; lastTickAt: string | null; overdue: boolean };
   pool: { usableAccounts: number; fable: number; general: number; session: number };
   bindingBucket: BucketName;
@@ -197,6 +205,7 @@ export const buildState = (input: StateInput): DrovrState => {
     mode: control.mode,
     pauseUntil: control.pauseUntil,
     maxConcurrentCycles: control.maxConcurrentCycles,
+    cyclesInFlight: running,
     service: {
       loaded: input.service.loaded,
       intervalSeconds: input.service.intervalSeconds,
@@ -224,12 +233,19 @@ export const buildState = (input: StateInput): DrovrState => {
   };
 };
 
-/** herdr registered the agent under this truncated, lowercased name — see herdr.ts startCycleAgent. */
-export const agentNameFor = (programName: string): string => `drovr-${programName}`.slice(0, 32).toLowerCase();
-
-/** The only I/O. Previews are read concurrently and never allowed to reject. */
+/**
+ * The only I/O. Previews are read concurrently and never allowed to reject.
+ *
+ * `onWarning` exists because readPreview's own failures are surfaced, not logged
+ * (see herdr.ts:readPreview) — a caller drawing a terminal frame is the only one
+ * who knows where a diagnostic can safely land without becoming an unsolicited
+ * write mid-frame. Passing nothing here means the warning is simply dropped,
+ * which is correct for a caller — like the panel publisher — with no frame to
+ * fold it into.
+ */
 export const collectState = async (
   queuedIntents: DrovrState['queuedIntents'] = [],
+  onWarning?: (message: string) => void,
 ): Promise<DrovrState> => {
   const p = paths();
   const now = Date.now();
@@ -253,8 +269,9 @@ export const collectState = async (
       if (base !== null) asksUrls.set(program.name, `${base}/${program.aice.asksPage}`);
     }
     if (!running.some((cycle) => cycle.program === program.name)) return;
-    const preview = await readPreview(agentNameFor(program.name));
+    const { preview, warning } = await readPreview(agentNameFor(program.name));
     if (preview !== null) previews.set(program.name, preview);
+    if (warning !== null) onWarning?.(warning);
   }));
 
   const service = serviceState();
