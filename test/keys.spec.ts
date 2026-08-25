@@ -16,7 +16,7 @@ import {
   setReserve,
   toggleEnabled,
 } from '../src/keys.ts';
-import { parseControl } from '../src/control.ts';
+import { orderCeilings, parseControl } from '../src/control.ts';
 import { parseIntent } from '../src/intents.ts';
 
 const scratch = (): string => {
@@ -287,4 +287,46 @@ test('a write that fails at the rename cleans up its staging file', () => {
   } finally {
     execFileSync('chflags', ['nouchg', path]);
   }
+});
+
+const CEILINGS = () => ({
+  low: { weekly: 0.65, session: 0.65 },
+  normal: { weekly: 0.55, session: 0.4 },
+  away: { weekly: 0.85, session: 0.6 },
+});
+
+test('ceilings come back ordered low <= normal <= away, so the names mean something', () => {
+  // Measured live 2026-08-25: repeated reserve edits had left low at session 0.65
+  // against away's 0.60, making `drovr mode low` — what you reach for when nervous —
+  // the most permissive setting of the three.
+  const out = orderCeilings(CEILINGS(), 'normal');
+  assert.ok(out.low!.session <= out.normal!.session);
+  assert.ok(out.normal!.session <= out.away!.session);
+  assert.ok(out.low!.weekly <= out.normal!.weekly);
+  assert.ok(out.normal!.weekly <= out.away!.weekly);
+});
+
+test('the mode just edited is authoritative — the others move around it', () => {
+  // Overriding the number Craig just set would make the control file argue with him.
+  const out = orderCeilings({ ...CEILINGS(), low: { weekly: 0.2, session: 0.2 } }, 'low');
+  assert.deepEqual(out.low, { weekly: 0.2, session: 0.2 });
+});
+
+test('raising a tight mode past a looser one lifts the looser one, not itself', () => {
+  const out = orderCeilings({ ...CEILINGS(), low: { weekly: 0.9, session: 0.9 } }, 'low');
+  assert.deepEqual(out.low, { weekly: 0.9, session: 0.9 });
+  assert.equal(out.normal!.session, 0.9);
+  assert.equal(out.away!.session, 0.9);
+});
+
+test('lowering a loose mode below a tighter one pulls the tighter one down with it', () => {
+  const out = orderCeilings({ ...CEILINGS(), away: { weekly: 0.3, session: 0.3 } }, 'away');
+  assert.deepEqual(out.away, { weekly: 0.3, session: 0.3 });
+  assert.ok(out.normal!.session <= 0.3);
+  assert.ok(out.low!.session <= 0.3);
+});
+
+test('an unranked mode leaves every ceiling untouched, since off spends nothing', () => {
+  const input = CEILINGS();
+  assert.deepEqual(orderCeilings(input, 'off'), input);
 });

@@ -212,12 +212,13 @@ const helpLines = (): string[] => [
 const allocationLines = (input: {
   allocation: Record<BucketName, Allocation>;
   usableAccounts: number;
+  fundingAccounts: number;
   hoursToWeeklyReset: number | null;
   bindingBucket: BucketName;
   barWidth: number;
   narrow: boolean;
 }): string[] => {
-  const { allocation, usableAccounts, hoursToWeeklyReset, bindingBucket, barWidth, narrow } = input;
+  const { allocation, usableAccounts, fundingAccounts, hoursToWeeklyReset, bindingBucket, barWidth, narrow } = input;
   const rows = BUCKETS.map((bucket) => {
     const alloc = allocation[bucket.name];
     const yours = alloc.yoursSpent + alloc.yoursReserved;
@@ -235,12 +236,20 @@ const allocationLines = (input: {
   const resetIn = hoursToWeeklyReset === null ? '—' : `${Math.floor(hoursToWeeklyReset)}h`;
   return [
     '',
-    `  ${bold('ALLOCATION')}  ${dim(`${usableAccounts} accounts · weekly resets in ${resetIn}`)}`,
+    `  ${bold('ALLOCATION')}  ${dim(`${accountsLabel(fundingAccounts, usableAccounts)} · weekly resets in ${resetIn}`)}`,
     `  ${SEGMENTS.map((s) => `${paint(s.colour, s.char)} ${dim(s.label)}`).join('  ')}`,
     '',
     ...rows,
   ];
 };
+
+/**
+ * "3 accounts" beside three near-empty bars reads as a healthy pool. It is not the
+ * same statement as "3 accounts can fund a cycle", and on 2026-08-25 the difference
+ * was two spent accounts and one carrying everything. Say both numbers when they differ.
+ */
+export const accountsLabel = (funding: number, usable: number): string =>
+  funding === usable ? `${usable} accounts` : `${funding} of ${usable} accounts funding`;
 
 const DETAIL_INDENT = 6;
 
@@ -390,6 +399,7 @@ export const frame = (
       : allocationLines({
           allocation: state.allocation,
           usableAccounts: state.pool.usableAccounts,
+          fundingAccounts: state.pool.fundingAccounts,
           hoursToWeeklyReset: state.hoursToWeeklyReset,
           bindingBucket: state.bindingBucket,
           // Everything the row carries beside the bar: indent, label, the `you NN%`

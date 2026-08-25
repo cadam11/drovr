@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cyclesFundableFrom, decide } from '../src/decide.ts';
+import { contributingAccounts, cyclesFundableFrom, decide } from '../src/decide.ts';
 import { poolFrom } from '../src/capacity.ts';
 import { inFlight, type CycleRecord } from '../src/ledger.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
@@ -603,4 +603,60 @@ test('when shared notes are off the message says so, since that is the blocker',
     asksShared: false,
   });
   assert.match(decision.reason, /shared notes/i);
+});
+
+test('an account the fable route refuses funds nothing, however healthy its buckets', () => {
+  // teamclaude will never send a Fable request there, so its headroom is not drovr's
+  // to spend. Live on 2026-08-25 two of three accounts were in exactly this state.
+  const wide = status(
+    [
+      account({ name: 'a', fable: 0.0, general: 0.0, session: 0.0 }),
+      account({ name: 'b', fable: 0.0, general: 0.0, session: 0.0 }),
+    ],
+    ['b'],
+  );
+  const funded = cyclesFundableFrom(
+    poolFrom(wide, { weekly: 0.55, session: 0.4 }, NOW),
+    { fable: 0.025, general: 0.02, session: 0.085 },
+    0,
+  );
+  const b = funded.accounts.find((entry) => entry.name === 'b');
+  assert.equal(b?.cycles, 0);
+  assert.equal(b?.routable, false);
+  assert.equal(contributingAccounts(funded), 1);
+});
+
+test('no declared fable route means no restriction, not that nothing is eligible', () => {
+  // Absence of a route is drovr not knowing, and refusing every account on that basis
+  // would stop the loop dead over missing information.
+  const funded = cyclesFundableFrom(
+    poolFrom(healthy(), { weekly: 0.55, session: 0.4 }, NOW),
+    { fable: 0.025, general: 0.02, session: 0.085 },
+    0,
+  );
+  assert.ok(funded.accounts.every((entry) => entry.routable));
+  assert.equal(contributingAccounts(funded), 3);
+});
+
+test('a GO says how many accounts carry it, not just how many exist', () => {
+  const lopsided = status(
+    [
+      account({ name: 'a', fable: 0.0, general: 0.0, session: 0.0 }),
+      account({ name: 'b', fable: 0.0, general: 0.0, session: 0.0 }),
+      account({ name: 'c', fable: 0.0, general: 0.0, session: 0.0 }),
+    ],
+    ['b', 'c'],
+  );
+  const decision = decide({ status: lopsided, control: control(), cycles: [], program: 'demo', now: NOW });
+  assert.equal(decision.verdict, 'GO');
+  assert.match(decision.reason, /from 1 of 3 accounts/);
+  assert.match(decision.reason, /no fallback/);
+  assert.match(decision.reason, /2 not routed for fable/);
+});
+
+test('a pool every account contributes to is not warned about', () => {
+  const decision = decide({ status: healthy(), control: control(), cycles: [], program: 'demo', now: NOW });
+  assert.equal(decision.verdict, 'GO');
+  assert.match(decision.reason, /across 3 accounts/);
+  assert.doesNotMatch(decision.reason, /no fallback/);
 });

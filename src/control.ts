@@ -14,6 +14,49 @@ export const DEFAULT_CEILINGS: Record<string, { weekly: number; session: number 
   away: { weekly: 0.85, session: 0.6 },
 };
 
+export type Ceiling = { weekly: number; session: number };
+
+/** Ascending permissiveness. `off` spends nothing, so it has no ceilings to rank. */
+const RANKED = ['low', 'normal', 'away'];
+
+/**
+ * The mode names have to mean what they say. `setReserve` edits one mode at a time
+ * and clamps each edit only against itself, so nothing stopped `low` drifting above
+ * `away`: measured live on 2026-08-25 at session 0.65 against away's 0.60, which made
+ * the mode Craig reaches for when he is nervous the most permissive of the three.
+ *
+ * The mode just edited is authoritative — it is what he asked for — and the others
+ * give way around it: tighter modes are pulled down to at most its ceiling, looser
+ * ones pushed up to at least it. Ordering is an invariant of the file, not a
+ * convention, so it is enforced at every write rather than documented and hoped for.
+ */
+export const orderCeilings = (
+  ceilings: Record<string, Ceiling>,
+  edited: string,
+): Record<string, Ceiling> => {
+  const anchorIndex = RANKED.indexOf(edited);
+  if (anchorIndex === -1) return ceilings;
+
+  const out: Record<string, Ceiling> = { ...ceilings };
+  const bucket = (mode: string, key: keyof Ceiling): number =>
+    out[mode]?.[key] ?? DEFAULT_CEILINGS[mode]![key];
+  const put = (mode: string, key: keyof Ceiling, value: number): void => {
+    out[mode] = { ...(out[mode] ?? DEFAULT_CEILINGS[mode]!), [key]: value };
+  };
+
+  for (const key of ['weekly', 'session'] as const) {
+    for (let i = anchorIndex - 1; i >= 0; i -= 1) {
+      const looser = RANKED[i + 1]!;
+      put(RANKED[i]!, key, Math.min(bucket(RANKED[i]!, key), bucket(looser, key)));
+    }
+    for (let i = anchorIndex + 1; i < RANKED.length; i += 1) {
+      const tighter = RANKED[i - 1]!;
+      put(RANKED[i]!, key, Math.max(bucket(RANKED[i]!, key), bucket(tighter, key)));
+    }
+  }
+  return out;
+};
+
 /** The install itself comes from the repo's .envrc via direnv, not from here. */
 const aiceShape = z.object({
   /** Null until the program has an asks page; the loop creates one on onboarding. */

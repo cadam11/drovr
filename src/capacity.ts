@@ -1,4 +1,4 @@
-import type { TeamclaudeAccount, TeamclaudeStatus } from './teamclaude.ts';
+import { fableEligible, type TeamclaudeAccount, type TeamclaudeStatus } from './teamclaude.ts';
 
 /**
  * Capacity is measured in quota-fractions, not tokens: teamclaude reports
@@ -10,6 +10,12 @@ export type AccountHeadroom = {
   fable: number;
   general: number;
   session: number;
+  /**
+   * Whether teamclaude will route a Fable request here at all. Headroom is still
+   * reported honestly when false — the allocation bars answer how much of each bucket
+   * is spent pool-wide — but decide.ts must not fund a cycle from it.
+   */
+  routable: boolean;
 };
 
 export type Pool = {
@@ -73,11 +79,16 @@ export const poolFrom = (
     session: soonest(usable.map((a) => a.quota.unified5hReset)),
   };
 
+  // Kept in perAccount rather than filtered out: an ineligible account still owns the
+  // resets that say when the pool recovers, and dropping it would hide both that and
+  // the reason its headroom is being ignored.
+  const routable = fableEligible(status);
   const perAccount = usable.map((a) => ({
     name: a.name,
     fable: headroom(a.quota.unified7dFable, ceilings.weekly),
     general: headroom(a.quota.unified7d, ceilings.weekly),
     session: headroom(a.quota.unified5h, ceilings.session),
+    routable: routable === null || routable.has(a.name),
   }));
 
   return {

@@ -32,13 +32,39 @@ const accountShape = z.object({
   pausedUntil: z.number().nullable(),
 });
 
+/**
+ * teamclaude routes per model. Only the route's own eligibility flags matter here —
+ * the match globs and colours are its business, not drovr's.
+ */
+const routeShape = z.object({
+  name: z.string(),
+  accounts: z.array(z.object({ name: z.string(), eligible: z.boolean() })).default([]),
+});
+
 const statusShape = z.object({
   currentAccount: z.string().nullable(),
   accounts: z.array(accountShape),
+  routes: z.array(routeShape).default([]),
 });
 
 export type TeamclaudeStatus = z.infer<typeof statusShape>;
 export type TeamclaudeAccount = z.infer<typeof accountShape>;
+
+/**
+ * The runner is always Fable, so an account the fable route marks ineligible will
+ * never serve one of its requests — its headroom is not drovr's to spend, however
+ * healthy the three buckets look. Eligibility tracks usage against teamclaude's own
+ * switchThreshold, so an ineligible account usually becomes eligible again at its
+ * next reset rather than needing anyone to intervene.
+ *
+ * Null when teamclaude declares no fable route, or names no accounts on it: that is
+ * "no restriction known", which is very different from "nothing is eligible".
+ */
+export const fableEligible = (status: TeamclaudeStatus): Set<string> | null => {
+  const route = status.routes.find((entry) => entry.name === 'fable');
+  if (route === undefined || route.accounts.length === 0) return null;
+  return new Set(route.accounts.filter((entry) => entry.eligible).map((entry) => entry.name));
+};
 
 export const parseStatus = (raw: unknown): TeamclaudeStatus => {
   const parsed = statusShape.safeParse(raw);

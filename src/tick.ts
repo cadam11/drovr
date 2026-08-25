@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { openSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appendRecord, inFlight, readCycles, snapshot, type CycleRecord } from './ledger.ts';
+import { appendRecord, inFlight, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
 import { PaneBusy } from './herdr.ts';
@@ -399,6 +399,8 @@ export const tick = async (): Promise<void> => {
         asksRaised: 0,
       });
     }
+    // A completed pass, whether or not any program was enabled to decide about.
+    stampTick(p.lastTick, Date.now());
   } finally {
     release(p.tickLock);
   }

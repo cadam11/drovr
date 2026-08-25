@@ -7,12 +7,13 @@ import { poolFrom } from './capacity.ts';
 import {
   byPriority, ceilingsFor, effectivePriority, isPaused, parseControl, readControl,
 } from './control.ts';
-import { cyclesFundableFrom, decide, type Funding } from './decide.ts';
+import { contributingAccounts, cyclesFundableFrom, decide, type Funding } from './decide.ts';
 import {
   consecutiveZeroYield,
   estimateCycleCost,
   inFlight,
   lastDecisionAt,
+  readTickStamp,
   readCycles,
   type CycleRecord,
 } from './ledger.ts';
@@ -160,10 +161,12 @@ const poolPayload = (pool: ReturnType<typeof poolFrom>) => ({
 const fundingPayload = (funding: Funding) => ({
   cyclesFundable: roundFinite(funding.cycles),
   bindingBucket: funding.binding,
+  fundingAccounts: contributingAccounts(funding),
   perAccount: funding.accounts.map((account) => ({
     name: account.name,
     cyclesFundable: roundFinite(account.cycles),
     bindingBucket: account.binding,
+    routableForFable: account.routable,
   })),
   units:
     'whole delivery cycles, net of cycles already in flight; the total is the sum over ' +
@@ -177,7 +180,9 @@ const statusPayload = async () => {
   const now = Date.now();
   const ceilings = ceilingsFor(control);
   const state = serviceState();
-  const lastTick = lastDecisionAt(p.decisions);
+  // The heartbeat is the liveness signal; the decision log is the fallback for an
+  // install that predates it, so an upgrade does not read as 'no tick has ever run'.
+  const lastTick = readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions);
   // control.maxCycleHours, never inFlight's own 24h default: decide() and buildState both
   // cut off there, and a 13h-old cycle with no end record would otherwise have this payload
   // reserving a cycle the per-program verdicts printed from it do not.
@@ -235,9 +240,18 @@ const roundFinite = (value: number): number | null => (Number.isFinite(value) ? 
 
 const describeFunding = (funding: Funding): string => {
   const perAccount = funding.accounts
-    .map((account) => `${account.name} ${account.cycles.toFixed(2)} (${account.binding})`)
+    .map((account) => {
+      // Naming the bucket for an account teamclaude will not route to would blame the
+      // wrong thing: its buckets may be fine and it still cannot serve a Fable request.
+      const why = account.routable ? account.binding : `${account.binding}, not routed`;
+      return `${account.name} ${account.cycles.toFixed(2)} (${why})`;
+    })
     .join(' · ');
-  return `${funding.cycles.toFixed(2)} cycles fundable, ${funding.binding} binding — ${perAccount}`;
+  const carrying = contributingAccounts(funding);
+  const spread = carrying === funding.accounts.length
+    ? ''
+    : ` from ${carrying} of ${funding.accounts.length} accounts`;
+  return `${funding.cycles.toFixed(2)} cycles fundable${spread}, ${funding.binding} binding — ${perAccount}`;
 };
 
 const VERDICT_MEANING: Record<string, string> = {
@@ -255,7 +269,8 @@ const showStatus = async (): Promise<void> => {
   // Same cutoff decide() uses, so the capacity line and the verdicts beneath it agree.
   const running = inFlight(cycles, now, control.maxCycleHours);
 
-  console.log(`service: ${describeService(serviceState(), lastDecisionAt(p.decisions), now)}`);
+  const lastTick = readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions);
+  console.log(`service: ${describeService(serviceState(), lastTick, now)}`);
   // isPaused, not a null check: a pause is only a pause while it is still in the future,
   // and decide() has always treated it that way. Reading pauseUntil !== null printed
   // "paused until 22:16" for hours after it lapsed, directly above verdicts that named a
@@ -382,7 +397,9 @@ const removeProgram = (name: string | undefined): void => {
 const showService = (json: boolean): void => {
   const tick = serviceState();
   const snapshot = snapshotServiceState();
-  const lastTick = lastDecisionAt(p.decisions);
+  // The heartbeat is the liveness signal; the decision log is the fallback for an
+  // install that predates it, so an upgrade does not read as 'no tick has ever run'.
+  const lastTick = readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions);
   // lastRunAt (every invocation) drives health/description, not lastPublishedAt
   // (only an actual publish) — shouldPublish deliberately skips most invocations,
   // so publishedAt alone reads a healthy agent as stalled (CLAUDE.md I1).

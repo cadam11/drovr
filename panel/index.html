@@ -470,9 +470,18 @@
     document.getElementById('capacity-body').hidden = off;
     const offNote = document.getElementById('capacity-off');
     offNote.hidden = !off;
+    // Mirrors watch.ts's accountsLabel by hand: "3 accounts" beside three near-empty
+    // bars reads as a healthy pool, which is a different claim from "3 accounts can
+    // fund a cycle". In `off` no bucket is measured, so no funding count is meaningful.
+    const funding = state.pool.fundingAccounts;
+    const usable = state.pool.usableAccounts;
+    const accounts =
+      funding === undefined || funding === usable
+        ? `${usable} accounts`
+        : `${funding} of ${usable} accounts funding`;
     document.getElementById('capacity-meta').textContent = off
-      ? `${state.pool.usableAccounts} accounts`
-      : `${state.pool.usableAccounts} accounts · weekly resets in ${formatDuration(state.hoursToWeeklyReset)}`;
+      ? `${usable} accounts`
+      : `${accounts} · weekly resets in ${formatDuration(state.hoursToWeeklyReset)}`;
     if (off) {
       offNote.textContent =
         'Mode is off, so nothing starts and no bucket is being measured. Set a mode from the intents page to see capacity again.';

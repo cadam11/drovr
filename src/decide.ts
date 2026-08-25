@@ -50,7 +50,13 @@ const ratio = (available: number, cost: number): number =>
 const BUCKETS: BucketName[] = ['fable', 'general', 'session'];
 
 /** What one account could fund alone, and which of its buckets stopped it there. */
-export type AccountFunding = { name: string; cycles: number; binding: BucketName };
+export type AccountFunding = {
+  name: string;
+  cycles: number;
+  binding: BucketName;
+  /** False when teamclaude will not route a Fable request here, so it funds nothing. */
+  routable: boolean;
+};
 
 export type Funding = { cycles: number; binding: BucketName; accounts: AccountFunding[] };
 
@@ -58,14 +64,21 @@ export type Funding = { cycles: number; binding: BucketName; accounts: AccountFu
  * The buckets are not a hierarchy: one Fable token decrements all three, so they are
  * simultaneous constraints on the account that served the request and the tightest binds.
  */
-const fundingFor = (account: AccountHeadroom, cost: CycleCost): AccountFunding =>
-  BUCKETS
+const fundingFor = (account: AccountHeadroom, cost: CycleCost): AccountFunding => {
+  const tightest = BUCKETS
     .map((bucket) => ({
       name: account.name,
       cycles: ratio(account[bucket], cost[bucket]),
       binding: bucket,
+      routable: account.routable,
     }))
-    .reduce((tightest, candidate) => (candidate.cycles < tightest.cycles ? candidate : tightest));
+    .reduce((best, candidate) => (candidate.cycles < best.cycles ? candidate : best));
+
+  // An account teamclaude will not route Fable to funds nothing, whatever its buckets
+  // say. The bucket is still reported: eligibility tracks usage, so the tightest bucket
+  // is also what has to reset before the account comes back.
+  return account.routable ? tightest : { ...tightest, cycles: 0 };
+};
 
 const resetOrder = (pool: Pool, bucket: BucketName): number =>
   pool.resetAt[bucket] ?? Number.POSITIVE_INFINITY;
@@ -120,6 +133,38 @@ const shortName = (name: string, all: AccountFunding[]): string => {
 
 const listOf = (names: string[]): string =>
   names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+
+/** How many accounts actually contribute a fundable cycle, whatever the total says. */
+export const contributingAccounts = (funding: Funding): number =>
+  funding.accounts.filter((account) => account.cycles > 0).length;
+
+/**
+ * "across 3 accounts" is a lie when one of them is carrying all of it. Measured live on
+ * 2026-08-25: two of Craig's three accounts were spent and the third — the only one
+ * teamclaude would route Fable to — was also serving his own foreground sessions, while
+ * the verdict still read "across 3 accounts". The total was right; the picture was not.
+ */
+const sourcedFrom = (funding: Funding, usable: number): string => {
+  const from = contributingAccounts(funding);
+  return from === usable ? `across ${usable} accounts` : `from ${from} of ${usable} accounts`;
+};
+
+/**
+ * A pool resting on a single account has no fallback, and that account is also where
+ * Craig's own sessions land — so one busy afternoon of his removes drovr's whole runway.
+ * The headline number cannot express that, so it is said out loud.
+ *
+ * Silent for a single-account pool: there is no concentration to warn about when there
+ * was never more than one account to spread across.
+ */
+const concentrationNote = (funding: Funding, usable: number): string | null => {
+  if (usable < 2) return null;
+  const carrying = funding.accounts.filter((account) => account.cycles > 0);
+  if (carrying.length !== 1) return null;
+  const unroutable = funding.accounts.filter((account) => !account.routable).length;
+  const why = unroutable === 0 ? '' : `, ${unroutable} not routed for fable`;
+  return `all of it on ${shortName(carrying[0]!.name, funding.accounts)} with no fallback${why}`;
+};
 
 /**
  * The allocation bars and this verdict answer different questions — the bars show how
@@ -328,11 +373,14 @@ export const decide = (input: DecideInput): Decision => {
     );
   }
 
+  const concentration = concentrationNote(funding, pool.usableAccounts);
   return {
     verdict: 'GO',
     reason:
-      `funds ${funding.cycles.toFixed(2)} more cycles across ${pool.usableAccounts} accounts ` +
-      `(${running.length} ahead of it, ${funding.binding} tightest)`,
+      `funds ${funding.cycles.toFixed(2)} more cycles ` +
+      `${sourcedFrom(funding, pool.usableAccounts)} ` +
+      `(${running.length} ahead of it, ${funding.binding} tightest)` +
+      `${concentration === null ? '' : ` — ${concentration}`}`,
     pool,
     cyclesFundable: funding.cycles,
     binding: funding.binding,

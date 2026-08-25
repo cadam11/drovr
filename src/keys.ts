@@ -1,5 +1,5 @@
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { DEFAULT_CEILINGS, parseControl, readControl, type Control } from './control.ts';
+import { DEFAULT_CEILINGS, orderCeilings, parseControl, readControl, type Control } from './control.ts';
 import { MODES } from './modes.ts';
 const PAUSES = [
   { label: '1h', ms: 3_600_000 },
@@ -118,7 +118,10 @@ export const setReserve = (path: string, mode: string, fraction: number): Action
     const ratio = current.weekly === 0 ? 1 : current.session / current.weekly;
     session = Math.max(0.05, Math.min(1, weekly * ratio));
     ceilings[mode] = { weekly, session };
-    raw.ceilings = ceilings;
+    // Ordering is an invariant, not a convention: without this an edit to one mode
+    // can leave it more permissive than a looser one, and the names stop meaning
+    // anything. The mode just edited wins; the others move around it.
+    raw.ceilings = orderCeilings(ceilings, mode);
   });
 
   const pct = (value: number): string => `${Math.round(value * 100)}%`;

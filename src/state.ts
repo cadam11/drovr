@@ -1,9 +1,9 @@
 import { allocationFor, type Allocation, type BucketName } from './allocation.ts';
 import { hoursToWeeklyReset, poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, effectivePriority, readControl, type Control } from './control.ts';
-import { cyclesFundableFrom, decide, type Verdict } from './decide.ts';
+import { contributingAccounts, cyclesFundableFrom, decide, type Verdict } from './decide.ts';
 import {
-  estimateCycleCost, inFlight, lastDecisionAt, readCycles, spentSince, type CycleRecord,
+  estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles, spentSince, type CycleRecord,
 } from './ledger.ts';
 import { agentNameFor, aiceBaseUrl, readPreview } from './herdr.ts';
 import { holder } from './lock.ts';
@@ -66,7 +66,14 @@ export type DrovrState = {
    */
   cyclesInFlight: number;
   service: { loaded: boolean; intervalSeconds: number | null; lastTickAt: string | null; overdue: boolean };
-  pool: { usableAccounts: number; fable: number; general: number; session: number };
+  pool: {
+    usableAccounts: number;
+    /** How many of them actually fund a cycle. Fewer than usable means no fallback. */
+    fundingAccounts: number;
+    fable: number;
+    general: number;
+    session: number;
+  };
   bindingBucket: BucketName;
   cyclesFundable: number;
   /**
@@ -238,6 +245,7 @@ export const buildState = (input: StateInput): DrovrState => {
     },
     pool: {
       usableAccounts: pool.usableAccounts,
+      fundingAccounts: contributingAccounts(funding),
       fable: r(pool.fable), general: r(pool.general), session: r(pool.session),
     },
     bindingBucket: funding.binding,
@@ -306,7 +314,10 @@ export const collectState = async (
     service: {
       loaded: service.loaded,
       intervalSeconds: service.intervalSeconds,
-      lastTickAt: lastDecisionAt(p.decisions),
+      // Liveness is 'a tick completed', not 'a tick decided something' — with every
+      // program disabled no decision is logged and the agent is fine. Fallback keeps
+      // an install that predates the heartbeat from reading as never having run.
+      lastTickAt: readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions),
     },
     previews, locks, asksUrls, queuedIntents,
   });

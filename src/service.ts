@@ -203,7 +203,7 @@ export const describeService = (
       : '';
 
   if (lastTickAt === null) {
-    return `loaded${every}, but no tick has recorded a decision yet${failed}`;
+    return `loaded${every}, but no tick has completed yet${failed}`;
   }
 
   const minutes = Math.round((now - lastTickAt) / 60_000);
@@ -212,7 +212,7 @@ export const describeService = (
     state.intervalSeconds !== null && now - lastTickAt > state.intervalSeconds * 3000
       ? ` — that is overdue for a ${state.intervalSeconds}s interval, so the agent may be stalled`
       : '';
-  return `loaded${every}. Last tick recorded a decision ${ago}${stalled}${failed}`;
+  return `loaded${every}. Last tick completed ${ago}${stalled}${failed}`;
 };
 
 /**

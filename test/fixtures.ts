@@ -37,9 +37,28 @@ export const account = (input: AccountInput) => ({
   pausedUntil: null,
 });
 
-export const status = (accounts: ReturnType<typeof account>[]): TeamclaudeStatus => ({
+/**
+ * `ineligible` names accounts the fable route refuses. Omitted, no route is declared
+ * at all, which drovr reads as "no restriction known" rather than "none eligible".
+ */
+export const status = (
+  accounts: ReturnType<typeof account>[],
+  ineligible?: string[],
+): TeamclaudeStatus => ({
   currentAccount: accounts[0]?.name ?? null,
   accounts,
+  routes:
+    ineligible === undefined
+      ? []
+      : [
+          {
+            name: 'fable',
+            accounts: accounts.map((entry) => ({
+              name: entry.name,
+              eligible: !ineligible.includes(entry.name),
+            })),
+          },
+        ],
 });
 
 export const control = (overrides: Record<string, unknown> = {}): Control =>

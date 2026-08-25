@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { Pool } from './capacity.ts';
 
@@ -262,6 +262,27 @@ export const unansweredAsks = (cycles: CycleRecord[]): { asks: number; at: numbe
   const raiser = finished[finished.length - 1 - blockedTail];
   if (raiser === undefined || raiser.asksRaised === 0) return null;
   return { asks: raiser.asksRaised, at: Date.parse(raiser.endedAt ?? raiser.startedAt) };
+};
+
+/**
+ * Whether the launchd agent is alive and whether it had anything to decide are
+ * different facts, and conflating them cost a false alarm: `lastDecisionAt` only
+ * advances when an *enabled* program is evaluated, so disabling every program made
+ * drovr report its own supervisor as possibly stalled while ticks fired normally.
+ * Every completed tick stamps this instead, decisions or not.
+ */
+export const stampTick = (path: string, now: number): void => {
+  writeFileSync(path, `${JSON.stringify({ at: new Date(now).toISOString() })}\n`, 'utf8');
+};
+
+const tickStampShape = z.object({ at: z.string() });
+
+export const readTickStamp = (path: string): number | null => {
+  if (!existsSync(path)) return null;
+  const parsed = tickStampShape.safeParse(JSON.parse(readFileSync(path, 'utf8')));
+  if (!parsed.success) return null;
+  const at = Date.parse(parsed.data.at);
+  return Number.isNaN(at) ? null : at;
 };
 
 /** When a tick last recorded a decision — the real proof the service is firing. */
