@@ -69,6 +69,15 @@ export type DrovrState = {
   pool: { usableAccounts: number; fable: number; general: number; session: number };
   bindingBucket: BucketName;
   cyclesFundable: number;
+  /**
+   * When the bucket that is actually binding next resets — `pool.resetAt[bindingBucket]`,
+   * never `pool.earliestRecoveryAt` (the soonest across all three) and never the weekly
+   * reset. CLAUDE.md's decide.ts trap is that a 5h hold recovers in hours and a weekly one
+   * in days: a renderer with only `hoursToWeeklyReset` can print "tightest bucket: session"
+   * beside "resets in 3d" and turn a two-hour wait into an apparent write-off.
+   * Null when that bucket has no future reset among the usable accounts.
+   */
+  bindingRecoveryAt: string | null;
   hoursToWeeklyReset: number | null;
   allocation: Record<BucketName, Allocation>;
   programs: ProgramState[];
@@ -78,6 +87,13 @@ export type DrovrState = {
     buckets: Record<'session' | 'general' | 'fable', { usedFraction: number | null; resetsAt: string | null }>;
   }[];
   recentCycles: { startedAt: string; program: string; kind: string; exit: string; asksRaised: number }[];
+  /**
+   * Reserved, and always empty today: nothing produces it. Both real callers of
+   * collectState take the `[]` default, because tick.ts drains an intent and applies it
+   * within the same tick (resolve → apply → reply) rather than parking it in a queue for
+   * a later one. Kept so the panel's queued-intent surface and this shape stay ready for
+   * a deferred-application design; do not go looking for the writer, there is none.
+   */
   queuedIntents: { id: string; action: string; requestedAt: string; expiresAt: string }[];
 };
 
@@ -226,6 +242,7 @@ export const buildState = (input: StateInput): DrovrState => {
     },
     bindingBucket: funding.binding,
     cyclesFundable: r(funding.cycles, 2),
+    bindingRecoveryAt: iso(pool.resetAt[funding.binding]),
     hoursToWeeklyReset: hoursLeft === null ? null : r(hoursLeft, 1),
     allocation,
     programs: programsOf(input),

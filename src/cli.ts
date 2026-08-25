@@ -4,7 +4,9 @@ import { homedir, hostname } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { poolFrom } from './capacity.ts';
-import { byPriority, ceilingsFor, effectivePriority, parseControl, readControl } from './control.ts';
+import {
+  byPriority, ceilingsFor, effectivePriority, isPaused, parseControl, readControl,
+} from './control.ts';
 import { cyclesFundableFrom, decide, type Funding } from './decide.ts';
 import {
   consecutiveZeroYield,
@@ -251,7 +253,12 @@ const showStatus = async (): Promise<void> => {
   const running = inFlight(cycles, now, control.maxCycleHours);
 
   console.log(`service: ${describeService(serviceState(), lastDecisionAt(p.decisions), now)}`);
-  console.log(`mode: ${control.mode}${control.pauseUntil === null ? '' : ` (paused until ${control.pauseUntil})`}`);
+  // isPaused, not a null check: a pause is only a pause while it is still in the future,
+  // and decide() has always treated it that way. Reading pauseUntil !== null printed
+  // "paused until 22:16" for hours after it lapsed, directly above verdicts that named a
+  // different reason entirely — the same false-cause bug the panel had (CLAUDE.md).
+  const pause = isPaused(control, now) ? ` (paused until ${control.pauseUntil})` : '';
+  console.log(`mode: ${control.mode}${pause}`);
   if (ceilings !== null) {
     const pool = poolFrom(status, ceilings, now);
     const cost = estimateCycleCost(cycles, control.seedCycleCost);

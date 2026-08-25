@@ -1,6 +1,7 @@
 // test/panel.spec.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buildState } from '../src/state.ts';
 import { CADENCE, payload, payloadHash, shouldPublish } from '../src/panel.ts';
 import { control, healthy, NOW } from './fixtures.ts';
@@ -69,4 +70,23 @@ test('shouldPublish always publishes when nothing has been published yet', () =>
   assert.equal(shouldPublish({
     previousHash: null, nextHash: 'b', lastPublishedAt: null, now: NOW,
   }), true);
+});
+
+/**
+ * panel/index.html is a third renderer, and the only one outside both tsc and this
+ * suite — every divergence found on this branch was of the shape "watch.ts guards it,
+ * panel/index.html doesn't". The schema version is the one part of that page with a
+ * checkable numeric contract, so it gets checked here: if DrovrState.schemaVersion is
+ * bumped without republishing the page, the page's own guard turns every poll into a
+ * "reload" banner, and this is what says so before the publish rather than after.
+ */
+test('the published panel reads the same schemaVersion the payload carries', () => {
+  const page = readFileSync(new URL('../panel/index.html', import.meta.url), 'utf8');
+  const declared = /const SCHEMA_VERSION = (\d+);/.exec(page);
+  assert.ok(declared !== null, 'panel/index.html no longer declares SCHEMA_VERSION');
+  assert.equal(
+    Number(declared[1]),
+    JSON.parse(payload(state())).schemaVersion,
+    'panel/index.html and DrovrState disagree on the schema version — republish the page',
+  );
 });

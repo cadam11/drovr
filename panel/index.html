@@ -49,12 +49,14 @@
 
   <!-- ═══ Data banner — hidden unless the poll can't vouch for what's below ═
        data-kind distinguishes stale (self-recovering) / auth (needs a reload) /
-       gone (day-long outage) / offline (this browser can't reach the host) so
+       schema (this page is older than the payload — needs a reload) / gone
+       (day-long outage) / offline (this browser can't reach the host) so
        each gets a different color, not just different words. -->
   <div id="banner" hidden
        class="group border-b
               data-[kind=stale]:border-amber-500/20 data-[kind=stale]:bg-amber-500/10
               data-[kind=auth]:border-sky-500/20 data-[kind=auth]:bg-sky-500/10
+              data-[kind=schema]:border-sky-500/20 data-[kind=schema]:bg-sky-500/10
               data-[kind=gone]:border-red-500/20 data-[kind=gone]:bg-red-500/10
               data-[kind=offline]:border-zinc-500/30 data-[kind=offline]:bg-zinc-500/10">
     <div class="mx-auto flex max-w-5xl flex-wrap items-baseline gap-x-2 px-4 py-2.5 sm:px-6">
@@ -62,12 +64,14 @@
          class="text-base font-medium sm:text-sm
                 group-data-[kind=stale]:text-amber-800 dark:group-data-[kind=stale]:text-amber-300
                 group-data-[kind=auth]:text-sky-800 dark:group-data-[kind=auth]:text-sky-300
+                group-data-[kind=schema]:text-sky-800 dark:group-data-[kind=schema]:text-sky-300
                 group-data-[kind=gone]:text-red-800 dark:group-data-[kind=gone]:text-red-300
                 group-data-[kind=offline]:text-zinc-700 dark:group-data-[kind=offline]:text-zinc-300"></p>
       <p data-detail
          class="text-base sm:text-sm
                 group-data-[kind=stale]:text-amber-800/75 dark:group-data-[kind=stale]:text-amber-300/75
                 group-data-[kind=auth]:text-sky-800/75 dark:group-data-[kind=auth]:text-sky-300/75
+                group-data-[kind=schema]:text-sky-800/75 dark:group-data-[kind=schema]:text-sky-300/75
                 group-data-[kind=gone]:text-red-800/75 dark:group-data-[kind=gone]:text-red-300/75
                 group-data-[kind=offline]:text-zinc-700/75 dark:group-data-[kind=offline]:text-zinc-300/75"></p>
     </div>
@@ -100,8 +104,13 @@
           <dt class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Tightest bucket</dt>
           <dd id="binding" class="mt-0.5 text-xl font-semibold">…</dd>
         </div>
+        <!-- Labelled from the payload, not fixed: this tile sits beside "Tightest
+             bucket" and must answer when THAT bucket recovers. Fixed at the weekly
+             reset it read "3d" next to "tightest bucket: session", turning a
+             two-hour hold into an apparent write-off (CLAUDE.md, decide.ts). The
+             weekly figure is still on the capacity section's own meta line. -->
         <div class="bg-white p-3 dark:bg-zinc-950">
-          <dt class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Weekly resets in</dt>
+          <dt id="recovers-label" class="truncate text-base text-zinc-500 sm:text-sm dark:text-zinc-400">Recovers in</dt>
           <dd id="recovers" class="mt-0.5 text-xl font-semibold tabular-nums">…</dd>
         </div>
       </dl>
@@ -146,6 +155,13 @@
         <p id="capacity-meta" class="text-base tabular-nums text-zinc-500 sm:text-sm dark:text-zinc-400">…</p>
       </div>
 
+      <!-- Everything below is suppressed when mode is off, the way watch.ts suppresses
+           the whole allocation block: with no ceilings, poolFrom clamps every account's
+           headroom to zero, so the payload comes back bindingBucket 'fable',
+           cyclesFundable 0 and three fully-reserved bars. Rendering that says fable is
+           refusing cycles. Fable is refusing nothing — the mode is. A picture that
+           contradicts the verdict beneath it is allocation.ts's own trap, on the web. -->
+      <div id="capacity-body">
       <!-- The three rows are fixed slots (fable/general/session always exist), rebuilt
            in place by capacityRow() — not a variable-length list, so no key/prune logic. -->
       <dl class="mt-5 flex flex-col gap-y-5">
@@ -163,6 +179,9 @@
       </ul>
 
       <p id="capacity-prose" class="mt-4 max-w-[70ch] text-base text-pretty text-zinc-500 sm:text-sm dark:text-zinc-400"></p>
+      </div>
+
+      <p id="capacity-off" hidden class="mt-5 max-w-[70ch] text-base text-pretty text-red-700 sm:text-sm dark:text-red-400"></p>
     </section>
 
     <!-- ═══ Controls ═══════════════════════════════════════════ -->
@@ -441,9 +460,24 @@
     container.append(dt, bar, label);
   };
 
+  /** watch.ts:frame draws the allocation block only when mode !== 'off'; this is the
+   * same guard. In mode off, ceilingsFor returns null and the {weekly: 0} fallback
+   * zeroes every account's headroom, so the payload's bindingBucket, cyclesFundable
+   * and bar segments are all artefacts of the mode rather than readings of the pool.
+   * Naming a bucket as the thing refusing cycles would be a false cause. */
   const capacitySection = (state) => {
-    document.getElementById('capacity-meta').textContent =
-      `${state.pool.usableAccounts} accounts · weekly resets in ${formatDuration(state.hoursToWeeklyReset)}`;
+    const off = state.mode === 'off';
+    document.getElementById('capacity-body').hidden = off;
+    const offNote = document.getElementById('capacity-off');
+    offNote.hidden = !off;
+    document.getElementById('capacity-meta').textContent = off
+      ? `${state.pool.usableAccounts} accounts`
+      : `${state.pool.usableAccounts} accounts · weekly resets in ${formatDuration(state.hoursToWeeklyReset)}`;
+    if (off) {
+      offNote.textContent =
+        'Mode is off, so nothing starts and no bucket is being measured. Set a mode from the intents page to see capacity again.';
+      return;
+    }
     for (const bucketKey of ['fable', 'general', 'session']) {
       capacityRow(bucketKey, state.allocation[bucketKey], bucketKey === state.bindingBucket);
     }
@@ -599,8 +633,17 @@
     document.getElementById('ctrl-reserve').textContent = `${Math.round(state.reserve * 100)}%`;
 
     document.getElementById('ctrl-concurrency').textContent = String(state.maxConcurrentCycles);
+
+    // A pause is only a pause while it is still in the future — watch.ts:frame guards
+    // the same field with Date.parse(pauseUntil) > now and drops the badge once it
+    // lapses. Reading pauseUntil !== null alone left "Paused until 22:16" standing an
+    // hour and a half after it expired, directly above program rows reading
+    // "WAIT — daily cap reached". Measured against generatedAt, not the reader's clock:
+    // every other judgement on this page is the supervisor's, taken at that instant.
+    const paused = state.pauseUntil !== null
+      && Date.parse(state.pauseUntil) > Date.parse(state.generatedAt);
     document.getElementById('ctrl-pause').textContent =
-      state.pauseUntil === null ? 'not paused' : `until ${formatClock(state.pauseUntil)}`;
+      paused ? `until ${formatClock(state.pauseUntil)}` : 'not paused';
 
     const list = document.getElementById('queued-intents');
     list.replaceChildren();
@@ -641,13 +684,22 @@
   // ─── Top-level render ────────────────────────────────────────────────────────
   const render = (state) => {
     document.getElementById('mode').textContent = state.mode;
-    document.getElementById('fundable').textContent = state.cyclesFundable.toFixed(1);
-    document.getElementById('binding').textContent = state.bindingBucket;
+    // Same false-cause guard as capacitySection: in mode off these three are artefacts
+    // of a zeroed ceiling, not readings of the pool, so they say nothing rather than
+    // naming a bucket that is refusing nothing.
+    const off = state.mode === 'off';
+    document.getElementById('fundable').textContent = off ? '—' : state.cyclesFundable.toFixed(1);
+    document.getElementById('binding').textContent = off ? '—' : state.bindingBucket;
     // cyclesInFlight, not a filter over verdict === 'RUN' — that undercounts a
     // cycle whose program was removed or renamed out of control.json while
     // still running (CLAUDE.md service.ts/state.ts trap; fixed in the TUI first).
     document.getElementById('running').textContent = `${state.cyclesInFlight} / ${state.maxConcurrentCycles}`;
-    document.getElementById('recovers').textContent = formatDuration(state.hoursToWeeklyReset);
+    // bindingRecoveryAt is pool.resetAt[bindingBucket] — when the bucket that is
+    // actually refusing recovers, which is the number CLAUDE.md says matters.
+    document.getElementById('recovers-label').textContent =
+      off ? 'Recovers in' : `${state.bindingBucket} resets in`;
+    document.getElementById('recovers').textContent =
+      off ? '—' : formatDuration(hoursUntil(state.bindingRecoveryAt));
 
     heroSection(state);
 
@@ -674,6 +726,11 @@
   // ─── Poll loop ───────────────────────────────────────────────────────────────
   const DATA = '/craig/assets/snapshot.json';
   const FAST_MS = 5000, SLOW_MS = 30000, STALE_MS = 120000;
+  /** DrovrState.schemaVersion (src/state.ts) as this copy of the page understands it.
+   * The version is at the root so the payload is self-describing; a consumer that
+   * never reads it renders a changed shape as garbage — missing tiles, undefined in
+   * prose — instead of saying it is out of date. Bump both together, or don't bump. */
+  const SCHEMA_VERSION = 1;
   let lastStamp = null, unchanged = 0, timer = null;
 
   const setBanner = (kind, headline, detail) => {
@@ -707,6 +764,16 @@
         setSupervisorWidget(false, true, null);
       } else {
         const state = await res.json();
+        if (state.schemaVersion !== SCHEMA_VERSION) {
+          // Deliberately before render(): a payload of an unknown shape cannot be
+          // trusted field by field, and half-rendering it is exactly the silent
+          // garbage the version exists to prevent. lastStamp is left untouched so
+          // the next poll retries rather than treating this as "unchanged".
+          setBanner('schema', 'This page is out of date.',
+            `The supervisor is publishing schema ${state.schemaVersion}; this page reads ${SCHEMA_VERSION}. Reload to get the matching panel.`);
+          setSupervisorWidget(false, true, null);
+          return;
+        }
         const changed = state.generatedAt !== lastStamp;
         unchanged = changed ? 0 : unchanged + 1;
         // Skip the DOM rebuild when nothing changed — payloadHash (panel.ts) already

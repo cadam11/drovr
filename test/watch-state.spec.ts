@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildState } from '../src/state.ts';
 import { frame, visibleLength } from '../src/watch.ts';
 import { payload } from '../src/panel.ts';
-import { account, control, healthy, NOW, status } from './fixtures.ts';
+import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
 
 const fixture = (overrides: Record<string, unknown> = {}) => buildState({
   status: healthy(), control: control(overrides), cycles: [], now: NOW,
@@ -102,7 +102,11 @@ const coupledState = () => buildState({
   previews: new Map(), locks: new Map(), asksUrls: new Map(), queuedIntents: [],
 });
 
-for (const width of [100, 120]) {
+// 60 and 72 are the two narrow paths (narrow is width < 72), where the abbreviated
+// bucket labels and the smaller bar used to leave no room for the ' binds' marker and
+// no room for the coupling note's tail — the same sentence telling a different story
+// depending on the window.
+for (const width of [60, 72, 100, 120]) {
   test(`the whole WAIT reason survives a ${width}-column frame, verdict and coupling note both`, () => {
     const text = frame(coupledState(), view, width);
     // A wrapped reason is split across lines with an indent, so the sentence is matched
@@ -116,8 +120,94 @@ for (const width of [100, 120]) {
     assert.match(flat, /no account has room in all three buckets/, 'the note half was clipped');
     assert.match(flat, /karen\.adam/, 'the note lost its last account name');
     // The keybar is drawn last, so wrapped reasons eating the frame shows up here first.
-    assert.match(flat, /q quit/, 'the keybar was pushed out of the frame');
+    // Narrow frames abbreviate every key to its first token, so `q quit` becomes `q`.
+    assert.match(flat, width < 72 ? /(^|\s)q(\s|$)/ : /q quit/, 'the keybar was pushed out of the frame');
+    assert.match(flat, /binds/, 'no allocation row is marked as the one that binds');
     for (const line of text.split('\n')) {
+      assert.ok(visibleLength(line) <= width, `line over ${width} columns: ${line}`);
+    }
+  });
+}
+
+/**
+ * The clamp used to live in watch()'s runDraw, which sliced the frame to
+ * `stdout.rows - 1` after frame() had already appended the message line, the preview
+ * warning and the keybar — so the three things drawn last were the three the slice
+ * took first. Measured at Craig's real configuration (3 programs, asks links, recent
+ * cycles) the body alone is 28-33 rows at every width watch draws, so a 24-row
+ * terminal lost all of them. Pressing `x` then armed view.confirmStop with no visible
+ * prompt and the next keystroke either interrupted a live cycle or silently cancelled.
+ *
+ * This passes a rows budget so it exercises the path watch() actually takes. The
+ * earlier tests call frame(state, view, width) with no rows and could never catch it.
+ */
+const finished = (program: string, hoursAgo: number) => ({
+  v: 1 as const,
+  kind: 'delivery' as const,
+  program,
+  startedAt: new Date(NOW - (hoursAgo + 1) * HOUR).toISOString(),
+  endedAt: new Date(NOW - hoursAgo * HOUR).toISOString(),
+  exit: 'seam' as const,
+  poolBefore: { fable: 1, general: 1, session: 1 },
+  poolAfter: { fable: 0.9, general: 0.9, session: 0.9 },
+  startupTokens: null,
+  yield: null,
+  asksRaised: 1,
+});
+
+const craigsConfiguration = () => buildState({
+  status: healthy(),
+  control: control({
+    programs: [
+      { name: 'sunnyt', cwd: '/tmp/sunnyt' },
+      { name: 'joinery', cwd: '/tmp/joinery' },
+      { name: 'drovr', cwd: '/tmp/drovr' },
+    ],
+  }),
+  cycles: [
+    finished('sunnyt', 0), finished('joinery', 1), finished('drovr', 2),
+    finished('sunnyt', 3), finished('joinery', 4),
+  ],
+  now: NOW,
+  service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
+  previews: new Map(),
+  locks: new Map(),
+  asksUrls: new Map([
+    ['sunnyt', 'https://sunnyt.aicex.app/craig/loop-asks.html'],
+    ['joinery', 'https://joinery.aicex.app/craig/loop-asks.html'],
+    ['drovr', 'https://drovr.aicex.app/craig/loop-asks.html'],
+  ]),
+  queuedIntents: [],
+});
+
+const ROWS = 24;
+
+for (const width of [60, 80, 100, 120]) {
+  test(`the x confirmation, the preview warning and the keys survive ${width}x${ROWS}`, () => {
+    const confirming = {
+      selected: 0,
+      message: 'interrupt sunnyt? y to confirm, any other key to cancel',
+      confirmStop: true,
+      help: false,
+      previewWarning: 'could not read sunnyt: agent not found',
+    };
+    const state = craigsConfiguration();
+    assert.ok(
+      frame(state, confirming, width).split('\n').length > ROWS,
+      `fixture no longer overflows ${ROWS} rows, so this proves nothing`,
+    );
+
+    const lines = frame(state, confirming, width, ROWS).split('\n');
+    assert.ok(lines.length <= ROWS - 1, `frame returned ${lines.length} lines for ${ROWS} rows`);
+    const flat = lines.join(' ').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\s+/g, ' ');
+    assert.match(flat, /y to confirm/, 'the interrupt confirmation was clipped off the frame');
+    assert.match(flat, /could not read sunnyt/, 'the preview warning was clipped off the frame');
+    assert.match(
+      flat,
+      width < 72 ? /(^|\s)q(\s|$)/ : /q quit/,
+      'the keybar was clipped off the frame',
+    );
+    for (const line of lines) {
       assert.ok(visibleLength(line) <= width, `line over ${width} columns: ${line}`);
     }
   });

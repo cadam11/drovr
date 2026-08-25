@@ -92,10 +92,15 @@ const launch = (program: Program): void => launchDetached(program.name);
  * cycle whose lock no longer has a live holder is definitively over — its worker was
  * killed before it could write an end record. Closing those out here means a crash
  * never leaves a program blocked behind a phantom cycle.
+ *
+ * `maxCycleHours` is passed rather than left to inFlight's own 24h default: with the
+ * default at 24 and the setting at 12 this closes out more cycles than decide() still
+ * counts, which is harmless — but it inverts the moment maxCycleHours goes above 24,
+ * and then an abandoned cycle is never closed and blocks its program permanently.
  */
-const reconcileAbandoned = (now: number): number => {
+const reconcileAbandoned = (now: number, maxCycleHours: number): number => {
   const p = paths();
-  const abandoned = inFlight(readCycles(p.cycles), now).filter(
+  const abandoned = inFlight(readCycles(p.cycles), now, maxCycleHours).filter(
     (cycle) => holder(p.programLock(cycle.program)) === null,
   );
 
@@ -129,7 +134,13 @@ const PANEL_PAGE = 'craig/intents.html';
  */
 const PANEL_OWNER = 'craig';
 
-/** Wall-clock ceiling on one drain. The count cap bounds aice calls, not seconds. */
+/**
+ * Wall-clock ceiling on one drain. The count cap bounds aice calls, not seconds.
+ *
+ * Checked between threads only, so it is a ceiling on how many threads are started, not
+ * on how long the drain can take: what keeps a single hung thread from holding the tick
+ * lock forever is asks.ts's own per-call `timeout`, not this.
+ */
 const DRAIN_BUDGET_MS = 60_000;
 
 /** The whole intent -> writer routing. Exported so the six-way dispatch is covered
@@ -327,7 +338,7 @@ export const tick = async (): Promise<void> => {
 
     const control = readControl(p.control);
     const status = await readStatus();
-    reconcileAbandoned(now);
+    reconcileAbandoned(now, control.maxCycleHours);
 
     // Workers write their own start record, so within one tick the earlier launches
     // are not yet visible in the ledger. Without tracking them here the concurrency
@@ -514,4 +525,12 @@ export const runProgramCycle = async (name: string): Promise<void> => {
   }
 };
 
-export const inFlightCycles = (): CycleRecord[] => inFlight(readCycles(paths().cycles));
+/**
+ * The same window decide() and buildState use, not inFlight's 24h default: `tidy` skips
+ * any program with a cycle in flight, and a wider window there would leave a program's
+ * workspace untidied forever on the strength of a cycle admission has already forgotten.
+ */
+export const inFlightCycles = (): CycleRecord[] => {
+  const p = paths();
+  return inFlight(readCycles(p.cycles), Date.now(), readControl(p.control).maxCycleHours);
+};

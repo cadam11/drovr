@@ -55,6 +55,19 @@ const prefixArgs = (prefix: string | null): string[] =>
 
 const NOTES_MAX_BYTES = 16 * 1024 * 1024;
 
+/**
+ * Wall-clock ceiling on one aice call, enforced by execFile itself (SIGTERM on expiry).
+ * Nothing else bounds it: tick's DRAIN_BUDGET_MS is only checked *between* threads, so a
+ * hung `aice` inside one of them holds the tick lock forever and every later launchd
+ * firing logs "another tick is still evaluating" while admission silently stops. Notes
+ * I/O now runs unconditionally and first, which is what made that reachable.
+ *
+ * 20s: a notes list over the wire is sub-second in practice, and the drain does at most
+ * three calls a thread, so the budget check between threads still bounds the whole drain
+ * to roughly DRAIN_BUDGET_MS plus one thread's worth.
+ */
+const NOTES_TIMEOUT_MS = 20_000;
+
 const aiceErrorShape = z.object({ error: z.object({ message: z.string() }) });
 
 /**
@@ -86,8 +99,15 @@ const notesJson = async (cwd: string, argv: string[]): Promise<string> => {
     // execFile's 1 MB default applies to `notes list`, where aice allows 4 KB a note
     // and 64 KB a participant: a busy page overruns it and throws ENOBUFS, which
     // reads as a notes outage rather than as the page being too big to fetch.
-    { cwd, maxBuffer: NOTES_MAX_BYTES },
+    { cwd, maxBuffer: NOTES_MAX_BYTES, timeout: NOTES_TIMEOUT_MS },
   ).catch((error: unknown) => {
+    // execFile reports its own timeout as a killed child, not as an aice error, and the
+    // generic "Command failed" it carries names nothing a reader can act on.
+    if ((error as { killed?: boolean }).killed === true) {
+      throw new Error(
+        `aice notes ${argv[0]} did not return within ${NOTES_TIMEOUT_MS / 1000}s and was killed`,
+      );
+    }
     const reason = aiceReason((error as { stdout?: unknown }).stdout);
     if (reason === null) throw explainSpawn('direnv', error);
     throw new Error(`aice notes ${argv[0]} failed: ${reason}`);

@@ -3,7 +3,11 @@
 A single-pane web view of every program drovr supervises, served from the drovr aice install,
 readable on a phone, with a bounded set of controls that queue rather than execute.
 
-Status: design approved 2026-08-24. Not yet implemented.
+Status: design approved 2026-08-24, implemented on branch `drovr-panel`.
+
+**This document has been corrected against what shipped.** Sections marked *(shipped:)* record
+where the implementation diverged and why; the surrounding prose is the design as approved. Read
+the corrections — three of them describe behaviour that would be a regression to "restore".
 
 ## Why this exists
 
@@ -62,6 +66,11 @@ intents:  panel → aice note → drovr tick drains → keys.ts → control.json
 
 New `src/snapshot.ts`. `watch.ts:frame()` currently interleaves I/O and rendering; split it:
 
+*(shipped: as two files, not one — `src/state.ts` holds `collectState()`/`buildState()` and the
+`DrovrState` shape, `src/panel.ts` holds `payload()`, `payloadHash()` and the publish cadence.
+There is no `src/snapshot.ts`. The split follows the I/O boundary: state.ts is the only reader,
+panel.ts is pure.)*
+
 ```
 snapshot(): Promise<DrovrState>     // every read the frame does today, plus previews
 frame(state: DrovrState): string    // ANSI      — pure
@@ -90,7 +99,7 @@ DrovrState {
   service: { loaded, intervalSeconds, lastTickAt, overdue }
   pool: { usableAccounts, fable, general, session }
   bindingBucket: 'fable' | 'general' | 'session'
-  cyclesFundable, earliestRecoveryAt
+  cyclesFundable, bindingRecoveryAt, hoursToWeeklyReset
   allocation: { bucket → { yoursSpent, programsSpent, programsReserved,
                            programsAvailable, yoursReserved, total } }
   programs: [{ name, enabled, priority, verdict, reason, elapsed, kind, pid,
@@ -101,6 +110,13 @@ DrovrState {
   queuedIntents: [{ id, action, requestedAt, expiresAt }]
 }
 ```
+
+*(shipped: `earliestRecoveryAt` became `bindingRecoveryAt`, and it is `pool.resetAt[bindingBucket]`
+— when the bucket that is actually refusing recovers — not `pool.earliestRecoveryAt`, which is the
+soonest across all three and would reintroduce decide.ts's own trap in the payload. `reserve` and
+`cyclesInFlight` were added; both have doc comments in `state.ts` saying which near-identical field
+they are deliberately not. `queuedIntents` shipped with no producer — the tick applies an intent
+within the same tick rather than queuing it — and is documented in `state.ts` as reserved.)*
 
 ## 2. The publisher
 
@@ -114,6 +130,22 @@ New `drovr snapshot` command plus a second launchd agent.
 
 Overnight with nothing running this is near-zero writes. At worst it is ~4,320 publishes/day
 (~$0.65/month in PUTs, ~20MB of self-expiring versions).
+
+*(shipped, and this is the correction that matters most — **do not "restore" the quiet cadence**:*
+
+- *`quietSeconds` was **deleted**, not tuned. `CADENCE` in `panel.ts` is `{activeSeconds: 20,
+  heartbeatSeconds: 40}` and nothing else. A 5-minute quiet cadence sits behind the page's own
+  120s staleness threshold, so a healthy, unchanged supervisor would raise a false "the Mac
+  stopped pushing" banner. The 40s heartbeat exists precisely to keep publishing when nothing
+  has changed, and it is checked **above** the hash comparison, never inside it.*
+- *The hash skip is real code but almost never fires. Account telemetry —`lastUsedAt`,
+  `sessions`, `current`, the 5h bucket — moves on nearly every `collectState()`, so the payload
+  differs on nearly every poll. A heartbeat nested inside the unchanged branch would have been a
+  branch that never runs.*
+- *The cost framing above is backwards. Measured: ~2,160 publishes/day idle (the 40s heartbeat
+  floor) and ~3,900/day steady with the hash almost always changing — near the "at worst" figure,
+  not near zero. The dollar cost is unchanged and still negligible; the sentence about overnight
+  writes is simply wrong.)*
 
 **Publish invariants:**
 
@@ -143,6 +175,8 @@ Published once to the drovr install; the data arrives over the wire. It never re
   serve a stale snapshot indefinitely.
 - Poll cadence mirrors the publisher: 5s, backing off to 30s once `generatedAt` has been unchanged
   for several polls. Polling every 5s against a 5-minute publish is wasted round trips.
+  *(shipped as written — 5s/30s after 3 unchanged polls — but the reason no longer holds: there is
+  no 5-minute publish. The backoff is now just politeness against a 20s/40s publisher.)*
 - Render order: status line → programs → capacity → controls → recent cycles → accounts.
 - Preview text is inserted with `textContent`, never `innerHTML`. aice sends no CSP, so the page's
   own escaping is the only thing between agent output and the DOM.
@@ -165,6 +199,12 @@ The panel never reaches into the Mac. It writes an intent; the tick drains it.
 - Written as an **aice note** on the panel page. The server stamps the author from the verified
   session, so attribution is enforced rather than conventional — a stronger guarantee than any
   token embedded in the page.
+
+  *(shipped: on `craig/intents.html`, a separate shell-wrapped page, **not** the panel. The panel
+  is custom markup with no `<aice-page>` wrapper, so `/_aice/widgets.js` never loads and it has no
+  notes widget — and therefore no comment control and no **Share** control, which is the only
+  place shared notes can be switched on. A control channel on the panel would have been a channel
+  nobody could write to or enable. The panel links to `intents.html` instead.)*
 - `tick` reads notes, applies each through **`keys.ts`** — the same mutate path the TUI uses, so
   there is exactly one writer of `control.json` — then replies with the outcome and resolves.
 - Every intent carries `expiresAt` and a nonce. An expired intent is resolved with "expired, not
@@ -217,15 +257,26 @@ the process boundary stays validated; nothing is cast.
 - Preview parser against captured `herdr agent read` output, including a malformed sample that
   must yield `null` rather than throw.
 - Intent parser: valid, expired, unparseable, duplicate nonce.
-- Cadence decision: unchanged hash → no publish; cycle in flight → 20s; quiet → 5m.
+- Cadence decision: unchanged hash → no publish; past the heartbeat → publish regardless.
+  *(shipped: `shouldPublish` takes no `cycleRunning`; the 20s/5m split by whether a cycle was in
+  flight went with `quietSeconds`.)*
+- The panel is a **third renderer** and is outside both `tsc` and this suite. `panel.spec.ts`
+  checks the one contract that is machine-checkable — that the page's `SCHEMA_VERSION` matches
+  `DrovrState.schemaVersion`. Every other guard on that page has to be added by hand.
 
 `pnpm check-types` is the gate.
 
 ## Open questions
 
-- **Where the panel lives.** The install root `index.html` is a writable S3 object, so it is
-  authorable; but `aice reindex` rebuilds a slug's landing page from current state, and the
-  authoring guide warns against overwriting a prefix index. A fixed page path is safe and
-  bookmarkable. Decide before publishing.
-- **Publish rate limits.** Whether aice's API tolerates 3 publishes/minute sustained is untested.
-  The adaptive cadence and hash-skip reduce it, but the ceiling is unknown.
+- ~~**Where the panel lives.**~~ **Resolved: `--as index.html`**, so `drovr.aicex.app/craig/` *is*
+  the panel. This was never decided before publishing and defaulted to `craig/panel.html`; Craig
+  caught it live and the page was republished, with `panel.html` removed so no stale copy carries
+  the pre-fix fiction. Verified first that `aice reindex` rebuilds a slug's landing **card** in the
+  bucket-root `_pages.json`, not the prefix `index.html` page, and that the authoring guide's
+  "never overwrite a prefix index" is convention rather than a technical block — the server seeds
+  `index.html` only when absent. Not done: `s3://aice-t-drovr/index.html`, the bare-domain front
+  door, which is outside aice's publish surface and would need a direct S3 write.
+- ~~**Publish rate limits.**~~ **No longer a question — it is the permanent operating point.** With
+  `quietSeconds` deleted, the floor is one publish per 40s forever, and the steady rate is roughly
+  one per 20s. Nothing has been refused. The evidence is ~200 seconds of observed publishing, not a
+  day: a rate limit that only bites after sustained hours would not have shown up yet.

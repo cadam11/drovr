@@ -200,6 +200,11 @@ const helpLines = (): string[] => [
   '    t      tick now          r      redraw',
   '    x      interrupt cycle   q      quit',
   '',
+  // A documented floor, because the frame degrades quietly below it rather than
+  // refusing: bars shrink, labels shorten, and under 24 columns rows start clipping.
+  // The keys and the interrupt confirmation survive to 24 rows by construction.
+  `  ${dim('Sized for 80×24 or larger. Narrower shortens labels and bars; the keys always show.')}`,
+  '',
   `  ${dim('? or esc closes this')}`,
 ];
 
@@ -236,9 +241,20 @@ const allocationLines = (input: {
   ];
 };
 
-/** Two: enough for the longest reason drovr emits, few enough not to cost the keybar. */
-const DETAIL_LINES = 2;
 const DETAIL_INDENT = 6;
+
+/**
+ * How many characters of a reason must survive, whatever the window. Fixed at two
+ * lines, a 60-column terminal carried 108 characters and silently dropped the coupling
+ * note off the end while a 100-column one kept the whole sentence — the same reason
+ * telling two different stories depending on the window, which is exactly the failure
+ * `allocation.ts`'s trap is about. Capped at four lines so a long reason can never eat
+ * the whole body; the tail is reserved separately in `frame`, so these no longer cost
+ * the keybar.
+ */
+const REASON_BUDGET = 200;
+const detailLinesFor = (width: number): number =>
+  Math.min(4, Math.max(2, Math.ceil(REASON_BUDGET / Math.max(8, width - DETAIL_INDENT))));
 
 const programLines = (input: {
   programs: ProgramState[];
@@ -269,7 +285,7 @@ const programLines = (input: {
     const row = inline ? `${head}  ${dim(detail)}` : head;
     const detailLines = inline
       ? []
-      : wrapText(detail, Math.max(8, width - DETAIL_INDENT), DETAIL_LINES)
+      : wrapText(detail, Math.max(8, width - DETAIL_INDENT), detailLinesFor(width))
           .map((line) => `${' '.repeat(DETAIL_INDENT)}${dim(line)}`);
 
     const askLine =
@@ -311,8 +327,18 @@ const serviceLine = (service: DrovrState['service'], now: number): string => {
  * two renderers over the one DrovrState collectState() produces. `columns` falls back
  * to reading the terminal width itself only as a convenience for callers — tests,
  * mainly — that do not care which width they get.
+ *
+ * `rows` is the terminal height. Supplied, the frame is clamped to `rows - 1` here
+ * rather than sliced by the caller, because the caller's slice took the bottom off:
+ * the message line, the preview warning and the keybar are all appended last. Omitted,
+ * the frame is whatever height it needs — only correct for a caller with no viewport.
  */
-export const frame = (state: DrovrState, view: ViewState, columns?: number): string => {
+export const frame = (
+  state: DrovrState,
+  view: ViewState,
+  columns?: number,
+  rows?: number,
+): string => {
   if (view.help) return helpLines().join('\n');
 
   const now = Date.parse(state.generatedAt);
@@ -340,7 +366,11 @@ export const frame = (state: DrovrState, view: ViewState, columns?: number): str
           usableAccounts: state.pool.usableAccounts,
           hoursToWeeklyReset: state.hoursToWeeklyReset,
           bindingBucket: state.bindingBucket,
-          barWidth: Math.max(8, width - (narrow ? 16 : 28)),
+          // Everything the row carries beside the bar: indent, label, the `you NN%`
+          // reading, and — the part that was missing — the six columns of ` binds`.
+          // Reserving only 16 at narrow widths let clip() eat the marker, so a
+          // 60-column frame showed three bars and no indication which one refuses.
+          barWidth: Math.max(8, width - (narrow ? 22 : 28)),
           narrow,
         })),
   );
@@ -371,11 +401,32 @@ export const frame = (state: DrovrState, view: ViewState, columns?: number): str
   // Its own row, never shared with view.message: readPreview's warning and an action
   // message (notably the 'x' interrupt confirmation) can each be live at once, and the
   // confirmation prompt must never be the one that silently disappears.
-  lines.push('', view.message === '' ? '  ' : paint(36, `  ${view.message}`));
-  if (view.previewWarning != null) lines.push(paint(33, `  ${view.previewWarning}`));
-  lines.push(...keybarLines(width, narrow));
+  //
+  // Held out of `lines` and re-attached below rather than pushed onto the end: at
+  // Craig's real configuration (3 programs, asks links, recent cycles) the body alone
+  // is 34 rows at every width watch draws, so appending these put them past the
+  // viewport on any terminal shorter than 35. Pressing `x` then armed view.confirmStop
+  // with no visible prompt, and the next keystroke either interrupted a live cycle or
+  // silently cancelled — a hidden confirmation on the only destructive key.
+  const tail = [
+    '',
+    view.message === '' ? '  ' : paint(36, `  ${view.message}`),
+    ...(view.previewWarning == null ? [] : [paint(33, `  ${view.previewWarning}`)]),
+    ...keybarLines(width, narrow),
+  ];
+
+  // Program rows carry embedded newlines, so both halves are flattened before either
+  // is measured — counting entries rather than rendered lines would under-reserve.
+  const split = (source: string[]): string[] => source.flatMap((line) => line.split('\n'));
+  const body = split(lines);
+  const foot = split(tail);
+  const budget = rows === undefined ? body.length + foot.length : Math.max(1, rows - 1);
+  const kept =
+    foot.length >= budget
+      ? foot.slice(0, budget)
+      : [...body.slice(0, budget - foot.length), ...foot];
   // Clip last: any single over-long line would soft-wrap and shove the frame upward.
-  return lines.flatMap((line) => line.split('\n')).map((line) => clip(line, width)).join('\n');
+  return kept.map((line) => clip(line, width)).join('\n');
 };
 
 const cliPath = (): string => fileURLToPath(new URL('./cli.ts', import.meta.url));
@@ -521,7 +572,10 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
       view.previewWarning = warning;
     });
     lastState = state;
-    const lines = frame(state, view, columns).split('\n').slice(0, rows - 1);
+    // frame() owns the clamp now, and clamps to the same rows - 1 this used to slice
+    // to. Slicing here again would be a second budget to keep in step with the first,
+    // and it is the one that dropped the keybar and the interrupt confirmation.
+    const lines = frame(state, view, columns, rows).split('\n');
     const painted = lines.map((line) => `${line}${ESC}K`).join('\r\n');
     process.stdout.write(`${ESC}H${painted}${ESC}0J`);
   };

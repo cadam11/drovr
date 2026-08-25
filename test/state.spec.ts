@@ -185,3 +185,37 @@ test('buildState changes which program wins scarce capacity when priority is reo
   assert.equal(beta?.verdict, 'GO');
   assert.notEqual(alpha?.verdict, 'GO');
 });
+
+/**
+ * CLAUDE.md's decide.ts trap: which bucket binds decides whether waiting is cheap or
+ * the loop is done for the week, so the recovery time a renderer shows has to be that
+ * bucket's own. Only hoursToWeeklyReset existed, and a panel showing "tightest bucket:
+ * session" beside "resets in 3d" turns a two-hour hold into an apparent write-off.
+ * The fixture's 5h resets are 2h out and its weekly ones 84h, so a field taking the
+ * wrong one cannot pass by coincidence.
+ */
+test('buildState reports when the binding bucket recovers, not the weekly reset', () => {
+  const state = buildState({
+    ...input(),
+    status: status([
+      account({ name: 'a', fable: 0.1, general: 0.1, session: 0.99 }),
+      account({ name: 'b', fable: 0.1, general: 0.1, session: 0.99 }),
+    ]),
+  });
+  assert.equal(state.bindingBucket, 'session');
+  assert.equal(state.bindingRecoveryAt, new Date(NOW + 2 * HOUR).toISOString());
+  assert.equal(state.hoursToWeeklyReset, 84);
+});
+
+/** A weekly bind must not silently borrow the 5h clock either. */
+test('buildState reports the weekly reset when a weekly bucket is what binds', () => {
+  const state = buildState({
+    ...input(),
+    status: status([
+      account({ name: 'a', fable: 0.99, general: 0.1, session: 0.0 }),
+      account({ name: 'b', fable: 0.99, general: 0.1, session: 0.0 }),
+    ]),
+  });
+  assert.equal(state.bindingBucket, 'fable');
+  assert.equal(state.bindingRecoveryAt, new Date(NOW + 84 * HOUR).toISOString());
+});
