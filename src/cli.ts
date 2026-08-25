@@ -197,6 +197,9 @@ const statusPayload = async () => {
         ? 'no cycles will start'
         : `programs may use up to ${round((control.ceilings[control.mode]?.weekly ?? 0) * 100)}% of each account's weekly quota; the rest stays available to Craig`,
     pausedUntil: control.pauseUntil,
+    // isPaused, not a bare presence check on pausedUntil: a lapsed timestamp is not a
+    // pause, and --json has no renderer downstream to apply that guard itself.
+    paused: isPaused(control, now),
     pool: pool === null ? null : poolPayload(pool),
     capacity: pool === null ? null : fundingPayload(cyclesFundableFrom(pool, cost, running.length)),
     estimatedCycleCost: {

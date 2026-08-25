@@ -203,7 +203,8 @@ const helpLines = (): string[] => [
   // A documented floor, because the frame degrades quietly below it rather than
   // refusing: bars shrink, labels shorten, and under 24 columns rows start clipping.
   // The keys and the interrupt confirmation survive to 24 rows by construction.
-  `  ${dim('Sized for 80×24 or larger. Narrower shortens labels and bars; the keys always show.')}`,
+  // Kept under 78 visible columns so it never soft-wraps the help screen itself.
+  `  ${dim('Sized for 80×24+. Narrower shortens labels and bars; keys always show.')}`,
   '',
   `  ${dim('? or esc closes this')}`,
 ];
@@ -321,6 +322,28 @@ const serviceLine = (service: DrovrState['service'], now: number): string => {
 };
 
 /**
+ * Shared by every frame the view can draw — the normal body-plus-tail frame and the
+ * help overlay alike — so a rows budget or a width clip added to one can never be
+ * forgotten on the other. `foot` is reserved first because it is the part a viewer
+ * must always be able to see (keybar, confirmation prompt); `body` is what gives way.
+ *
+ * Program rows carry embedded newlines, so both halves are flattened before either is
+ * measured — counting entries rather than rendered lines would under-reserve.
+ */
+const clampAndClip = (body: string[], foot: string[], width: number, rows?: number): string => {
+  const split = (source: string[]): string[] => source.flatMap((line) => line.split('\n'));
+  const flatBody = split(body);
+  const flatFoot = split(foot);
+  const budget = rows === undefined ? flatBody.length + flatFoot.length : Math.max(1, rows - 1);
+  const kept =
+    flatFoot.length >= budget
+      ? flatFoot.slice(0, budget)
+      : [...flatBody.slice(0, budget - flatFoot.length), ...flatFoot];
+  // Clip last: any single over-long line would soft-wrap and shove the frame upward.
+  return kept.map((line) => clip(line, width)).join('\n');
+};
+
+/**
  * Pure when `columns` is supplied, which `draw()` always does: every value then comes
  * from `state` and `view`, never from the clock or the filesystem. This is what
  * guarantees the TUI and the web panel can never show different verdicts — they are
@@ -339,10 +362,13 @@ export const frame = (
   columns?: number,
   rows?: number,
 ): string => {
-  if (view.help) return helpLines().join('\n');
+  const width = Math.max(24, Math.min(columns ?? process.stdout.columns ?? 100, 120));
+  // The help screen has no keybar/message tail of its own — it is one long body — but
+  // it still needs the same rows clamp and width clip, or it scrolls the alternate
+  // screen exactly like an unclamped normal frame would.
+  if (view.help) return clampAndClip(helpLines(), [], width, rows);
 
   const now = Date.parse(state.generatedAt);
-  const width = Math.max(24, Math.min(columns ?? process.stdout.columns ?? 100, 120));
   const narrow = width < 72;
 
   const held =
@@ -415,18 +441,7 @@ export const frame = (
     ...keybarLines(width, narrow),
   ];
 
-  // Program rows carry embedded newlines, so both halves are flattened before either
-  // is measured — counting entries rather than rendered lines would under-reserve.
-  const split = (source: string[]): string[] => source.flatMap((line) => line.split('\n'));
-  const body = split(lines);
-  const foot = split(tail);
-  const budget = rows === undefined ? body.length + foot.length : Math.max(1, rows - 1);
-  const kept =
-    foot.length >= budget
-      ? foot.slice(0, budget)
-      : [...body.slice(0, budget - foot.length), ...foot];
-  // Clip last: any single over-long line would soft-wrap and shove the frame upward.
-  return kept.map((line) => clip(line, width)).join('\n');
+  return clampAndClip(lines, tail, width, rows);
 };
 
 const cliPath = (): string => fileURLToPath(new URL('./cli.ts', import.meta.url));

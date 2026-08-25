@@ -212,3 +212,29 @@ for (const width of [60, 80, 100, 120]) {
     }
   });
 }
+
+/**
+ * The help overlay used to early-return `helpLines().join('\n')` before frame()'s own
+ * rows clamp and width clip existed, and runDraw's clamp moved into frame() without
+ * that early return being updated to go through it — so `?` on a short terminal
+ * scrolled the alternate screen exactly the way this file's other clamp test exists to
+ * prevent for the normal frame. The `unclamped` assertion below is load-bearing: it
+ * proves the help fixture genuinely overflows 23 rows, so a regression that deletes
+ * the clamp cannot pass this test vacuously.
+ */
+test('the help screen is clamped and clipped like every other frame', () => {
+  const helpView = { selected: 0, message: '', confirmStop: false, help: true };
+  const width = 80;
+
+  const unclamped = frame(fixture(), helpView, width).split('\n');
+  assert.ok(
+    unclamped.length > ROWS - 1,
+    `help fixture no longer overflows ${ROWS - 1} rows, so this proves nothing`,
+  );
+
+  const lines = frame(fixture(), helpView, width, ROWS).split('\n');
+  assert.ok(lines.length <= ROWS - 1, `help frame returned ${lines.length} lines for ${ROWS} rows`);
+  for (const line of lines) {
+    assert.ok(visibleLength(line) <= width, `help line over ${width} columns: ${line}`);
+  }
+});
