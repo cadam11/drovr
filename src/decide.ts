@@ -411,6 +411,40 @@ const admissionLimits = (
 };
 
 /**
+ * How much runway a cycle must see before it is admitted, which is **not** the same
+ * number for every bucket.
+ *
+ * The reserve exists so a cycle can *land* — finish its work and make it durable — rather
+ * than being cut off mid-flight. So the question is what can actually cut one off. A dry
+ * weekly bucket is days of nothing, and a cycle admitted into one can genuinely die there:
+ * that is what `reserveCycles` is for. A dry 5h window is not that. It refills four or five
+ * times a day, capacity.ts's own ledger rule documents it resetting *mid-cycle* as the
+ * normal case for an hours-long cycle, and a runner that reaches it waits and continues.
+ * Requiring a whole cycle plus a reserve of a bucket like that is a rate limit being
+ * treated as a budget.
+ *
+ * It was also, in effect, unsatisfiable. Measured 2026-08-26: p90 session cost 0.390
+ * against a `normal` session ceiling of 0.400, so `1 + reserveCycles` demanded 0.585 of a
+ * window holding 0.400 — no single account could ever clear admission, whatever its weekly
+ * buckets held. That went unnoticed while session was priced at the median 0.10, because
+ * 0.15 fitted comfortably; moving to a high percentile was right for the weekly buckets and
+ * collided here with a reserve that should not have applied.
+ *
+ * Session still has to cover one whole cycle. Below that a cycle starts and immediately
+ * idles waiting for the window, which holds a pane and a concurrency slot, gets nudged as
+ * a stall, and pays full onboarding for nothing.
+ *
+ * Keyed on the reported binding bucket rather than folded into each per-bucket ratio: the
+ * ratios are what every renderer prints as "funds N cycles", and changing their meaning
+ * would move that number on four surfaces at once. This is approximate when accounts bind
+ * on different buckets — `bindingOf` reports the one pinning the account that would serve
+ * next — and the substance survives the approximation, because the reserve still applies
+ * whenever a weekly bucket is what actually constrains that account.
+ */
+export const requiredCycles = (binding: BucketName, control: Control): number =>
+  binding === 'session' ? 1 : 1 + control.reserveCycles;
+
+/**
  * Can the pool fund a whole cycle plus a reserve, and is the loop within its weekly
  * pace? The only two gates that read quota, and the only one of the three layers that
  * can return GO.
@@ -426,9 +460,16 @@ const capacityVerdict = (input: DecideInput, pool: Pool, running: CycleRecord[])
   // stop admission while it happens, not once it has finished and been measured.
   const charged = chargeForRunning(running, snapshot(pool), cost);
   const funding = cyclesFundableFrom(pool, cost, charged);
-  const required = 1 + control.reserveCycles;
+  const required = requiredCycles(funding.binding, control);
   if (funding.cycles < required) {
     const note = couplingNote(funding);
+    // The threshold is deliberately not explained here. A session line reading "need 1.00"
+    // beside a fable line reading "need 1.50" invites the question, and the honest answer
+    // costs 25 characters the frame does not have: the worst case here is already 180 of
+    // the 188 that survive two wrapped lines at 100 columns in `drovr watch`, and that
+    // budget exists because this is the one surface that also draws the free-looking bars
+    // the note is there to explain. `requiredCycles` and design.md carry the reason; a
+    // question asked once does not belong on a line printed every tick.
     return hold(
       `${funding.binding} tightest — funds ${funding.cycles.toFixed(2)} cycles ` +
         `(${running.length} ahead of it), need ${required.toFixed(2)}, ` +

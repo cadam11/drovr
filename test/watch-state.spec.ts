@@ -116,7 +116,9 @@ for (const width of [60, 72, 100, 120]) {
       .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
       .replace(/\s+/g, ' ');
     assert.match(flat, /session tightest — funds 0\.00 cycles/, 'the verdict half was clipped');
-    assert.match(flat, /need 1\.50, recovers in/, 'the verdict half was truncated');
+    // 1.00, not 1.50: this fixture binds on session, where reserveCycles does not apply
+    // (see decide.ts requiredCycles — a 5h window refills, so it cannot cut a cycle off).
+    assert.match(flat, /need 1\.00, recovers in/, 'the verdict half was truncated');
     assert.match(flat, /no account has room in all three buckets/, 'the note half was clipped');
     assert.match(flat, /karen\.adam/, 'the note lost its last account name');
     // The keybar is drawn last, so wrapped reasons eating the frame shows up here first.

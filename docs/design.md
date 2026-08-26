@@ -164,6 +164,29 @@ onboarding cost for partial delivery, then the next cycle pays it again. The res
 guarantees a cycle can always land — make its work durable, publish its asks — rather than being
 cut off mid-flight.
 
+**The reserve does not apply to the 5h bucket**, because that bucket cannot cut a cycle off. It
+refills four or five times a day, the ledger's own rule treats it resetting *mid-cycle* as the
+normal case for an hours-long cycle, and a runner that reaches its limit waits and continues. A
+dry weekly bucket is days of nothing and a cycle admitted into one really can die there; that is
+what `reserveCycles` is for. Requiring a whole cycle plus a reserve of a rate limit is the brief's
+exact confusion between feasibility and budget.
+
+It was also unsatisfiable. Measured 2026-08-26: p90 session cost 0.390 against a `normal` session
+ceiling of 0.400, so `1 + reserveCycles` demanded 0.585 of a window that holds 0.400 — **no single
+account could ever clear admission**, whatever its weekly buckets held. That went unnoticed while
+session was priced at the median 0.10, because 0.15 fitted comfortably inside 0.40. Moving to a
+high percentile was right for the weekly buckets, where a cycle genuinely can eat a week, and
+collided here with a reserve that should never have applied. So:
+
+```
+binding is fable or general  ->  need 1 + reserveCycles
+binding is session           ->  need 1
+```
+
+Session still has to cover one whole cycle. Below that a cycle starts and immediately idles
+waiting for the window, which holds a pane and a concurrency slot, gets nudged as a stall, and
+pays full onboarding for nothing.
+
 Reset-aware waiting falls out of this for free: if the pool can't fund a full cycle it waits, and
 after the next reset it can. No separate "should I wait for the reset?" logic is needed.
 

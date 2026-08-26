@@ -77,11 +77,14 @@ test('a pool that cannot fund a whole cycle plus reserve waits', () => {
 });
 
 test('the reserve is what separates admitting from refusing a marginal pool', () => {
-  const marginal = status([account({ name: 'a', fable: 0.44, general: 0.45, session: 0.13 })]);
+  // Bound on fable, deliberately: reserveCycles now only applies to the weekly buckets,
+  // so a session-bound pool would answer the same either way and prove nothing.
+  const marginal = status([account({ name: 'a', fable: 0.44, general: 0.45, session: 0 })]);
   const strict = run({ status: marginal, control: control({ reserveCycles: 0.5 }) });
   const lax = run({ status: marginal, control: control({ reserveCycles: 0 }) });
-  assert.equal(strict.verdict, 'WAIT');
-  assert.equal(lax.verdict, 'GO');
+  assert.equal(strict.verdict, 'WAIT', strict.reason);
+  assert.match(strict.reason, /fable tightest/);
+  assert.equal(lax.verdict, 'GO', lax.reason);
 });
 
 test('the daily cap holds the loop even with capacity to spare', () => {
@@ -782,4 +785,70 @@ test('programReadiness answers without a pool, and passes a program that is fit 
   assert.equal(disabled?.pool, null, 'readiness never carries a pool it did not read');
 
   assert.equal(programReadiness({ ...base, control: control() }), null, 'a fit program returns null');
+});
+
+/**
+ * The reserve guarantees a cycle can *land*. A weekly bucket running dry means days of
+ * nothing, so a cycle admitted against it must be covered plus a reserve. The 5h window
+ * refills four or five times a day and is documented as resetting mid-cycle, so running
+ * dry there pauses a runner rather than cutting it off — a reserve denominated in whole
+ * cycles is a rate limit being treated as a budget.
+ *
+ * Measured 2026-08-26: p90 session cost 0.390 against a `normal` session ceiling of 0.400,
+ * so `1 + reserveCycles` demanded 0.585 of a window that only holds 0.400. No single
+ * account could clear admission, by construction rather than by policy.
+ */
+const oneAccountAt = (session: number) =>
+  run({
+    status: status([account({ name: 'a', fable: 0.05, general: 0.05, session })]),
+    // Five delivering cycles so the session cost estimate is measured, not seeded:
+    // p90 of 0.39 against the 0.40 ceiling is the collision under test.
+    cycles: Array.from({ length: 5 }, (_unused, index) =>
+      cycle({
+        startedAt: new Date(NOW - (12 - index) * HOUR).toISOString(),
+        endedAt: new Date(NOW - (11 - index) * HOUR).toISOString(),
+        exit: 'seam',
+        poolBefore: { fable: 2, general: 2, session: 2 },
+        poolAfter: { fable: 1.99, general: 1.99, session: 1.61 },
+      }),
+    ),
+  });
+
+test('a session-bound pool needs one cycle of room, not one plus the reserve', () => {
+  // A fresh 5h window: 0.40 headroom against a 0.39 cycle is 1.03 cycles — under the old
+  // 1.50 requirement this was refused however healthy the weekly buckets were.
+  const decision = oneAccountAt(0);
+  assert.equal(decision.verdict, 'GO', decision.reason);
+  assert.match(decision.reason, /session tightest/);
+});
+
+test('a session-bound pool with less than one cycle of room still waits', () => {
+  // 0.20 of the ceiling left is half a cycle: it would start and immediately idle.
+  const decision = oneAccountAt(0.2);
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /need 1\.00/, 'one cycle, not one plus the reserve');
+});
+
+test('a weekly-bound pool still has to cover the reserve', () => {
+  // Session wide open, fable nearly gone: 1.2 cycles of fable is more than one cycle but
+  // less than the reserve, and a dry weekly bucket is days rather than hours.
+  const decision = run({
+    // Late in the week, so the pace gate is not what answers: its line at 99% elapsed is
+    // the whole allowance, and this test is about the reserve.
+    status: status([
+      account({ name: 'a', fable: 0.478, general: 0.05, session: 0, weeklyResetInHours: 1 }),
+    ]),
+    cycles: Array.from({ length: 5 }, (_unused, index) =>
+      cycle({
+        startedAt: new Date(NOW - (12 - index) * HOUR).toISOString(),
+        endedAt: new Date(NOW - (11 - index) * HOUR).toISOString(),
+        exit: 'seam',
+        poolBefore: { fable: 2, general: 2, session: 2 },
+        poolAfter: { fable: 1.94, general: 1.94, session: 1.99 },
+      }),
+    ),
+  });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /fable tightest/);
+  assert.match(decision.reason, /need 1\.50/, 'the reserve applies where exhaustion means days');
 });

@@ -187,5 +187,23 @@ Three changes, in order, none of them a scheduler:
    active safeguard and is not one.
 3. **Split `decide()`** into readiness and capacity.
 
+## Addendum, 2026-08-26
+
+All three landed, and finding 1's fix exposed a fourth. Re-basing the pace gate and pricing
+cycles at p90 made the *session* requirement `1.5 x 0.390 = 0.585` against a `normal` session
+ceiling of `0.400` — unsatisfiable by any single account. The reserve had been applied to a
+bucket where it means nothing: the 5h window refills four or five times a day and only makes a
+runner wait, while a dry weekly bucket is days and can genuinely kill a cycle. `reserveCycles`
+now applies to the weekly buckets only; session must still cover one whole cycle.
+
+Craig spotted this from the account bars alone — one account a third through its week with three
+days left, one fresh, one nearly reset — and read it as "plenty of capacity, crack on", against
+drovr saying WAIT. He was right, which is worth recording: the brief's feasibility-versus-pacing
+distinction (its section 4) is the same observation, and drovr had collapsed the two.
+
+Still unhandled, and his second point: **capacity is perishable and nothing notices underspend.**
+The pace gate is a ceiling with no floor, so roughly 12 cycles of weekly capacity can evaporate
+unused with drovr reporting itself perfectly healthy.
+
 And one documentation correction: `design.md`'s fairness claim should say what the ledger says,
 which is that program fairness has never been tested because programs have never competed.
