@@ -99,20 +99,31 @@ const spendOf = (cycle: CycleRecord): CycleCost => {
   };
 };
 
-const median = (values: number[]): number => {
+/**
+ * Nearest-rank, so the answer is always a cost a real cycle actually had rather than
+ * an interpolation between two of them.
+ */
+export const percentile = (values: number[], fraction: number): number => {
   const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
+  const rank = Math.ceil(fraction * sorted.length);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))]!;
 };
 
 /**
  * Onboarding cycles are read-heavy and Fable-light; averaging them in would skew
  * the estimate every admission decision depends on.
+ *
+ * A high percentile, not the median. Observed cycle cost is badly right-skewed —
+ * measured 2026-08-26 across 33 samples: median 0.10 session, mean 0.16, max 0.58 —
+ * so a median under-prices half of all cycles *by construction* and the expensive
+ * tail by six times. The number is what a reserve is denominated in, and a reserve
+ * sized for the typical cycle is not a reserve. Budget the expensive case.
  */
 export const estimateCycleCost = (
   cycles: CycleRecord[],
   seed: CycleCost,
   minSamples = 3,
+  fraction = 0.9,
 ): CycleCost => {
   const costs = cycles
     .filter((cycle) => cycle.kind === 'delivery' && !DID_NOT_DELIVER.has(cycle.exit))
@@ -124,10 +135,42 @@ export const estimateCycleCost = (
   const perBucket = (bucket: keyof CycleCost): number => {
     const samples = costs.map((cost) => cost[bucket]).filter((value): value is number => value !== null);
     if (samples.length < minSamples) return seed[bucket];
-    return Math.max(median(samples), seed[bucket] / 4);
+    return Math.max(percentile(samples, fraction), seed[bucket] / 4);
   };
 
   return { fable: perBucket('fable'), general: perBucket('general'), session: perBucket('session') };
+};
+
+/**
+ * What the cycles already in flight should be charged, counted in cycles so it can be
+ * subtracted from a cycle count (see decide.ts: a per-bucket deduction models nothing
+ * now that fundability is summed per account).
+ *
+ * Charging a flat estimate per running cycle is what let three cycles pin three
+ * accounts on 2026-08-25: each was billed 0.085 session at admission while actually
+ * draining 0.23 to 0.58, so drovr kept admitting against room that was already gone.
+ * A cycle is charged whichever is worse — the estimate, or what the pool has actually
+ * lost since it started — so an expensive one stops admission as it happens rather
+ * than after it finishes.
+ *
+ * Floored at one cycle each: a cycle that started seconds ago has drained nothing yet
+ * and must still cost a full cycle. A 5h window that reset mid-cycle makes the
+ * observed drain negative, and then the estimate stands on its own.
+ */
+export const chargeForRunning = (
+  running: CycleRecord[],
+  poolNow: CycleCost,
+  cost: CycleCost,
+): number => {
+  const buckets: (keyof CycleCost)[] = ['fable', 'general', 'session'];
+  return running.reduce((total, cycle) => {
+    const observed = buckets.map((bucket) => {
+      const drained = cycle.poolBefore[bucket] - poolNow[bucket];
+      if (drained <= 0 || cost[bucket] <= 0) return 0;
+      return drained / cost[bucket];
+    });
+    return total + Math.max(1, ...observed);
+  }, 0);
 };
 
 /** Drovr's own spend inside the current weekly window — the pace-keeping numerator. */

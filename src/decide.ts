@@ -1,6 +1,6 @@
 import { hoursToWeeklyReset, poolFrom, type AccountHeadroom, type Pool } from './capacity.ts';
 import { ceilingsFor, isPaused, type Control } from './control.ts';
-import {
+import { chargeForRunning,
   consecutiveFailures,
   consecutiveZeroYield,
   cyclesStartedSince,
@@ -359,7 +359,10 @@ export const decide = (input: DecideInput): Decision => {
   if (offPace !== null) return hold(offPace, pool, null);
 
   const cost = estimateCycleCost(cycles, control.seedCycleCost);
-  const funding = cyclesFundableFrom(pool, cost, running.length);
+  // Not running.length: a cycle already draining more than it was priced at has to
+  // stop admission while it happens, not once it has finished and been measured.
+  const charged = chargeForRunning(running, snapshot(pool), cost);
+  const funding = cyclesFundableFrom(pool, cost, charged);
   const required = 1 + control.reserveCycles;
   if (funding.cycles < required) {
     const note = couplingNote(funding);

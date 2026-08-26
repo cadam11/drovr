@@ -34,7 +34,10 @@ is per-request, so the Fable runner and its Opus subagents can land on different
 therefore pooled across accounts. But each request is served by *one* account and decrements *its*
 three buckets, so an account is spendable only where it has room in all three at once: fundability
 is `Σ_accounts min_bucket(headroom/cost)`, never the min of the per-bucket sums. Admission requires funding a *whole* cycle plus a reserve,
-because a truncated cycle pays full onboarding cost for partial delivery. And an account only
+because a truncated cycle pays full onboarding cost for partial delivery. Since admission is
+the only lever — the ceiling is checked when a cycle starts and never again — a cycle is priced
+at a high percentile of what cycles have actually cost, and one already in flight is charged
+whatever it has really drained. And an account only
 counts if teamclaude's fable route will actually route to it — eligibility there tracks usage
 against its own `switchThreshold`, so an ineligible account usually returns at its next reset.
 
@@ -47,6 +50,9 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `capacity.ts` | Headroom must clamp per account (`max(0, ceiling - used)`) before summing. Computing `ceiling × N - totalUsed` lets one blown account eat another's headroom. |
 | `capacity.ts` | The per-bucket sums are a display figure, never fundability. **Min-of-sums is not sum-of-mins**: summing a bucket across accounts lets an account donate headroom it cannot spend because it is exhausted in another bucket, and a later `min` does not put it back. One Fable token decrements all three buckets *on the one account that served the request*, so capacity is `Σ_accounts min_bucket(headroom/cost)`. Live 2026-08-24 this offered 6.3 cycles while every account was pinned and nothing could run. |
 | `decide.ts` | With capacity summed per account there is a binding bucket per account. Above zero report the one pinning the account that would serve next (most fundable); at zero report the one whose reset comes soonest, since that account unblocks first. Getting this backwards turns a two-hour session hold into an apparent week-long write-off. |
+| `ledger.ts` | Price a cycle at a **high percentile** of observed cost, never the median. Cost is badly right-skewed — measured 2026-08-26 over 33 samples: median 0.10 session, mean 0.16, max 0.58 — so a median under-prices half of all cycles *by construction* and the tail by six times. This number is what the reserve is denominated in; sized for the typical cycle it is not a reserve. |
+| `ledger.ts` | Charge an in-flight cycle whichever is worse: its price, or what the pool has actually lost since it started. A flat estimate per running cycle is how three cycles pinned three accounts on 2026-08-25 — each billed 0.085 session while draining 0.23 to 0.58, so drovr kept admitting against room already gone. Floor each at one cycle: one that started seconds ago has drained nothing and is about to drain plenty. |
+| `decide.ts` | **A ceiling is a starting gate, not a budget.** Headroom is evaluated at admission and drovr never kills a cycle, so a cycle admitted just under `session 0.40` can run to 0.99 and there is nothing downstream to stop it. Admission is the only lever there is, which is exactly why the price has to cover the expensive case rather than the typical one. |
 | `ledger.ts` | The 5h window resets *during* a multi-hour cycle, so `poolAfter > poolBefore` is normal. Recording that as zero cost drags the median to nothing until session stops constraining admission. Discard the sample instead. |
 | `decide.ts` | Report *which* bucket binds. A 5h hold recovers in hours, a weekly one in days; reporting the soonest reset across all three is actively misleading. |
 | `decide.ts` | In-flight cycles have not shown up as spent quota yet, or N concurrent programs each claim the whole pool. Subtract them from the **cycle count** — `cyclesFundableFrom`'s `running` argument. Not `running × cost` off a per-bucket pool: that was `lessReserved`, and it models nothing now that fundability is summed per account. |
