@@ -17,13 +17,14 @@ import {
   readCycles,
   type CycleRecord,
 } from './ledger.ts';
+import { observedYours, readSamples, shareOf, type UsageSample } from './usage.ts';
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
 import { readAsks } from './asks.ts';
 import { textCraig } from './nudge.ts';
 import { unverified, verifyDelivery } from './delivery.ts';
 import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
-import { holder } from './lock.ts';
+import { heldBy, holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { publishSnapshot, readMarker, readRunMarker } from './publish-snapshot.ts';
 import {
@@ -193,7 +194,7 @@ const statusPayload = async () => {
   return {
     service: {
       health: serviceHealth(state, lastTick, now),
-      explanation: describeService(state, lastTick, now),
+      explanation: describeService(state, lastTick, now, tickLockHolder()),
       lastTickAt: iso(lastTick),
     },
     mode: control.mode,
@@ -270,7 +271,7 @@ const showStatus = async (): Promise<void> => {
   const running = inFlight(cycles, now, control.maxCycleHours);
 
   const lastTick = readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions);
-  console.log(`service: ${describeService(serviceState(), lastTick, now)}`);
+  console.log(`service: ${describeService(serviceState(), lastTick, now, tickLockHolder())}`);
   // isPaused, not a null check: a pause is only a pause while it is still in the future,
   // and decide() has always treated it that way. Reading pauseUntil !== null printed
   // "paused until 22:16" for hours after it lapsed, directly above verdicts that named a
@@ -309,6 +310,17 @@ const showStatus = async (): Promise<void> => {
   }
 };
 
+/**
+ * The live tick-lock holder, for describeService. Read here rather than there so that
+ * function stays pure — the same reason collectState takes its warning sink from the
+ * caller instead of choosing one.
+ */
+const tickLockHolder = (): { pid: number; heldMs: number | null } | null => {
+  const held = heldBy(p.tickLock);
+  if (held === null) return null;
+  return { pid: held.pid, heldMs: held.at === null ? null : Math.max(0, Date.now() - held.at) };
+};
+
 const showLedger = (limit: number, json: boolean): void => {
   const recent = readCycles(p.cycles).slice(-limit);
   if (json) {
@@ -322,6 +334,90 @@ const showLedger = (limit: number, json: boolean): void => {
       `${cycle.startedAt.slice(0, 16)}  ${cycle.program.padEnd(16)} ${cycle.kind.padEnd(10)} ${cycle.exit.padEnd(9)} yield=${total} asks=${cycle.asksRaised}`,
     );
   }
+};
+
+const BUCKETS = ['fable', 'general', 'session'] as const;
+
+/**
+ * What the mode ceilings are actually protecting. `reserve` is a fraction Craig picks by
+ * mode; this is the only place drovr says whether that fraction covers the consumer it
+ * exists for. Measured, not modelled — and it feeds no gate, so reading it is safe to do
+ * at any time.
+ */
+const showUsage = (json: boolean): void => {
+  const samples = readSamples(p.usage);
+  const cycles = readCycles(p.cycles);
+  const control = readControl(p.control);
+  const ceilings = control.mode === 'off' ? null : control.ceilings[control.mode] ?? null;
+  const reserve = ceilings === null ? null : 1 - ceilings.weekly;
+
+  const rows = BUCKETS.map((bucket) => ({
+    bucket,
+    latest: samples.length === 0 ? null : shareOf(samples.at(-1) as UsageSample, cycles, bucket),
+    observed: observedYours(samples, cycles, bucket),
+  }));
+
+  if (json) {
+    console.log(JSON.stringify({
+      note:
+        'yours = total account usage minus what drovr\'s own ledger accounts for, in ' +
+        'account-units (N usable accounts = N.0). peakFraction is that peak as a share of ' +
+        'the pool, directly comparable to configuredReserve. Sampled once per tick; ' +
+        'nothing here feeds an admission decision.',
+      samples: samples.length,
+      firstSampleAt: samples[0]?.at ?? null,
+      lastSampleAt: samples.at(-1)?.at ?? null,
+      mode: control.mode,
+      configuredReserve: reserve,
+      buckets: rows.map((row) => ({
+        bucket: row.bucket,
+        yoursNow: row.latest === null ? null : Number(row.latest.yours.toFixed(3)),
+        drovrNow: row.latest === null ? null : Number(row.latest.drovr.toFixed(3)),
+        totalNow: row.latest === null ? null : Number(row.latest.total.toFixed(3)),
+        observedPeakP90: row.observed === null ? null : Number(row.observed.peak.toFixed(3)),
+        observedPeakFractionP90:
+          row.observed === null ? null : Number(row.observed.peakFraction.toFixed(3)),
+      })),
+    }, null, 2));
+    return;
+  }
+
+  if (samples.length === 0) {
+    console.log('no usage samples yet — the tick records one per firing, so give it a tick.');
+    return;
+  }
+  console.log(
+    `${samples.length} samples, ${samples[0]!.at.slice(0, 16)} to ${samples.at(-1)!.at.slice(0, 16)}`,
+  );
+  console.log(`mode ${control.mode}${reserve === null ? '' : `, reserve held for you ${(reserve * 100).toFixed(0)}%`}`);
+  console.log('');
+  console.log('bucket    yours now  drovr now   your p90 peak   as % of pool');
+  for (const row of rows) {
+    const yours = row.latest === null ? '—' : row.latest.yours.toFixed(2);
+    const drovr = row.latest === null ? '—' : row.latest.drovr.toFixed(2);
+    const peak = row.observed === null ? '—' : row.observed.peak.toFixed(2);
+    const pct = row.observed === null ? '—' : `${(row.observed.peakFraction * 100).toFixed(0)}%`;
+    console.log(
+      `${row.bucket.padEnd(9)} ${yours.padStart(9)} ${drovr.padStart(10)} ${peak.padStart(15)} ${pct.padStart(14)}`,
+    );
+  }
+
+  const weekly = rows.find((row) => row.bucket === 'general')?.observed ?? null;
+  if (weekly === null) {
+    console.log('');
+    console.log('Not enough samples yet to say whether the reserve is sized for you.');
+    return;
+  }
+  if (reserve === null) return;
+  console.log('');
+  console.log(
+    weekly.peakFraction > reserve
+      ? `Your own weekly p90 (${(weekly.peakFraction * 100).toFixed(0)}%) is above the ` +
+        `${(reserve * 100).toFixed(0)}% held for you — the reserve is under-sized for how you ` +
+        `actually use the pool. Widen it with "drovr reserve ${Math.min(0.95, Math.ceil(weekly.peakFraction * 20) / 20).toFixed(2)}".`
+      : `Your own weekly p90 (${(weekly.peakFraction * 100).toFixed(0)}%) fits inside the ` +
+        `${(reserve * 100).toFixed(0)}% held for you — the reserve covers you as configured.`,
+  );
 };
 
 /** Installs and reloads both the tick and snapshot launchd agents in one call —
@@ -410,7 +506,7 @@ const showService = (json: boolean): void => {
     console.log(JSON.stringify({
       tick: {
         health: serviceHealth(tick, lastTick, now),
-        explanation: describeService(tick, lastTick, now),
+        explanation: describeService(tick, lastTick, now, tickLockHolder()),
         lastTickAt: lastTick === null ? null : new Date(lastTick).toISOString(),
         ...tick, plistPath: plistPath(),
         loadCommand: bootstrapCommand(LABEL), unloadCommand: bootoutCommand(LABEL),
@@ -426,7 +522,7 @@ const showService = (json: boolean): void => {
     }, null, 2));
     return;
   }
-  console.log(`tick: ${describeService(tick, lastTick, now)}`);
+  console.log(`tick: ${describeService(tick, lastTick, now, tickLockHolder())}`);
   if (tick.pid !== null) console.log(`  a tick is executing right now (pid ${tick.pid})`);
   console.log(`snapshot: ${describeSnapshotAgent(snapshot, lastRunAt, now)}`);
   if (snapshot.pid !== null) console.log(`  a snapshot publish is executing right now (pid ${snapshot.pid})`);
@@ -509,6 +605,8 @@ const main = async (argv: string[]): Promise<void> => {
     const limit = Number.parseInt(rest.find((a) => !a.startsWith('-')) ?? '20', 10);
     return showLedger(limit, json);
   }
+
+  if (command === 'usage') return showUsage(json);
 
   if (command === 'pause') {
     const spec = rest[0];

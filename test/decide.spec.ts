@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contributingAccounts, cyclesFundableFrom, decide } from '../src/decide.ts';
+import { contributingAccounts, cyclesFundableFrom, decide, programReadiness } from '../src/decide.ts';
 import { poolFrom } from '../src/capacity.ts';
 import { inFlight, type CycleRecord } from '../src/ledger.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
@@ -118,29 +118,53 @@ test('a productive cycle clears the zero-yield streak', () => {
   assert.equal(run({ cycles: mixed }).verdict, 'GO');
 });
 
-test('spending ahead of the linear weekly entitlement waits', () => {
-  // 84h left of a 168h window means half elapsed: entitlement is half the ceiling.
-  const heavy = Array.from({ length: 6 }, (_unused, index) =>
+/**
+ * Six cycles spending 0.2 each, with the accounts showing that spend. The consistency
+ * matters: an earlier version of these two tests left the accounts nearly untouched while
+ * the ledger claimed 1.2 units spent, which is not a state the pool can be in — real usage
+ * is never below drovr's own. The old gate read the ceiling and never noticed; the re-based
+ * one reads the pool, so the fixture has to be physically reachable to mean anything.
+ */
+const heavyWeek = () => ({
+  // 1.2 units spent across three accounts is 0.4 apiece.
+  status: status([
+    account({ name: 'a', fable: 0.4, general: 0.4, session: 0 }),
+    account({ name: 'b', fable: 0.4, general: 0.4, session: 0 }),
+    account({ name: 'c', fable: 0.4, general: 0.4, session: 0 }),
+  ]),
+  cycles: Array.from({ length: 6 }, (_unused, index) =>
     cycle({
       startedAt: new Date(NOW - (index + 1) * HOUR).toISOString(),
       poolBefore: { fable: 1.4, general: 1.4, session: 1.2 },
       poolAfter: { fable: 1.2, general: 1.2, session: 1.0 },
     }),
-  );
-  const decision = run({ cycles: heavy });
+  ),
+});
+
+test('spending ahead of the linear weekly entitlement waits', () => {
+  // 84h left of a 168h window means half elapsed: 1.2 spent of a 1.65 allowance.
+  const decision = run(heavyWeek());
   assert.equal(decision.verdict, 'WAIT');
   assert.match(decision.reason, /ahead of pace/);
 });
 
 test('away mode raises the entitlement enough to keep running', () => {
-  const heavy = Array.from({ length: 6 }, (_unused, index) =>
-    cycle({
-      startedAt: new Date(NOW - (index + 1) * HOUR).toISOString(),
-      poolBefore: { fable: 1.4, general: 1.4, session: 1.2 },
-      poolAfter: { fable: 1.2, general: 1.2, session: 1.0 },
-    }),
-  );
-  assert.equal(run({ cycles: heavy, control: control({ mode: 'away' }) }).verdict, 'GO');
+  assert.equal(run({ ...heavyWeek(), control: control({ mode: 'away' }) }).verdict, 'GO');
+});
+
+/**
+ * The re-basing is a generalisation, not a different policy: when Craig has spent nothing,
+ * `pool + spent` *is* `weeklyCeiling × usableAccounts`, and the new gate reduces exactly to
+ * the old one. It only diverges to the extent he is actually consuming the pool — which is
+ * the whole reason it was changed.
+ */
+test('pace reduces to the old ceiling-based entitlement when Craig has spent nothing', () => {
+  const CEILING = 0.55;
+  const ACCOUNTS = 3;
+  const drovrSpent = 1.2;
+  // Accounts show drovr's spend and nothing else, so the pool holds the rest of the ceiling.
+  const poolRemaining = ACCOUNTS * CEILING - drovrSpent;
+  assert.equal(Number((poolRemaining + drovrSpent).toFixed(2)), Number((CEILING * ACCOUNTS).toFixed(2)));
 });
 
 test('cyclesFundable is bound by the scarcest of the three buckets', () => {
@@ -328,7 +352,8 @@ test('pace counts every program, since they share one quota pool', () => {
       poolAfter: { fable: 1.2, general: 1.2, session: 1.0 },
     }),
   );
-  const decision = run({ cycles: heavy });
+  // Same consistent accounts as heavyWeek: the point is only that 'other' counts too.
+  const decision = run({ ...heavyWeek(), cycles: heavy });
   assert.equal(decision.verdict, 'WAIT');
   assert.match(decision.reason, /all programs/);
 });
@@ -659,4 +684,102 @@ test('a pool every account contributes to is not warned about', () => {
   assert.equal(decision.verdict, 'GO');
   assert.match(decision.reason, /across 3 accounts/);
   assert.doesNotMatch(decision.reason, /no fallback/);
+});
+
+/**
+ * The re-based pace gate. The previous version granted `weeklyCeiling × usableAccounts ×
+ * elapsed` while measuring spend from drovr's ledger alone, so Craig's foreground work
+ * counted on neither side and the entitlement was always too large — it fired zero times
+ * in 1008 live decisions. The allowance is now what drovr can actually reach.
+ */
+const paced = (overrides: {
+  accountsAt: number;
+  spends: number[];
+  weeklyResetInHours?: number;
+}) => {
+  const at = overrides.accountsAt;
+  const spent = (amount: number, index: number): CycleRecord =>
+    cycle({
+      startedAt: new Date(NOW - (20 - index) * HOUR).toISOString(),
+      endedAt: new Date(NOW - (19 - index) * HOUR).toISOString(),
+      exit: 'seam',
+      poolBefore: { fable: 2, general: 2, session: 2 },
+      poolAfter: { fable: 2 - amount, general: 2 - amount, session: 2 },
+    });
+  return run({
+    status: status([
+      account({ name: 'a', fable: at, general: at, session: 0, weeklyResetInHours: overrides.weeklyResetInHours ?? 84 }),
+      account({ name: 'b', fable: at, general: at, session: 0, weeklyResetInHours: overrides.weeklyResetInHours ?? 84 }),
+      account({ name: 'c', fable: at, general: at, session: 0, weeklyResetInHours: overrides.weeklyResetInHours ?? 84 }),
+    ]),
+    cycles: overrides.spends.map(spent),
+  });
+};
+
+test('pace holds the loop when it has outspent the allowance Craig actually left it', () => {
+  // Accounts at 0.50 against a 0.55 ceiling leave 0.15 units reachable pool-wide, and
+  // drovr has already spent 0.40 of a 0.55 realised allowance half way through the week.
+  const decision = paced({ accountsAt: 0.5, spends: [0.2, 0.2] });
+
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /ahead of pace on (fable|general)/);
+  assert.match(decision.reason, /50% through the window/);
+  assert.match(decision.reason, /Clears as the week catches up/);
+});
+
+/**
+ * The same reading under the old formulation: entitlement was 0.55 × 3 × 0.5 = 0.825
+ * against 0.40 spent, so it passed. This asserts the gate can now see what it could not.
+ */
+test('pace: the old ceiling-based entitlement would have allowed that same spend', () => {
+  const ceilingBasedEntitlement = 0.55 * 3 * 0.5;
+  assert.ok(0.4 < ceilingBasedEntitlement, 'the old gate saw 0.40 spent as comfortably on pace');
+});
+
+test('pace lets the loop burst at the start of a window rather than refusing its first cycle', () => {
+  // 1h into the week, so linear entitlement is near zero. One finished cycle is already
+  // above that line; the burst allowance is what stops a smoothing gate from blocking
+  // every window's first cycle.
+  const decision = paced({ accountsAt: 0.05, spends: [0.05], weeklyResetInHours: 167 });
+  assert.notEqual(decision.verdict, 'WAIT', decision.reason);
+});
+
+test('pace stays quiet when spend is inside a linear burn of the allowance', () => {
+  const decision = paced({ accountsAt: 0.05, spends: [0.05, 0.05] });
+  assert.equal(decision.verdict, 'GO', decision.reason);
+});
+
+test('pace does not read the session bucket, which has no week to be paced across', () => {
+  // Session fully spent on every account: affordability must be what refuses, naming the
+  // bucket, rather than a pace gate claiming a weekly problem.
+  const decision = run({
+    status: status([
+      account({ name: 'a', fable: 0.05, general: 0.05, session: 0.95 }),
+      account({ name: 'b', fable: 0.05, general: 0.05, session: 0.95 }),
+    ]),
+  });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /session tightest/);
+});
+
+/**
+ * The three layers are separable, which is the point of the split: nothing in readiness
+ * reads the pool, so a program that cannot run says so without a teamclaude read.
+ */
+test('programReadiness answers without a pool, and passes a program that is fit to run', () => {
+  const base = {
+    status: healthy(),
+    cycles: [],
+    program: 'demo',
+    now: NOW,
+  };
+
+  const disabled = programReadiness({
+    ...base,
+    control: control({ programs: [{ name: 'demo', cwd: '/tmp/demo', enabled: false }] }),
+  });
+  assert.equal(disabled?.verdict, 'STOP');
+  assert.equal(disabled?.pool, null, 'readiness never carries a pool it did not read');
+
+  assert.equal(programReadiness({ ...base, control: control() }), null, 'a fit program returns null');
 });

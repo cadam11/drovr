@@ -1,11 +1,8 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { Program } from './control.ts';
-import { explainSpawn } from './exec.ts';
+import { ExecTimedOut, explainSpawn, runBounded } from './exec.ts';
 import { parsePreview, type Preview } from './preview.ts';
 
-const run = promisify(execFile);
 
 const workspaceShape = z.object({
   workspace_id: z.string(),
@@ -58,15 +55,44 @@ export const parseAgentStatus = (payload: unknown): AgentStatus => {
   return parsed.data.result.agent.agent_status;
 };
 
-const herdr = async (args: string[]): Promise<unknown> => {
+/**
+ * Every herdr call is a local socket round-trip and normally sub-second. The ceiling is
+ * here because `herdr()` is reached from `collectState()` — which the snapshot agent runs
+ * every 20 seconds — and from `tidy` inside the tick, where a hung call holds the tick
+ * lock that lock.ts can only reclaim from a *dead* holder.
+ */
+const HERDR_TIMEOUT_MS = 20_000;
+
+/**
+ * `agent start` is the exception: it spawns a claude process and waits for it to be
+ * addressable, which is seconds to tens of seconds on a cold start and legitimately
+ * slower behind a trust dialog. Bounded generously rather than tightly — a ceiling that
+ * fires on a healthy start would refuse cycles for no reason, which is worse than the
+ * wedge it guards against.
+ */
+const AGENT_START_TIMEOUT_MS = 90_000;
+
+/** `teamclaude env` is a local read; the pane cannot start without it, so it is not optional. */
+const ENV_TIMEOUT_MS = 20_000;
+
+/**
+ * direnv may evaluate a whole .envrc — a version manager, a nix shell — so this is the
+ * slowest of the local calls by a wide margin and gets the loosest ceiling.
+ */
+const DIRENV_TIMEOUT_MS = 30_000;
+
+const herdr = async (args: string[], timeoutMs = HERDR_TIMEOUT_MS): Promise<unknown> => {
   const shown = `herdr ${args.join(' ')}`;
-  const { stdout } = await run('herdr', args, { maxBuffer: 8 * 1024 * 1024 }).catch(
-    (error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw explainSpawn('herdr', error);
-      const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`${shown} failed: ${detail}`);
-    },
-  );
+  const { stdout } = await runBounded('herdr', args, {
+    timeoutMs,
+    maxBuffer: 8 * 1024 * 1024,
+    label: shown,
+  }).catch((error: unknown) => {
+    if (error instanceof ExecTimedOut) throw error;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw explainSpawn('herdr', error);
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${shown} failed: ${detail}`);
+  });
 
   // Not every herdr command answers with JSON; say which one surprised us rather
   // than surfacing a bare "Unexpected end of JSON input".
@@ -84,9 +110,7 @@ const herdr = async (args: string[]): Promise<unknown> => {
  * `claude` that Craig can talk to while still routing through the proxy.
  */
 export const teamclaudeEnv = async (): Promise<string[]> => {
-  const { stdout } = await run('teamclaude', ['env']).catch((error: unknown) => {
-    throw explainSpawn('teamclaude', error);
-  });
+  const { stdout } = await runBounded('teamclaude', ['env'], { timeoutMs: ENV_TIMEOUT_MS });
   const pairs = stdout
     .split('\n')
     .map((line) => /^export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.trim()))
@@ -116,7 +140,11 @@ export const aiceBaseUrl = async (program: Program): Promise<string | null> => {
   const cached = baseUrlCache.get(program.name);
   if (cached !== undefined) return cached;
 
-  const resolved = await run('direnv', ['exec', program.cwd, 'sh', '-c', 'printf %s "$AICE_BASE_URL"'])
+  const resolved = await runBounded(
+    'direnv',
+    ['exec', program.cwd, 'sh', '-c', 'printf %s "$AICE_BASE_URL"'],
+    { timeoutMs: DIRENV_TIMEOUT_MS },
+  )
     .then(({ stdout }) => (stdout.trim() === '' ? null : stdout.trim()))
     .catch(() => null);
 
@@ -317,7 +345,7 @@ export const startCycleAgent = async (input: {
     program.model,
     '--name',
     input.sessionName,
-  ]).catch((error: unknown) => {
+  ], AGENT_START_TIMEOUT_MS).catch((error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
     if (!detail.includes('agent_not_ready')) throw error;
     return { notReady: true };
@@ -444,12 +472,11 @@ export const readPreview = async (
   agentName: string,
 ): Promise<{ preview: Preview | null; warning: string | null }> => {
   try {
-    const { stdout } = await run('herdr', [
-      'agent', 'read', agentName,
-      '--source', 'recent-unwrapped',
-      '--lines', '40',
-      '--format', 'text',
-    ], { maxBuffer: 1024 * 1024 });
+    const { stdout } = await runBounded(
+      'herdr',
+      ['agent', 'read', agentName, '--source', 'recent-unwrapped', '--lines', '40', '--format', 'text'],
+      { timeoutMs: HERDR_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+    );
     return { preview: parsePreview(stdout), warning: null };
   } catch (error) {
     // execFile's own error message appends the failing child's raw stdout after a

@@ -117,6 +117,13 @@ const controlShape = z.object({
   maxCyclesPerDay: z.number().default(8),
   /** Hard stop on watching one cycle, so a wedged runner cannot hold its slot forever. */
   maxCycleHours: z.number().default(12),
+  /**
+   * Wall-clock ceiling on one tick. A pass that overruns releases its own lock and exits,
+   * so a wedge cannot stop admission silently. Adjustable because the cost of getting it
+   * wrong is asymmetric: too loose only delays the recovery, while too tight aborts
+   * healthy passes. A real pass measures around 8s against this default.
+   */
+  tickBudgetMinutes: z.number().default(8),
   /** Concurrent cycles across all programs; each one reserves capacity from the shared pool. */
   maxConcurrentCycles: z.number().default(2),
   /** Days before a deadline at which a program is promoted one priority step. */

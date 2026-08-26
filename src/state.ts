@@ -3,7 +3,8 @@ import { hoursToWeeklyReset, poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, effectivePriority, readControl, type Control } from './control.ts';
 import { contributingAccounts, cyclesFundableFrom, decide, type Verdict } from './decide.ts';
 import {
-  estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles, spentSince, type CycleRecord,
+  chargeForRunning, estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles,
+  snapshot, spentSince, type CycleRecord,
 } from './ledger.ts';
 import { agentNameFor, aiceBaseUrl, readPreview } from './herdr.ts';
 import { holder } from './lock.ts';
@@ -209,12 +210,14 @@ export const buildState = (input: StateInput): DrovrState => {
   const pool = poolFrom(status, ceilings, now);
   // Same window decide() uses (control.maxCycleHours, not inFlight's own 24h
   // default), so the reservation and bar segments never disagree with the verdict.
-  const running = inFlight(cycles, now, control.maxCycleHours).length;
+  const inFlightCycles = inFlight(cycles, now, control.maxCycleHours);
+  const running = inFlightCycles.length;
   const cost = estimateCycleCost(cycles, control.seedCycleCost);
-  // The same call decide() makes, reservation included: in-flight cycles have not shown
-  // up as spent quota yet, so funding off the raw pool would let N concurrent programs
-  // each claim the whole thing.
-  const funding = cyclesFundableFrom(pool, cost, running);
+  // The same call decide() makes, charged the same way. Passing the *count* here while
+  // decide() passes chargeForRunning would make every renderer over-report fundability
+  // against the verdict printed beside it — the anti-drift rule, in the one direction
+  // that reads as free capacity.
+  const funding = cyclesFundableFrom(pool, cost, chargeForRunning(inFlightCycles, snapshot(pool), cost));
   const hoursLeft = hoursToWeeklyReset(status, now);
   const windowStart = hoursLeft === null ? now : now - (168 - hoursLeft) * 3_600_000;
   const spent = spentSince(cycles, windowStart);

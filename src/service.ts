@@ -183,6 +183,14 @@ export const describeService = (
   state: ServiceState,
   lastTickAt: number | null,
   now: number,
+  /**
+   * The live tick-lock holder, when there is one. Passed in rather than read here so this
+   * stays pure and the caller keeps its own I/O — and because "overdue" and "wedged" are
+   * different diagnoses with different fixes: an agent launchd never fired needs a
+   * bootstrap, a live process holding the lock needs killing. Saying only "may be stalled"
+   * makes the reader guess between them.
+   */
+  lockedBy?: { pid: number; heldMs: number | null } | null,
 ): string => {
   if (!state.installed) {
     return 'no launchd agent has been written, so nothing runs on a schedule. Fix: drovr service install';
@@ -208,11 +216,19 @@ export const describeService = (
 
   const minutes = Math.round((now - lastTickAt) / 60_000);
   const ago = minutes < 60 ? `${minutes} minutes ago` : `${Math.floor(minutes / 60)}h${minutes % 60}m ago`;
-  const stalled =
-    state.intervalSeconds !== null && now - lastTickAt > state.intervalSeconds * 3000
-      ? ` — that is overdue for a ${state.intervalSeconds}s interval, so the agent may be stalled`
+  const overdue = state.intervalSeconds !== null && now - lastTickAt > state.intervalSeconds * 3000;
+  const stalled = overdue
+    ? ` — that is overdue for a ${state.intervalSeconds}s interval, so the agent may be stalled`
+    : '';
+  // Only when it is actually late: a lock held during a healthy pass is the normal state
+  // and reporting it would cry wolf on every other invocation.
+  const wedged =
+    overdue && lockedBy !== undefined && lockedBy !== null
+      ? `. A live process still holds the tick lock (pid ${lockedBy.pid}` +
+        `${lockedBy.heldMs === null ? '' : `, held ${Math.round(lockedBy.heldMs / 60_000)}m`}), ` +
+        `so ticks are being skipped rather than not firing. Fix: kill ${lockedBy.pid}`
       : '';
-  return `loaded${every}. Last tick completed ${ago}${stalled}${failed}`;
+  return `loaded${every}. Last tick completed ${ago}${stalled}${wedged}${failed}`;
 };
 
 /**

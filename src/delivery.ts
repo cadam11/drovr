@@ -1,9 +1,13 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { z } from 'zod';
+import { runBounded } from './exec.ts';
 import type { SendResult } from './nudge.ts';
 
-const run = promisify(execFile);
+/**
+ * Reached only from `drovr notify`, so a hang here costs a person their prompt rather
+ * than the supervisor its lock — but bounded on the same principle: execFile has no
+ * default timeout, so leaving one call unbounded makes the rule a matter of memory.
+ */
+const AWS_TIMEOUT_MS = 20_000;
 
 export type DeliveryVerdict = {
   state: 'delivered' | 'failed' | 'unknown';
@@ -44,10 +48,10 @@ export const findResponse = (messages: string[], messageId: string): string | nu
 };
 
 const identity = async (): Promise<{ account: string; region: string } | null> => {
-  const account = await run('aws', ['sts', 'get-caller-identity', '--query', 'Account', '--output', 'text'])
+  const account = await runBounded('aws', ['sts', 'get-caller-identity', '--query', 'Account', '--output', 'text'], { timeoutMs: AWS_TIMEOUT_MS })
     .then(({ stdout }) => stdout.trim())
     .catch(() => '');
-  const region = await run('aws', ['configure', 'get', 'region'])
+  const region = await runBounded('aws', ['configure', 'get', 'region'], { timeoutMs: AWS_TIMEOUT_MS })
     .then(({ stdout }) => stdout.trim())
     .catch(() => '');
   if (account === '' || region === '') return null;
@@ -55,7 +59,7 @@ const identity = async (): Promise<{ account: string; region: string } | null> =
 };
 
 const eventsSince = async (group: string, sinceMs: number): Promise<string[]> => {
-  const { stdout } = await run('aws', [
+  const { stdout } = await runBounded('aws', [
     'logs',
     'filter-log-events',
     '--log-group-name',
@@ -66,7 +70,7 @@ const eventsSince = async (group: string, sinceMs: number): Promise<string[]> =>
     'events[].message',
     '--output',
     'json',
-  ]).catch(() => ({ stdout: '[]' }));
+  ], { timeoutMs: AWS_TIMEOUT_MS }).catch(() => ({ stdout: '[]' }));
   const parsed = z.array(z.string()).safeParse(JSON.parse(stdout || '[]'));
   return parsed.success ? parsed.data : [];
 };

@@ -1,11 +1,17 @@
-import { execFile } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { runBounded } from './exec.ts';
 import { z } from 'zod';
 import { ensureDirs, paths } from './paths.ts';
 
-const run = promisify(execFile);
+
+/**
+ * The alerting path is the worst place to leave unbounded: `textCraig` is called from
+ * inside the tick (a neglected ask, a stalled runner), so an `aws` call that hangs holds
+ * the tick lock — the thing whose job is to say something is wrong takes the supervisor
+ * down instead. 30s, because it is a network call and best-effort either way.
+ */
+const SEND_TIMEOUT_MS = 30_000;
 
 export type SendResult = {
   sent: boolean;
@@ -76,7 +82,9 @@ export const textCraig = async (
   const via = originationNumber === null ? 'sns' : 'end-user-messaging';
   if (phoneNumber === null) return { sent: false, messageId: null, via };
   try {
-    const { stdout } = await run('aws', sendArgs(phoneNumber, message, originationNumber));
+    const { stdout } = await runBounded('aws', sendArgs(phoneNumber, message, originationNumber), {
+      timeoutMs: SEND_TIMEOUT_MS,
+    });
     return { sent: true, messageId: messageIdOf(stdout), via };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

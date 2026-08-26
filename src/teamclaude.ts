@@ -1,9 +1,15 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { z } from 'zod';
-import { explainSpawn } from './exec.ts';
+import { runBounded } from './exec.ts';
 
-const run = promisify(execFile);
+/**
+ * `readStatus` runs *first* in both `tick()` and `collectState()`, so an unbounded one
+ * was the most reachable way to wedge the supervisor: the tick lock would be held by a
+ * live process blocked on a pipe, which lock.ts cannot reclaim.
+ *
+ * 20s is generous for a local daemon read that is normally sub-second, and leaves room
+ * for teamclaude to probe an account before answering.
+ */
+const STATUS_TIMEOUT_MS = 20_000;
 
 /**
  * teamclaude reports each quota bucket as a used-fraction (0..1) plus an epoch-ms
@@ -75,10 +81,9 @@ export const parseStatus = (raw: unknown): TeamclaudeStatus => {
 };
 
 export const readStatus = async (bin = 'teamclaude'): Promise<TeamclaudeStatus> => {
-  try {
-    const { stdout } = await run(bin, ['status', '--json'], { maxBuffer: 8 * 1024 * 1024 });
-    return parseStatus(JSON.parse(stdout));
-  } catch (error) {
-    throw explainSpawn(bin, error);
-  }
+  const { stdout } = await runBounded(bin, ['status', '--json'], {
+    timeoutMs: STATUS_TIMEOUT_MS,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  return parseStatus(JSON.parse(stdout));
 };

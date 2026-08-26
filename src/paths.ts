@@ -15,6 +15,8 @@ export const paths = () => {
      * `publishedAt`, which only advances on an actual publish (see publish-snapshot.ts). */
     snapshotRun: join(base, 'snapshot-run.json'),
     decisions: join(base, 'decisions.jsonl'),
+    /** Sampled per tick: the only record of how much of the pool Craig himself takes. */
+    usage: join(base, 'usage.jsonl'),
     lastTick: join(base, 'last-tick.json'),
     tickLock: join(base, 'tick.lock'),
     programLock: (program: string) => join(base, 'programs', program, 'cycle.lock'),

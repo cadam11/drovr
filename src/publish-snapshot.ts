@@ -1,13 +1,19 @@
-import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
-import { explainSpawn } from './exec.ts';
+import { explainSpawn, runBounded } from './exec.ts';
 import { payload, payloadHash, shouldPublish } from './panel.ts';
 import { paths } from './paths.ts';
 import { collectState } from './state.ts';
 
-const run = promisify(execFile);
+
+/**
+ * The snapshot agent fires every 20 seconds, so it is the highest-frequency spawner in
+ * drovr — and it publishes over the network. An unbounded publish here does not wedge the
+ * tick (a separate launchd agent) but it does stall the panel behind a call that will
+ * never return, which the page reports as a dead Mac.
+ */
+const VERSION_TIMEOUT_MS = 20_000;
+const SNAPSHOT_PUBLISH_TIMEOUT_MS = 60_000;
 
 /** aice rejects any JSON outside assets/, and only 0.16.0+ knows --ttl. */
 const DATA_PATH = 'assets/snapshot.json';
@@ -80,14 +86,17 @@ const touchRunMarker = (path: string, now: number): void => {
 };
 
 const aiceVersion = async (): Promise<string> => {
-  const { stdout } = await run('aice', ['version']).catch((error: unknown) => {
+  const { stdout } = await runBounded('aice', ['version'], { timeoutMs: VERSION_TIMEOUT_MS }).catch((error: unknown) => {
     throw explainSpawn('aice', error);
   });
   return stdout;
 };
 
 const publishToAice = async (file: string): Promise<void> => {
-  await run('direnv', publishArgs(file), { cwd: DROVR_REPO }).catch((error: unknown) => {
+  await runBounded('direnv', publishArgs(file), {
+    timeoutMs: SNAPSHOT_PUBLISH_TIMEOUT_MS,
+    cwd: DROVR_REPO,
+  }).catch((error: unknown) => {
     throw explainSpawn('direnv', error);
   });
 };

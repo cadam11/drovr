@@ -11,7 +11,7 @@ import { nudgeIfNeglected, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
 
 import { poolFrom } from './capacity.ts';
-import { byPriority, ceilingsFor, readControl, type Program } from './control.ts';
+import { byPriority, ceilingsFor, readControl, type Control, type Program } from './control.ts';
 import {
   MAX_INTENTS_PER_TICK,
   isIntent,
@@ -26,9 +26,10 @@ import {
   setEnabled,
   setMode,
 } from './keys.ts';
-import { acquire, holder, release } from './lock.ts';
+import { acquire, heldBy, holder, release } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { readStatus } from './teamclaude.ts';
+import { appendSample, sampleUsage } from './usage.ts';
 import { renderStatus } from './render.ts';
 import { publishStatus } from './publish.ts';
 import { DROVR_REPO } from './publish-snapshot.ts';
@@ -314,13 +315,123 @@ export const drainIntents = async (now = Date.now()): Promise<Drained> => {
   return { applied, rejected, capped: left > 0 };
 };
 
+/**
+ * A hard wall-clock ceiling on one pass, and the thing that makes the tick lock
+ * impossible to hold forever.
+ *
+ * Bounding every subprocess (see exec.ts) removes the causes of a wedge that were known
+ * about. This removes the *consequence* of one that was not: a pass that overruns
+ * releases its own lock, says so, and exits non-zero, so the next launchd firing finds a
+ * free lock rather than a live process holding one and logging
+ * `another tick is still evaluating` forever while admission silently stops.
+ *
+ * The holder self-terminating is deliberately the only way this clears. `lock.ts` will
+ * not reclaim a lock from a live holder, because two concurrent ticks would double-apply
+ * panel intents and race the ledger — a supervisor that quietly does a thing twice is
+ * worse than one that has stopped and said so.
+ *
+ * `process.exit` from a timer, rather than a flag some later `await` checks: an overrun is
+ * by definition a pass that is not reaching its next check. The timer still fires because
+ * a pass blocked on a subprocess is blocked on I/O, not on the event loop. `finally` does
+ * not run on exit, so the release is explicit here and must stay that way.
+ *
+ * The default is 8 minutes against a 600s schedule: comfortably longer than any healthy
+ * pass (a real one measures around 8s; the intent drain is bounded near 60s and the
+ * per-program aice and publish calls at 20-60s each), and short enough that at most one
+ * firing is skipped. `control.tickBudgetMinutes` moves it, because the cost of getting it
+ * wrong is asymmetric — too loose only delays recovery, too tight aborts healthy passes.
+ */
+const tickBudgetMs = (control: Control): number => control.tickBudgetMinutes * 60_000;
+
+/**
+ * Minutes, until a minute is the wrong unit — the same rule decide.ts's untilText follows.
+ * "held 0m" for a ten-second hold and "overran 1m" for a thirty-second budget are both
+ * the report contradicting the number it was given.
+ */
+const durationText = (ms: number): string =>
+  ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`;
+
+/**
+ * An unattended supervisor that has stopped needs to say so somewhere Craig will see at
+ * 4am, and stdout under launchd is not that place. Best-effort on every path — reading the
+ * control file can throw, and this runs *after* the lock is already free.
+ */
+const notifyOverrun = async (controlPath: string, message: string): Promise<void> => {
+  try {
+    await textCraig(readControl(controlPath).phoneNumber, message);
+  } catch (error) {
+    console.error(`could not text the overrun: ${explain(error)}`);
+  }
+};
+
+/**
+ * Everything the watchdog does except exit, split out so the part that matters is
+ * testable: `process.exit` cannot be exercised in-process, and the release is the whole
+ * point. Returns the message it reported.
+ *
+ * The order is the guarantee. Freeing the lock is the job and nothing after it may
+ * prevent it, so the release comes first and each later step is separately guarded. An
+ * earlier draft read `control.json` for the phone number *before* releasing — a malformed
+ * control file would then have thrown inside the timer and left the lock held, which is
+ * precisely the state this exists to end.
+ */
+export const releaseOverrunningTick = async (
+  lockPath: string,
+  controlPath: string,
+  budgetMs: number,
+): Promise<string> => {
+  const message =
+    `drovr: a tick overran ${durationText(budgetMs)} and was aborted ` +
+    `(pid ${process.pid}). Its lock is released, so the next firing runs. ` +
+    'Check ~/.drovr/logs/tick.err.';
+  console.error(message);
+
+  try {
+    release(lockPath);
+  } catch (error) {
+    console.error(`could not release the tick lock: ${explain(error)}`);
+  }
+
+  await notifyOverrun(controlPath, message);
+  return message;
+};
+
 export const tick = async (): Promise<void> => {
   const p = paths();
   ensureDirs();
   if (!acquire(p.tickLock)) {
-    console.log('another tick is still evaluating');
+    // Naming the age is the difference between "busy" and "wedged". Held longer than a
+    // pass can legitimately take means the holder is stuck and its own watchdog has not
+    // fired — the one state nothing here can resolve, so it is reported loudly.
+    //
+    // One read, not three: the holder can change between them, and a message naming a pid
+    // that no longer holds the lock is worse than one naming none.
+    const held = heldBy(p.tickLock);
+    const heldMs = held === null || held.at === null ? null : Math.max(0, Date.now() - held.at);
+    const age = heldMs === null ? 'unknown age' : durationText(heldMs);
+    const line = `another tick is still evaluating (pid ${held?.pid ?? 'unknown'}, held ${age})`;
+    const budget = tickBudgetMs(readControl(p.control));
+    if (heldMs !== null && heldMs > budget) {
+      console.error(
+        `${line} — longer than the ${durationText(budget)} budget, so it is wedged ` +
+          `rather than busy. Clear it with "kill ${held?.pid}"; the next firing then runs.`,
+      );
+    } else {
+      console.log(line);
+    }
     return;
   }
+
+  // Armed before any I/O, so there is no window where a pass holds the lock unwatched.
+  // The budget is read here rather than inside the timer: a control file that becomes
+  // unreadable mid-pass must not disarm the watchdog.
+  const budgetMs = tickBudgetMs(readControl(p.control));
+
+  // unref()'d: a healthy pass must not be kept alive by its own watchdog.
+  const watchdog = setTimeout(() => {
+    void releaseOverrunningTick(p.tickLock, p.control, budgetMs).then(() => process.exit(1));
+  }, budgetMs);
+  watchdog.unref();
 
   try {
     const now = Date.now();
@@ -399,9 +510,22 @@ export const tick = async (): Promise<void> => {
         asksRaised: 0,
       });
     }
+    // Craig's own consumption is the pool's largest draw and nothing reconstructs it
+    // after the fact — both terms are fractions of a window that resets. Sampled here,
+    // read by `drovr usage`, and deliberately feeding no gate.
+    //
+    // Logged and swallowed on purpose: a full disk must cost the measurement, never the
+    // tick. This is the last thing a pass does and admission has already happened.
+    try {
+      appendSample(p.usage, sampleUsage(status, now));
+    } catch (error) {
+      console.error(`usage sample not recorded: ${explain(error)}. Admission is unaffected.`);
+    }
+
     // A completed pass, whether or not any program was enabled to decide about.
     stampTick(p.lastTick, Date.now());
   } finally {
+    clearTimeout(watchdog);
     release(p.tickLock);
   }
 };

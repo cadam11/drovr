@@ -198,26 +198,57 @@ const couplingNote = (funding: Funding): string | null => {
 };
 
 /**
- * Linear entitlement across the weekly window, measured against drovr's own
- * ledger rather than account usage: Craig's foreground work constrains the pool
- * through the ceiling without also counting against the loop's pace.
+ * Cycles drovr may always run right after a reset, whatever the line says. Linear
+ * entitlement from zero refuses the first cycle of every window — at 1% elapsed the line
+ * sits near zero while one finished cycle is already above it — which would turn a gate
+ * meant to smooth the week into one that never lets it start. Short-term bursting is
+ * legitimate; sustained over-spending is what this gate is for.
  */
-const paceExceeded = (
-  input: DecideInput,
-  weeklyCeiling: number,
-  usableAccounts: number,
-): string | null => {
+const PACE_BURST_CYCLES = 2;
+
+/**
+ * Is the loop ahead of a linear burn of its own weekly allowance?
+ *
+ * The allowance is `pool + spent`: what is still reachable under the ceiling, plus what
+ * drovr already spent to get there. That is the whole re-basing. The previous version
+ * granted `weeklyCeiling × usableAccounts × elapsed` — the ceiling as though drovr owned
+ * all of it — while measuring spend from drovr's ledger alone. Craig's foreground work
+ * counted on neither side, so the entitlement was systematically too large and the gate
+ * could not fire: measured across 1008 decisions in the seven days to 2026-08-26, it
+ * fired **zero** times while the daily cap refused 267 cycles doing its job for it.
+ *
+ * Deriving the allowance from `pool` instead fixes three things at once. Both sides now
+ * sit on the same basis — what drovr can actually reach — so the comparison means
+ * something. Craig's usage is already deducted, per account, by capacity.ts, so this
+ * gate inherits the clamp rather than re-deriving it and inherits the min-of-sums rule
+ * with it. And it needs neither `weeklyCeiling` nor `usableAccounts`, because the pool
+ * encodes both.
+ *
+ * It only ever holds, and it clears itself: the line rises with elapsed time and the
+ * allowance rises again at the reset. Nothing has to be cleared by hand.
+ */
+const paceExceeded = (input: DecideInput, pool: Pool, cost: CycleCost): string | null => {
   const hoursLeft = hoursToWeeklyReset(input.status, input.now);
   if (hoursLeft === null) return null;
 
   const elapsed = Math.min(1, Math.max(0, (WEEKLY_WINDOW_HOURS - hoursLeft) / WEEKLY_WINDOW_HOURS));
-  const entitlement = weeklyCeiling * usableAccounts * elapsed;
   const windowStart = input.now - (WEEKLY_WINDOW_HOURS - hoursLeft) * 3_600_000;
   const spent = spentSince(input.cycles, windowStart);
 
-  const over = (['fable', 'general'] as const).find((bucket) => spent[bucket] > entitlement);
+  // Session is deliberately absent: it is a five-hour window, so there is no week to
+  // pace it across and the affordability gate already refuses when it binds.
+  const over = (['fable', 'general'] as const).find((bucket) => {
+    const allowance = pool[bucket] + spent[bucket];
+    return spent[bucket] > Math.max(allowance * elapsed, cost[bucket] * PACE_BURST_CYCLES);
+  });
   if (over === undefined) return null;
-  return `ahead of pace on ${over} (${spent[over].toFixed(2)} spent vs ${entitlement.toFixed(2)} entitled, all programs)`;
+
+  const allowance = pool[over] + spent[over];
+  return (
+    `ahead of pace on ${over} — ${spent[over].toFixed(2)} spent of a ${allowance.toFixed(2)} ` +
+    `weekly allowance at ${Math.round(elapsed * 100)}% through the window (all programs). ` +
+    `Clears as the week catches up, or at the reset in ${Math.round(hoursLeft)}h`
+  );
 };
 
 /**
@@ -255,11 +286,19 @@ const hold = (
     funding === null || pool === null ? (pool?.earliestRecoveryAt ?? null) : pool.resetAt[funding.binding],
 });
 
-export const decide = (input: DecideInput): Decision => {
-  const { control, cycles, program, now } = input;
-  const mine = cycles.filter((cycle) => cycle.program === program);
-
-  if (control.mode === 'off') return halt('mode is off');
+/**
+ * Is this program in a fit state to run at all? Null means yes.
+ *
+ * Separated from the capacity gates below because they answer a different question about
+ * a different resource, and fusing them made one function of eleven gates — the shape the
+ * allocation review flagged (docs/allocation-review.md, finding 5). Nothing here reads the
+ * pool, which is the test of the seam: a program that is disabled, latched, paused or
+ * owed an answer is not going to run however much quota exists, so none of this should
+ * have to wait on a teamclaude read to say so.
+ */
+export const programReadiness = (input: DecideInput): Decision | null => {
+  const { control, program, now } = input;
+  const mine = input.cycles.filter((cycle) => cycle.program === program);
 
   // Tick skips disabled programs, so reporting anything but STOP here would promise
   // a cycle that is never going to start.
@@ -282,9 +321,6 @@ export const decide = (input: DecideInput): Decision => {
         `or run "drovr run-cycle ${program}" to try immediately.`,
     );
   }
-
-  const ceilings = ceilingsFor(control);
-  if (ceilings === null) return halt('mode is off');
 
   if (isPaused(control, now)) return hold(`paused until ${control.pauseUntil}`, null, null);
 
@@ -313,10 +349,26 @@ export const decide = (input: DecideInput): Decision => {
     }
   }
 
-  const pool = poolFrom(input.status, ceilings, now);
-  if (pool.usableAccounts === 0) return hold('no usable accounts', pool, null);
+  return null;
+};
 
-  const running = inFlight(cycles, now, control.maxCycleHours);
+/**
+ * The limits that are about sharing rather than about quota: one cycle per program, a
+ * global concurrency cap, a per-program daily cap, and an answer Craig owes. Null means
+ * none of them refuse.
+ *
+ * These take the pool only to attach it to the hold, so every WAIT still carries the
+ * numbers the renderers draw. They do not read it.
+ */
+const admissionLimits = (
+  input: DecideInput,
+  pool: Pool,
+  running: CycleRecord[],
+): Decision | null => {
+  const { control, program, now } = input;
+  const mine = input.cycles.filter((cycle) => cycle.program === program);
+  const entry = control.programs.find((candidate) => candidate.name === program);
+
   if (running.some((cycle) => cycle.program === program)) {
     return hold('a cycle for this program is already in flight', pool, null);
   }
@@ -333,7 +385,7 @@ export const decide = (input: DecideInput): Decision => {
   if (today >= cap) {
     return hold(
       `daily cap reached (${today}/${cap} cycles that did work). Raise it with ` +
-        `\"drovr cap ${program} <n>\"`,
+        `"drovr cap ${program} <n>"`,
       pool,
       null,
     );
@@ -348,17 +400,28 @@ export const decide = (input: DecideInput): Decision => {
       `waiting on you — ${owed.asks} ask(s) raised ${Math.round((now - owed.at) / 60_000)}m ago ` +
         'and every cycle since has come back blocked' +
         (input.asksShared === false
-          ? '. Shared notes are off on that page, so answer and run \"drovr start ' + program + '\"'
+          ? `. Shared notes are off on that page, so answer and run "drovr start ${program}"`
           : ''),
       pool,
       null,
     );
   }
 
-  const offPace = paceExceeded(input, ceilings.weekly, pool.usableAccounts);
+  return null;
+};
+
+/**
+ * Can the pool fund a whole cycle plus a reserve, and is the loop within its weekly
+ * pace? The only two gates that read quota, and the only one of the three layers that
+ * can return GO.
+ */
+const capacityVerdict = (input: DecideInput, pool: Pool, running: CycleRecord[]): Decision => {
+  const { control, now } = input;
+  const cost = estimateCycleCost(input.cycles, control.seedCycleCost);
+
+  const offPace = paceExceeded(input, pool, cost);
   if (offPace !== null) return hold(offPace, pool, null);
 
-  const cost = estimateCycleCost(cycles, control.seedCycleCost);
   // Not running.length: a cycle already draining more than it was priced at has to
   // stop admission while it happens, not once it has finished and been measured.
   const charged = chargeForRunning(running, snapshot(pool), cost);
@@ -389,6 +452,28 @@ export const decide = (input: DecideInput): Decision => {
     binding: funding.binding,
     earliestRecoveryAt: pool.earliestRecoveryAt,
   };
+};
+
+/**
+ * Three layers, composed in hardness order: is the program fit to run, is it allowed a
+ * slot, can the pool afford it. Each is pure and independently testable; all the I/O
+ * stays in the caller.
+ */
+export const decide = (input: DecideInput): Decision => {
+  const ceilings = ceilingsFor(input.control);
+  if (ceilings === null) return halt('mode is off');
+
+  const notReady = programReadiness(input);
+  if (notReady !== null) return notReady;
+
+  const pool = poolFrom(input.status, ceilings, input.now);
+  if (pool.usableAccounts === 0) return hold('no usable accounts', pool, null);
+
+  const running = inFlight(input.cycles, input.now, input.control.maxCycleHours);
+  const limited = admissionLimits(input, pool, running);
+  if (limited !== null) return limited;
+
+  return capacityVerdict(input, pool, running);
 };
 
 export const poolSnapshot = snapshot;

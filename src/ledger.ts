@@ -173,10 +173,25 @@ export const chargeForRunning = (
   }, 0);
 };
 
-/** Drovr's own spend inside the current weekly window — the pace-keeping numerator. */
-export const spentSince = (cycles: CycleRecord[], windowStart: number): CycleCost => {
+/**
+ * Drovr's own spend inside the current weekly window — the pace-keeping numerator.
+ *
+ * `until` bounds it to cycles that had *finished* by a past instant, which is what a
+ * historical usage sample has to be compared against: a cycle still running had not yet
+ * shown up in the quota that sample recorded. Unbounded by default, because every live
+ * caller means "everything in the window so far".
+ */
+export const spentSince = (
+  cycles: CycleRecord[],
+  windowStart: number,
+  until = Number.POSITIVE_INFINITY,
+): CycleCost => {
   const spends = cycles
-    .filter((cycle) => Date.parse(cycle.startedAt) >= windowStart)
+    .filter(
+      (cycle) =>
+        Date.parse(cycle.startedAt) >= windowStart &&
+        (cycle.endedAt === null || Date.parse(cycle.endedAt) <= until),
+    )
     .map(spendOf);
   return {
     fable: spends.reduce((total, spend) => total + spend.fable, 0),

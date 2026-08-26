@@ -167,17 +167,38 @@ cut off mid-flight.
 Reset-aware waiting falls out of this for free: if the pool can't fund a full cycle it waits, and
 after the next reset it can. No separate "should I wait for the reset?" logic is needed.
 
-**Pace** — is the loop ahead of its own linear weekly budget?
+**Pace** — is the loop ahead of a linear burn of its own weekly allowance?
 
 ```
 elapsed     = (168 - hoursToWeeklyReset) / 168
-entitlement = weeklyCeiling × usableAccounts × elapsed
 spent       = Σ cycle costs since the window opened      (drovr's ledger, not account usage)
+allowance   = pool[bucket] + spent                       (what drovr could reach, plus what it took)
+line        = max(allowance × elapsed, cycleCost × 2)
+off-pace if   spent > line
 ```
 
-Measuring against drovr's own ledger rather than total account usage means Craig's foreground work
-constrains the pool (through the ceiling) without also counting against the loop's pace. Without
-this gate a threshold-only policy burns Monday to Wednesday and idles Thursday to Sunday.
+Without this gate a threshold-only policy burns Monday to Wednesday and idles Thursday to Sunday.
+
+The allowance is derived from the **pool**, not from the ceiling. An earlier version granted
+`weeklyCeiling × usableAccounts × elapsed` while measuring spend from drovr's ledger alone, so
+Craig's foreground work counted on neither side. That made the entitlement systematically too
+large and the gate could not fire: measured across 1008 decisions in the seven days to
+2026-08-26 it fired **zero** times, while the daily cap refused 267 cycles doing its job for it.
+
+Deriving the allowance from `pool + spent` puts both sides on the same basis — what drovr can
+actually reach. Craig's usage is already deducted per account by `capacity.ts`, so this gate
+inherits that clamp instead of re-deriving it, and inherits the min-of-sums rule with it. It also
+needs neither `weeklyCeiling` nor `usableAccounts`, because the pool encodes both. When Craig has
+spent nothing the two formulations are identical, so the change is a generalisation rather than a
+different policy: it diverges exactly as far as he is actually consuming the pool.
+
+The `cycleCost × 2` floor is the burst allowance. Linear entitlement from zero refuses the first
+cycle of every window — at 1% elapsed the line sits near zero while one finished cycle is already
+above it — which would turn a gate meant to smooth the week into one that never lets it start.
+Short-term bursting is legitimate; sustained over-spending is what the gate is for.
+
+Session is deliberately absent. It is a five-hour window, so there is no week to pace it across,
+and affordability already refuses when it binds.
 
 ## Ceilings are reserves
 
@@ -223,8 +244,21 @@ once fundability became a per-account sum, and the helper that did it is gone.
 
 **Scope of each gate differs.** Pace and reservations are global (one pool); daily caps and
 stuck detection are per program (one program going quiet should not stop the others). The daily
-cap doubles as the fairness mechanism — once a high-priority program exhausts its allowance, the
-slot falls to the next one down, so a low-priority program is throttled but never starved.
+cap is intended as the fairness mechanism — once a program exhausts its allowance the slot falls
+to the next one down, so a program is throttled but never starved.
+
+That intent has never been tested, because the programs have never competed. Over the seven days
+to 2026-08-26 the concurrency cap — the only gate where one program can displace another — bound
+**once in 1008 decisions**; 467 refusals were a program waiting on its own cycle and 267 were the
+daily cap. `priority` is used in exactly one place, as the sort key in `byPriority`, and sort order
+only changes an outcome when two programs both say GO into a full slot. The observed shares agree
+it is inert: joinery at `priority: 9` received 39 GO verdicts against aice-x's 31 at `priority: 3`.
+What determines a program's share is which one happens to be free at each tick.
+
+So `priority` should be read as *a deterministic tiebreak, exercised about once a week*, not as an
+entitlement. `docs/allocation-review.md` argues at length why a weighted fair-queuing layer over
+it would be machinery for contention that does not occur — the pool is not contested between
+programs, it is contested between drovr and Craig. That is what `usage.jsonl` exists to measure.
 
 ### Deadline as priority pressure
 
@@ -232,6 +266,47 @@ A static priority number cannot express "needs to be done by September." Rather 
 a program with a `deadline` inside the horizon is promoted one priority step, and keeps the
 promotion while overdue. One number, legible in `drovr status`, and it decays naturally when the
 date stops mattering (by the program being finished or reconfigured).
+
+## Staying up unattended
+
+drovr runs from launchd every 600s with nobody watching, so the failure that matters most is not
+a wrong decision — it is a silent stop. There were two ways to get one, and they compounded.
+
+**`execFile` has no default timeout.** Every subprocess drovr spawned could hang forever: the
+`teamclaude status --json` that runs *first* in both `tick()` and `collectState()`, every `herdr`
+socket call, `teamclaude env`, the direnv probe, the preview read, `aws` on the alerting path, and
+— least documented and most reachable — the `aice publish` inside the tick loop, once per program,
+over the network. All of them now go through `runBounded` in `exec.ts`, which takes the ceiling as
+a required parameter. Making it a parameter rather than a convention is the point: it had been
+forgotten seven times.
+
+**A lock is only reclaimed from a dead holder.** `lock.ts` checks `process.kill(pid, 0)`, which
+says nothing about a live process blocked forever on a pipe. So a hung child did not just fail one
+tick, it held the tick lock permanently, and every later firing logged `another tick is still
+evaluating` while admission stopped with no other symptom.
+
+The fix is not to steal the lock. Two concurrent ticks double-apply panel intents and race the
+ledger, and a supervisor that quietly does a thing twice is worse than one that has stopped and
+said so. Instead the holder bounds *itself*: `tick()` arms a watchdog for
+`control.tickBudgetMinutes` (default 8, against a measured healthy pass of about 8 seconds), and a
+pass that overruns releases its own lock, texts Craig, and exits non-zero. The next firing then
+finds a free lock.
+
+`process.exit` from a timer rather than a flag some later `await` checks, because an overrun is by
+definition a pass that is not reaching its next check — and the timer still fires, since a pass
+blocked on a subprocess is blocked on I/O, not on the event loop.
+
+Three layers, in the order they engage:
+
+| Layer | Catches | Cost when it fires |
+|---|---|---|
+| `runBounded` ceilings | a hung child | that one call fails, the tick ends cleanly |
+| tick watchdog | a pass wedged for any other reason | one tick lost, lock freed, Craig texted |
+| lock age in `service status` | a holder whose own watchdog did not fire | reported with the pid and `kill` command |
+
+The third is reporting rather than recovery, deliberately. Nothing left can resolve that state
+automatically without risking concurrent ticks, so `drovr service status` names the pid and the
+command instead of guessing.
 
 ## Durability and the human interface
 

@@ -27,6 +27,8 @@ export const AGENT_NOTES = {
     control: '~/.drovr/control.json — source of truth, re-read every tick; safe to edit directly',
     cycles: '~/.drovr/cycles.jsonl — one record when a cycle starts, one when it ends',
     decisions: '~/.drovr/decisions.jsonl — every tick, its verdict and reason',
+    usage: '~/.drovr/usage.jsonl — one sample of raw account usage per tick, so Craig\'s own '
+      + 'share of the pool can be measured rather than assumed. Feeds no gate.',
     logs: '~/.drovr/logs/ — per-cycle stdout',
   },
   verdicts: {
@@ -284,6 +286,23 @@ export const COMMANDS: Command[] = [
         describes: 'structured cycle records, with the meaning of each exit reason included',
       },
     ],
+  },
+  {
+    name: 'usage',
+    usage: 'drovr usage [--json]',
+    summary: "how much of the pool Craig's own sessions take, against the reserve held for them",
+    details: [
+      'The mode ceilings exist to keep capacity free for Craig\'s foreground work. This is the',
+      'only place drovr says whether the fraction he picked actually covers it. Measured from',
+      'one usage sample per tick, so it is empty until the tick has fired a few times, and',
+      'reports nothing rather than a confident number below 24 samples.',
+      '',
+      'yours = total account usage minus what drovr\'s own ledger accounts for, in account-units',
+      '(N usable accounts = N.0). The p90 peak is what a reserve would have to cover; compare it',
+      'to the reserve percentage on the line above. Nothing here feeds an admission decision —',
+      'a gate that moved with measured behaviour would be a feedback loop.',
+    ],
+    flags: [{ flag: '--json', describes: 'per-bucket split and the p90 peak, with units named inline' }],
   },
   {
     name: 'service',
