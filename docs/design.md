@@ -1,5 +1,20 @@
 # drovr — design
 
+## The contract
+
+Craig's allocation policy, in his own terms. Every mechanism below serves one of these three
+sentences; when observed behaviour surprises him, check it against them before reaching for a
+new mechanism — this intent has been re-derived from scratch by enough sessions that it now
+lives here.
+
+1. **When the pooled accounts have capacity, programs run.**
+2. **As capacity drains, lower-priority programs pause first.** The last fundable cycle always
+   goes to the most important program (the priority waterline, below).
+3. **The mode ceiling is Craig's reserve.** He uses the same accounts by hand, so drovr never
+   pushes total usage past the ceiling — at `normal`, ~45% of every window stays his whatever
+   the programs do. (`reserveCycles` is a different thing despite the name: runway so an
+   admitted cycle can land, not Craig's share.)
+
 ## The problem
 
 A `/project-loop` program should run for weeks, autonomously, without burning a week's Anthropic
@@ -127,8 +142,8 @@ But they are not interchangeable either, and treating them as symmetric caused t
 **Recovery time depends on which bucket binds.** A 5h window recovers in hours; a weekly one in
 days. The first version reported the soonest reset across all three, so a weekly-bound wait
 would claim it recovered in two hours. `Pool` now carries a reset per bucket, `cyclesFundableFrom`
-returns which bucket binds, and the WAIT reason names it: `general tightest — funds 0.40 cycles,
-need 1.50, recovers in 90h`.
+returns which bucket binds, and the WAIT reason names it: `general is tightest: room for 0.40
+cycles, a start needs 1.50 (0 running); more room in 90h`.
 
 With capacity summed per account there is a bucket per account to choose between. Above zero the
 reported bucket is the one pinning the account that would serve next — the one with the most to
@@ -278,10 +293,35 @@ only changes an outcome when two programs both say GO into a full slot. The obse
 it is inert: joinery at `priority: 9` received 39 GO verdicts against aice-x's 31 at `priority: 3`.
 What determines a program's share is which one happens to be free at each tick.
 
-So `priority` should be read as *a deterministic tiebreak, exercised about once a week*, not as an
+So `priority` as a *sort key* is a deterministic tiebreak, exercised about once a week, not an
 entitlement. `docs/allocation-review.md` argues at length why a weighted fair-queuing layer over
 it would be machinery for contention that does not occur — the pool is not contested between
 programs, it is contested between drovr and Craig. That is what `usage.jsonl` exists to measure.
+
+### The priority waterline
+
+What the sort key could not do is order the *drain*: with one admission bar for everyone, the
+last fundable cycle went to whichever program happened to be free at that tick. Measured
+2026-08-27: aice-x (priority 3) took the pool's final cycle at 13:37 while sunnyt (priority 1)
+was held for ten minutes by its own leftover pane; sunnyt then waited five hours on the session
+reset. That inverts the contract's second sentence.
+
+So each priority step down raises the admission bar by `priorityStepCycles` (default 0.25):
+
+```
+required = base(binding) + rank × priorityStepCycles
+```
+
+`rank` counts *distinct* effective priorities above the program among enabled programs
+(`control.ts:priorityRank`), so ties share a bar and a disabled program deepens nobody's.
+A flush pool clears every bar and all programs run; as it drains they pause bottom-up, and
+resets bring them back in priority order for free. When the waterline alone is what refuses —
+the pool clears the rank-0 bar but not this program's — the reason says who the room is being
+kept for: `room for 1.08 cycles, held back for sunnyt — joinery starts above 1.50`.
+
+This is not the fair-queuing the review rejected: no weights, no service history, no quantum.
+It is still admission-only — one more term in the bar a program must clear — and it converts
+`priority` from a knob that measured inert into the drain order Craig always meant by it.
 
 ### Deadline as priority pressure
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contributingAccounts, cyclesFundableFrom, decide, programReadiness } from '../src/decide.ts';
+import { contributingAccounts, cyclesFundableFrom, decide, programReadiness, requiredCycles } from '../src/decide.ts';
 import { poolFrom } from '../src/capacity.ts';
 import { inFlight, type CycleRecord } from '../src/ledger.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
@@ -75,7 +75,7 @@ test('a pool that cannot fund a whole cycle plus reserve waits', () => {
   const thin = status([account({ name: 'a', fable: 0.5, general: 0.5, session: 0.35 })]);
   const decision = run({ status: thin });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /tightest — funds/);
+  assert.match(decision.reason, /is tightest: room for/);
 });
 
 test('the reserve is what separates admitting from refusing a marginal pool', () => {
@@ -85,7 +85,7 @@ test('the reserve is what separates admitting from refusing a marginal pool', ()
   const strict = run({ status: marginal, control: control({ reserveCycles: 0.5 }) });
   const lax = run({ status: marginal, control: control({ reserveCycles: 0 }) });
   assert.equal(strict.verdict, 'WAIT', strict.reason);
-  assert.match(strict.reason, /fable tightest/);
+  assert.match(strict.reason, /fable is tightest/);
   assert.equal(lax.verdict, 'GO', lax.reason);
 });
 
@@ -233,15 +233,15 @@ test('the coupled pool holds the loop and the reason names who is pinned by what
   assert.equal(decision.binding, 'session');
   assert.equal(decision.earliestRecoveryAt, NOW + 2 * HOUR);
   assert.match(decision.reason, /no account has room in all three buckets/);
-  assert.match(decision.reason, /session pins craig\.adam and karen\.adam/);
-  assert.match(decision.reason, /fable pins craig/);
+  assert.match(decision.reason, /session on craig\.adam and karen\.adam/);
+  assert.match(decision.reason, /fable is full on craig/);
   // Appended, not prefixed: every surface clips from the right, so the verdict — what it
   // funds, what it needs, when it recovers — has to be the half that always survives.
-  assert.ok(decision.reason.startsWith('session tightest —'), decision.reason);
-  // Two wrapped lines at drovr watch's narrowest useful width (100 columns, 6 of indent).
-  // Past this the note stops fitting on the one surface that also draws the free-looking
-  // bars it exists to explain.
-  assert.ok(decision.reason.length <= 188, `reason is ${decision.reason.length} chars`);
+  assert.ok(decision.reason.startsWith('session is tightest:'), decision.reason);
+  // watch.ts's REASON_BUDGET: what its wrapped detail lines preserve, whatever the
+  // window. Past this the note stops fitting on the one surface that also draws the
+  // free-looking bars it exists to explain.
+  assert.ok(decision.reason.length <= 200, `reason is ${decision.reason.length} chars`);
 });
 
 test('at zero the reported bucket is the soonest reset, not whichever account is listed first', () => {
@@ -276,7 +276,7 @@ test('a wait shorter than an hour is reported in minutes, not rounded to 0h', ()
   soon.accounts[0]!.quota.unified5hReset = NOW + 26 * 60_000;
   const decision = run({ status: soon });
   assert.equal(decision.binding, 'session');
-  assert.match(decision.reason, /recovers in 26m/);
+  assert.match(decision.reason, /more room in 26m/);
 });
 
 test('one account with room in all three funds its own minimum, not the pooled sum', () => {
@@ -328,7 +328,7 @@ test('another program in flight reserves capacity from the shared pool', () => {
   const shared = run({ status: thin, cycles: [elsewhere] });
   assert.equal(alone.verdict, 'GO');
   assert.equal(shared.verdict, 'WAIT');
-  assert.match(shared.reason, /1 ahead of it/);
+  assert.match(shared.reason, /1 running/);
 });
 
 test('the concurrency cap holds even when capacity is plentiful', () => {
@@ -383,7 +383,7 @@ test('the binding bucket is named, so a 5h hold reads differently from a weekly 
   const decision = run({ status: squeezed });
   assert.equal(decision.verdict, 'WAIT');
   assert.equal(decision.binding, 'session');
-  assert.match(decision.reason, /session tightest/);
+  assert.match(decision.reason, /session is tightest/);
 });
 
 test('recovery time comes from the binding bucket, not the soonest reset overall', () => {
@@ -396,7 +396,7 @@ test('recovery time comes from the binding bucket, not the soonest reset overall
   assert.equal(decision.verdict, 'WAIT');
   assert.equal(decision.binding, 'general');
   assert.equal(decision.earliestRecoveryAt, NOW + 90 * HOUR);
-  assert.match(decision.reason, /recovers in 90h/);
+  assert.match(decision.reason, /more room in 90h/);
 });
 
 test('an in-flight cycle older than the watch window stops blocking its program', () => {
@@ -764,7 +764,7 @@ test('pace does not read the session bucket, which has no week to be paced acros
     ]),
   });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /session tightest/);
+  assert.match(decision.reason, /session is tightest/);
 });
 
 /**
@@ -821,14 +821,14 @@ test('a session-bound pool needs one cycle of room, not one plus the reserve', (
   // 1.50 requirement this was refused however healthy the weekly buckets were.
   const decision = oneAccountAt(0);
   assert.equal(decision.verdict, 'GO', decision.reason);
-  assert.match(decision.reason, /session tightest/);
+  assert.match(decision.reason, /session is tightest/);
 });
 
 test('a session-bound pool with less than one cycle of room still waits', () => {
   // 0.20 of the ceiling left is half a cycle: it would start and immediately idle.
   const decision = oneAccountAt(0.2);
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /need 1\.00/, 'one cycle, not one plus the reserve');
+  assert.match(decision.reason, /a start needs 1\.00/, 'one cycle, not one plus the reserve');
 });
 
 test('a weekly-bound pool still has to cover the reserve', () => {
@@ -851,8 +851,8 @@ test('a weekly-bound pool still has to cover the reserve', () => {
     ),
   });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /fable tightest/);
-  assert.match(decision.reason, /need 1\.50/, 'the reserve applies where exhaustion means days');
+  assert.match(decision.reason, /fable is tightest/);
+  assert.match(decision.reason, /a start needs 1\.50/, 'the reserve applies where exhaustion means days');
 });
 
 /**
@@ -892,4 +892,92 @@ test('a present runner with a cycle actually in flight reports that, not a lefto
 test('an absent runner leaves admission alone', () => {
   assert.equal(run({ runnerPresent: false }).verdict, 'GO');
   assert.equal(run({}).verdict, 'GO', 'omitted means unknown, which must not refuse');
+});
+
+/**
+ * The waterline: each priority step down raises the admission bar by priorityStepCycles,
+ * so as the pool drains the lowest-priority programs pause first and the last fundable
+ * cycle always goes to the most important program. Before this, priority was only a
+ * same-tick sort key — measured binding once in 1008 decisions — and the last cycle went
+ * to whichever program happened to be free (docs/allocation-review.md, finding 3).
+ */
+const ranked = (overrides: Record<string, unknown> = {}) =>
+  control({
+    reserveCycles: 0.5,
+    priorityStepCycles: 0.25,
+    programs: [
+      { name: 'alpha', cwd: '/tmp/alpha', priority: 1 },
+      { name: 'beta', cwd: '/tmp/beta', priority: 3 },
+      { name: 'gamma', cwd: '/tmp/gamma', priority: 9 },
+    ],
+    ...overrides,
+  });
+
+// One account, session-bound: 0.28 of headroom against the seeded 0.25 cost is ~1.12
+// cycles — above the top program's bar of 1.00 and below everyone else's.
+const draining = () =>
+  status([account({ name: 'a', fable: 0.05, general: 0.05, session: 0.12 })]);
+
+test('a draining pool runs the top program and holds the ones below it', () => {
+  const alpha = run({ status: draining(), control: ranked(), program: 'alpha' });
+  const beta = run({ status: draining(), control: ranked(), program: 'beta' });
+  const gamma = run({ status: draining(), control: ranked(), program: 'gamma' });
+  assert.equal(alpha.verdict, 'GO', alpha.reason);
+  assert.equal(beta.verdict, 'WAIT');
+  assert.equal(gamma.verdict, 'WAIT');
+});
+
+test('a flush pool runs every program, whatever its priority', () => {
+  for (const program of ['alpha', 'beta', 'gamma']) {
+    const decision = run({ status: healthy(), control: ranked(), program });
+    assert.equal(decision.verdict, 'GO', `${program}: ${decision.reason}`);
+  }
+});
+
+test('a priority hold names who the room is kept for and the bar to clear', () => {
+  const beta = run({ status: draining(), control: ranked(), program: 'beta' });
+  assert.match(beta.reason, /held back for alpha/);
+  assert.match(beta.reason, /beta starts above 1\.25/);
+  const gamma = run({ status: draining(), control: ranked(), program: 'gamma' });
+  assert.match(gamma.reason, /held back for alpha and beta/);
+});
+
+test('below even the rank-0 bar the hold reads as capacity, not priority', () => {
+  const empty = status([account({ name: 'a', fable: 0.05, general: 0.05, session: 0.38 })]);
+  const beta = run({ status: empty, control: ranked(), program: 'beta' });
+  assert.equal(beta.verdict, 'WAIT');
+  assert.match(beta.reason, /is tightest: room for/);
+  assert.doesNotMatch(beta.reason, /held back/);
+});
+
+test('equal-priority programs face the same bar rather than losing to a name sort', () => {
+  const tied = ranked({
+    programs: [
+      { name: 'alpha', cwd: '/tmp/alpha', priority: 1 },
+      { name: 'beta', cwd: '/tmp/beta', priority: 1 },
+      { name: 'gamma', cwd: '/tmp/gamma', priority: 9 },
+    ],
+  });
+  const beta = run({ status: draining(), control: tied, program: 'beta' });
+  assert.equal(beta.verdict, 'GO', beta.reason);
+  // gamma sits one distinct step down, not two: ties share a rank.
+  const gamma = run({ status: draining(), control: tied, program: 'gamma' });
+  assert.match(gamma.reason, /gamma starts above 1\.25/);
+});
+
+test('a disabled program above does not deepen the bar', () => {
+  const alphaOff = ranked({
+    programs: [
+      { name: 'alpha', cwd: '/tmp/alpha', priority: 1, enabled: false },
+      { name: 'beta', cwd: '/tmp/beta', priority: 3 },
+    ],
+  });
+  assert.equal(run({ status: draining(), control: alphaOff, program: 'beta' }).verdict, 'GO');
+});
+
+test('the waterline stacks on the weekly reserve, not instead of it', () => {
+  assert.equal(requiredCycles('fable', ranked(), 1), 1.75);
+  assert.equal(requiredCycles('session', ranked(), 1), 1.25);
+  // Step zero restores priority to a same-tick tiebreak.
+  assert.equal(requiredCycles('session', ranked({ priorityStepCycles: 0 }), 2), 1);
 });

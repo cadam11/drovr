@@ -94,7 +94,11 @@ const programShape = z.object({
   sessionName: z.string().default('{program} program runner'),
   /** Overrides the global daily cap for this program only. */
   maxCyclesPerDay: z.number().nullable().default(null),
-  /** Lower wins the next capacity slot, matching teamclaude priority. */
+  /**
+   * Lower keeps running deeper into a draining pool: each distinct step down raises the
+   * admission bar by `priorityStepCycles` (see `priorityRank`). Also the same-tick
+   * evaluation order, matching teamclaude priority.
+   */
   priority: z.number().default(0),
   /** ISO date. Inside the horizon the program is promoted one priority step. */
   deadline: z.string().nullable().default(null),
@@ -114,6 +118,13 @@ const controlShape = z.object({
     }),
   /** Spare cycles the pool must still hold after admitting one, so a cycle can always land. */
   reserveCycles: z.number().default(0.5),
+  /**
+   * Each priority step down raises a program's admission bar by this many cycles, so as
+   * the pool drains the lowest-priority programs pause first and the top one runs last.
+   * Zero restores priority to a same-tick tiebreak, which live measurement showed binding
+   * once a week (docs/allocation-review.md, finding 3).
+   */
+  priorityStepCycles: z.number().default(0.25),
   maxCyclesPerDay: z.number().default(8),
   /** Hard stop on watching one cycle, so a wedged runner cannot hold its slot forever. */
   maxCycleHours: z.number().default(12),
@@ -210,6 +221,33 @@ export const byPriority = (programs: Program[], now: number, horizonDays: number
       effectivePriority(a, now, horizonDays) - effectivePriority(b, now, horizonDays) ||
       a.name.localeCompare(b.name),
   );
+
+/**
+ * Where this program sits in the drain order, and who outranks it. Rank 0 is the most
+ * important enabled program; each step down deepens the admission bar by
+ * `priorityStepCycles`, which is what pauses lower-priority programs first as the pool
+ * drains. Counted over *distinct* priority values so equal-priority programs face the
+ * same bar rather than one of them losing to a name sort, and over enabled programs
+ * only — a disabled program spends nothing, so it must not deepen anyone's bar.
+ */
+export const priorityRank = (
+  control: Control,
+  program: string,
+  now: number,
+): { rank: number; above: string[] } => {
+  const enabled = control.programs.filter((entry) => entry.enabled);
+  const mine = enabled.find((entry) => entry.name === program);
+  if (mine === undefined) return { rank: 0, above: [] };
+
+  const priorityOf = (entry: Program): number =>
+    effectivePriority(entry, now, control.deadlineHorizonDays);
+  const higher = enabled.filter((entry) => priorityOf(entry) < priorityOf(mine));
+  const rank = new Set(higher.map(priorityOf)).size;
+  return {
+    rank,
+    above: byPriority(higher, now, control.deadlineHorizonDays).map((entry) => entry.name),
+  };
+};
 
 export const isPaused = (control: Control, now: number): boolean => {
   if (control.pauseUntil === null) return false;

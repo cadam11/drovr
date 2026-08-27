@@ -52,6 +52,8 @@ export const AGENT_NOTES = {
   },
   gotchas: [
     'A WAIT reason naming another program means it is queued behind it, not short of quota.',
+    'Priority is a drain order: each step down raises the admission bar by priorityStepCycles, ' +
+      'so "held back for <program>" is a pool with room being kept for something more important.',
     'The three quota buckets bind simultaneously; the reason names whichever is tightest.',
     'A 5h (session) hold recovers in hours. A weekly hold recovers in days. Read the binding bucket.',
     'Pool headroom is summed per bucket and is a display figure: it can look free while no ' +
@@ -164,7 +166,7 @@ export const COMMANDS: Command[] = [
     usage: 'drovr add <name> <path> [flags]',
     summary: 'track a new program',
     flags: [
-      { flag: '--priority <n>', describes: 'lower wins the next capacity slot (default 0)' },
+      { flag: '--priority <n>', describes: 'lower keeps running deeper into a draining pool (default 0)' },
       { flag: '--deadline <YYYY-MM-DD>', describes: 'promotes one priority step inside the horizon' },
       { flag: '--asks <page>', describes: 'aice asks page; omit and onboarding creates one' },
       { flag: '--status-page <page>', describes: 'where drovr publishes status.html' },

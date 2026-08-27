@@ -1,5 +1,5 @@
 import { hoursToWeeklyReset, poolFrom, type AccountHeadroom, type Pool } from './capacity.ts';
-import { ceilingsFor, isPaused, type Control } from './control.ts';
+import { ceilingsFor, isPaused, priorityRank, type Control } from './control.ts';
 import { chargeForRunning,
   consecutiveFailures,
   consecutiveZeroYield,
@@ -195,14 +195,19 @@ const couplingNote = (funding: Funding): string | null => {
   const pins = BUCKETS
     .map((bucket) => pinned.filter((account) => account.binding === bucket))
     .filter((group) => group.length > 0)
-    .map((group) => `${group[0]!.binding} pins ${listOf(group.map((account) => shortName(account.name, funding.accounts)))}`)
+    .map(
+      (group, index) =>
+        `${group[0]!.binding}${index === 0 ? ' is full on' : ' on'} ` +
+        listOf(group.map((account) => shortName(account.name, funding.accounts))),
+    )
     .join(', ');
 
   if (pinned.length === funding.accounts.length) {
     return `no account has room in all three buckets: ${pins}`;
   }
   const spare = funding.accounts.length - pinned.length;
-  return `only ${spare}/${funding.accounts.length} accounts have room in all three: ${pins}`;
+  const has = spare === 1 ? 'has' : 'have';
+  return `only ${spare} of ${funding.accounts.length} accounts ${has} room in all three buckets: ${pins}`;
 };
 
 /**
@@ -461,14 +466,22 @@ const admissionLimits = (
  * a stall, and pays full onboarding for nothing.
  *
  * Keyed on the reported binding bucket rather than folded into each per-bucket ratio: the
- * ratios are what every renderer prints as "funds N cycles", and changing their meaning
+ * ratios are what every renderer prints as "room for N cycles", and changing their meaning
  * would move that number on four surfaces at once. This is approximate when accounts bind
  * on different buckets — `bindingOf` reports the one pinning the account that would serve
  * next — and the substance survives the approximation, because the reserve still applies
  * whenever a weekly bucket is what actually constrains that account.
+ *
+ * `rank` is the program's place in the drain order (control.ts's `priorityRank`): each
+ * step down raises the bar by `priorityStepCycles`, so as the pool drains the
+ * lowest-priority programs pause first and the last cycle goes to the top one — the
+ * contract in design.md. Before this, priority was only a same-tick sort key and the last
+ * fundable cycle went to whichever program happened to be free: measured 2026-08-27,
+ * aice-x (priority 3) took the pool's final cycle while sunnyt (priority 1) was held for
+ * ten minutes by its own leftover pane, then waited 5h on the session reset.
  */
-export const requiredCycles = (binding: BucketName, control: Control): number =>
-  binding === 'session' ? 1 : 1 + control.reserveCycles;
+export const requiredCycles = (binding: BucketName, control: Control, rank: number): number =>
+  (binding === 'session' ? 1 : 1 + control.reserveCycles) + rank * control.priorityStepCycles;
 
 /**
  * Can the pool fund a whole cycle plus a reserve, and is the loop within its weekly
@@ -486,20 +499,36 @@ const capacityVerdict = (input: DecideInput, pool: Pool, running: CycleRecord[])
   // stop admission while it happens, not once it has finished and been measured.
   const charged = chargeForRunning(running, snapshot(pool), cost);
   const funding = cyclesFundableFrom(pool, cost, charged);
-  const required = requiredCycles(funding.binding, control);
+  const { rank, above } = priorityRank(control, input.program, now);
+  const required = requiredCycles(funding.binding, control, rank);
   if (funding.cycles < required) {
+    const recovery = untilText(pool.resetAt[funding.binding], now);
+
+    // A pool that would admit this program at rank 0 is being held by priority alone,
+    // and that is the one raised threshold worth explaining on the line: the reader sees
+    // room and needs to know who it is being kept for. The coupling note is skipped here
+    // on purpose — priority, not the bucket coupling, is what refuses.
+    if (rank > 0 && funding.cycles >= requiredCycles(funding.binding, control, 0)) {
+      return hold(
+        `room for ${funding.cycles.toFixed(2)} cycles, held back for ${listOf(above)} — ` +
+          `${input.program} starts above ${required.toFixed(2)} ` +
+          `(${funding.binding} is tightest); more room in ${recovery}`,
+        pool,
+        funding,
+      );
+    }
+
     const note = couplingNote(funding);
-    // The threshold is deliberately not explained here. A session line reading "need 1.00"
-    // beside a fable line reading "need 1.50" invites the question, and the honest answer
-    // costs 25 characters the frame does not have: the worst case here is already 180 of
-    // the 188 that survive two wrapped lines at 100 columns in `drovr watch`, and that
+    // The session/weekly asymmetry in the threshold is deliberately not explained here.
+    // The honest answer costs characters the frame does not have: the worst case below is
+    // already near the 200 that survive `drovr watch`'s wrapped detail lines, and that
     // budget exists because this is the one surface that also draws the free-looking bars
     // the note is there to explain. `requiredCycles` and design.md carry the reason; a
     // question asked once does not belong on a line printed every tick.
     return hold(
-      `${funding.binding} tightest — funds ${funding.cycles.toFixed(2)} cycles ` +
-        `(${running.length} ahead of it), need ${required.toFixed(2)}, ` +
-        `recovers in ${untilText(pool.resetAt[funding.binding], now)}` +
+      `${funding.binding} is tightest: room for ${funding.cycles.toFixed(2)} cycles, ` +
+        `a start needs ${required.toFixed(2)} (${running.length} running); ` +
+        `more room in ${recovery}` +
         `${note === null ? '' : ` — ${note}`}`,
       pool,
       funding,
@@ -510,9 +539,9 @@ const capacityVerdict = (input: DecideInput, pool: Pool, running: CycleRecord[])
   return {
     verdict: 'GO',
     reason:
-      `funds ${funding.cycles.toFixed(2)} more cycles ` +
+      `room for ${funding.cycles.toFixed(2)} more cycles ` +
       `${sourcedFrom(funding, pool.usableAccounts)} ` +
-      `(${running.length} ahead of it, ${funding.binding} tightest)` +
+      `(${running.length} running; ${funding.binding} is tightest)` +
       `${concentration === null ? '' : ` — ${concentration}`}`,
     pool,
     cyclesFundable: funding.cycles,
