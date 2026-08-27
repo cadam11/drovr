@@ -284,17 +284,31 @@ test('the pool context is printed once, however many programs share it', () => {
  * program, keybar rows tagged for key lookup, and everything else dead space.
  */
 test('mouse hits: program rows carry their program, chrome carries nothing', () => {
-  const state = fixture({
-    programs: [
-      { name: 'alpha', cwd: '/tmp/alpha' },
-      { name: 'beta', cwd: '/tmp/beta' },
-    ],
+  const state = buildState({
+    status: healthy(),
+    control: control({
+      programs: [
+        { name: 'alpha', cwd: '/tmp/alpha' },
+        { name: 'beta', cwd: '/tmp/beta' },
+      ],
+    }),
+    cycles: [], now: NOW,
+    service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
+    previews: new Map(), locks: new Map(),
+    asksUrls: new Map([['alpha', 'https://drovr.example/asks.html']]),
+    queuedIntents: [],
   });
   const { text, hits } = frameWithHits(state, view, 100);
   const lines = text.split('\n');
   assert.equal(hits.length, lines.length, 'one hit entry per rendered line');
   assert.deepEqual(hits[lines.findIndex((line) => line.includes('alpha'))], { program: 0 });
   assert.deepEqual(hits[lines.findIndex((line) => line.includes('beta'))], { program: 1 });
+  // The ask link is its own target: with mouse reporting on, the terminal no longer
+  // opens OSC 8 links on a plain click, so a click here has to open the page itself.
+  assert.deepEqual(
+    hits[lines.findIndex((line) => line.includes('drovr.example/asks.html'))],
+    { asks: 0 },
+  );
   assert.equal(hits[0], null, 'the header is not clickable');
   assert.deepEqual(hits.at(-1), { keybar: keybarLines(100, false).length - 1 });
 });

@@ -227,7 +227,7 @@ const helpLines = (): string[] => [
   '    p P    pause / extend    + -    concurrency cap',
   '    t      tick now          r      redraw',
   '    x      interrupt cycle   q      quit',
-  `  ${dim('Mouse: click a program to select it, scroll to move, click a key below to run it.')}`,
+  `  ${dim('Mouse: click a program to select it, its asks link to open it, a key below to run it.')}`,
   '',
   // A documented floor, because the frame degrades quietly below it rather than
   // refusing: bars shrink, labels shorten, and under 24 columns rows start clipping.
@@ -295,13 +295,18 @@ const REASON_BUDGET = 200;
 const detailLinesFor = (width: number): number =>
   Math.min(4, Math.max(2, Math.ceil(REASON_BUDGET / Math.max(8, width - DETAIL_INDENT))));
 
+/**
+ * `ask` is separate from `text` so the frame can tag it as its own click target: with
+ * mouse reporting on, the terminal no longer opens OSC 8 links on a plain click — the
+ * click comes to drovr instead — so drovr has to do the opening itself.
+ */
 const programLines = (input: {
   programs: ProgramState[];
   now: number;
   selected: number;
   narrow: boolean;
   width: number;
-}): string[] => {
+}): { text: string; ask: string | null }[] => {
   const { programs, now, selected, narrow, width } = input;
   const nameWidth = Math.max(8, ...programs.map((program) => program.name.length)) + 6;
 
@@ -327,16 +332,14 @@ const programLines = (input: {
       : wrapText(detail, Math.max(8, width - DETAIL_INDENT), detailLinesFor(width))
           .map((line) => `${' '.repeat(DETAIL_INDENT)}${dim(line)}`);
 
-    const askLine =
+    const ask =
       program.asksUrl === null
-        ? []
-        : [
-            `${' '.repeat(DETAIL_INDENT)}${osc8(
-              program.asksUrl,
-              narrow ? 'asks ›' : program.asksUrl.replace(/^https:\/\//, ''),
-            )}`,
-          ];
-    return [row, ...detailLines, ...askLine].join('\n');
+        ? null
+        : `${' '.repeat(DETAIL_INDENT)}${osc8(
+            program.asksUrl,
+            narrow ? 'asks ›' : program.asksUrl.replace(/^https:\/\//, ''),
+          )}`;
+    return { text: [row, ...detailLines].join('\n'), ask };
   });
 };
 
@@ -363,7 +366,7 @@ const serviceLine = (service: DrovrState['service'], now: number): string => {
  * What a rendered line stands for under the mouse: a program row (and its wrapped
  * detail lines), or a keybar row whose columns keybarKeyAt resolves. Null is dead space.
  */
-export type LineHit = { program: number } | { keybar: number };
+export type LineHit = { program: number } | { asks: number } | { keybar: number };
 
 type Tagged = { text: string; hit: LineHit | null };
 
@@ -479,10 +482,13 @@ export const frameWithHits = (
   lines.push(
     plain(''),
     plain(`  ${bold('PROGRAMS')}  ${dim(`${state.cyclesInFlight}/${state.maxConcurrentCycles} in flight`)}`),
-    // Tagged with the program's index, wrapped detail lines and ask link included, so
-    // a click anywhere in the block selects the program it belongs to.
+    // The row and its wrapped detail lines select the program; the ask link is its own
+    // target, because with mouse reporting on the terminal no longer opens it itself.
     ...programLines({ programs: state.programs, now, selected: view.selected, narrow, width })
-      .map((text, index) => ({ text, hit: { program: index } })),
+      .flatMap(({ text, ask }, index): Tagged[] => [
+        { text, hit: { program: index } },
+        ...(ask === null ? [] : [{ text: ask, hit: { asks: index } }]),
+      ]),
   );
 
   const recent = state.recentCycles.slice(0, 5);
@@ -762,6 +768,18 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
     if (hit === null) return;
     if ('program' in hit) {
       selectProgram(hit.program);
+      return;
+    }
+    if ('asks' in hit) {
+      // The terminal would have opened this link itself before mouse reporting was on;
+      // now the click arrives here instead, so select the program and open its page —
+      // the same thing 'o' does. An armed interrupt confirmation still wins.
+      if (view.confirmStop) {
+        selectProgram(hit.asks);
+        return;
+      }
+      view.selected = hit.asks;
+      onKey('o');
       return;
     }
     const key = keybarKeyAt(lastWidth, lastNarrow, hit.keybar, column - 1);
