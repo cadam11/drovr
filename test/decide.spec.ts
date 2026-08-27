@@ -75,7 +75,8 @@ test('a pool that cannot fund a whole cycle plus reserve waits', () => {
   const thin = status([account({ name: 'a', fable: 0.5, general: 0.5, session: 0.35 })]);
   const decision = run({ status: thin });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /is tightest: room for/);
+  assert.match(decision.reason, /a start needs/);
+  assert.match(decision.note ?? '', /is tightest/);
 });
 
 test('the reserve is what separates admitting from refusing a marginal pool', () => {
@@ -85,7 +86,7 @@ test('the reserve is what separates admitting from refusing a marginal pool', ()
   const strict = run({ status: marginal, control: control({ reserveCycles: 0.5 }) });
   const lax = run({ status: marginal, control: control({ reserveCycles: 0 }) });
   assert.equal(strict.verdict, 'WAIT', strict.reason);
-  assert.match(strict.reason, /fable is tightest/);
+  assert.match(strict.note ?? '', /fable is tightest/);
   assert.equal(lax.verdict, 'GO', lax.reason);
 });
 
@@ -223,7 +224,7 @@ test('with every account at zero the binding bucket is the one that recovers fir
   assert.equal(pool.resetAt.session, NOW + 2 * HOUR);
 });
 
-test('the coupled pool holds the loop and the reason names who is pinned by what', () => {
+test('the coupled pool holds the loop and the note names who is pinned by what', () => {
   const decision = run({
     status: coupled(),
     control: control({ seedCycleCost: COUPLED_COST }),
@@ -232,16 +233,17 @@ test('the coupled pool holds the loop and the reason names who is pinned by what
   assert.equal(decision.cyclesFundable, 0);
   assert.equal(decision.binding, 'session');
   assert.equal(decision.earliestRecoveryAt, NOW + 2 * HOUR);
-  assert.match(decision.reason, /no account has room in all three buckets/);
-  assert.match(decision.reason, /session on craig\.adam and karen\.adam/);
-  assert.match(decision.reason, /fable is full on craig/);
-  // Appended, not prefixed: every surface clips from the right, so the verdict — what it
-  // funds, what it needs, when it recovers — has to be the half that always survives.
-  assert.ok(decision.reason.startsWith('session is tightest:'), decision.reason);
+  // The coupling lives on the shared note, not the per-program reason: every program
+  // shares one pool, and repeating the same sentence on every row is what the
+  // reason/note split exists to stop.
+  assert.match(decision.note ?? '', /no account has room in all three buckets/);
+  assert.match(decision.note ?? '', /session on craig\.adam and karen\.adam/);
+  assert.match(decision.note ?? '', /fable is full on craig/);
+  assert.match(decision.reason, /a start needs 1\.00/);
   // watch.ts's REASON_BUDGET: what its wrapped detail lines preserve, whatever the
-  // window. Past this the note stops fitting on the one surface that also draws the
-  // free-looking bars it exists to explain.
+  // window. The reason and the note are drawn on separate lines, so each gets the budget.
   assert.ok(decision.reason.length <= 200, `reason is ${decision.reason.length} chars`);
+  assert.ok((decision.note ?? '').length <= 200, `note is ${decision.note?.length} chars`);
 });
 
 test('at zero the reported bucket is the soonest reset, not whichever account is listed first', () => {
@@ -276,7 +278,7 @@ test('a wait shorter than an hour is reported in minutes, not rounded to 0h', ()
   soon.accounts[0]!.quota.unified5hReset = NOW + 26 * 60_000;
   const decision = run({ status: soon });
   assert.equal(decision.binding, 'session');
-  assert.match(decision.reason, /more room in 26m/);
+  assert.match(decision.note ?? '', /more room in 26m/);
 });
 
 test('one account with room in all three funds its own minimum, not the pooled sum', () => {
@@ -383,7 +385,7 @@ test('the binding bucket is named, so a 5h hold reads differently from a weekly 
   const decision = run({ status: squeezed });
   assert.equal(decision.verdict, 'WAIT');
   assert.equal(decision.binding, 'session');
-  assert.match(decision.reason, /session is tightest/);
+  assert.match(decision.note ?? '', /session is tightest/);
 });
 
 test('recovery time comes from the binding bucket, not the soonest reset overall', () => {
@@ -396,7 +398,7 @@ test('recovery time comes from the binding bucket, not the soonest reset overall
   assert.equal(decision.verdict, 'WAIT');
   assert.equal(decision.binding, 'general');
   assert.equal(decision.earliestRecoveryAt, NOW + 90 * HOUR);
-  assert.match(decision.reason, /more room in 90h/);
+  assert.match(decision.note ?? '', /more room in 90h/);
 });
 
 test('an in-flight cycle older than the watch window stops blocking its program', () => {
@@ -680,15 +682,15 @@ test('a GO says how many accounts carry it, not just how many exist', () => {
   const decision = decide({ status: lopsided, control: control(), cycles: [], program: 'demo', now: NOW });
   assert.equal(decision.verdict, 'GO');
   assert.match(decision.reason, /from 1 of 3 accounts/);
-  assert.match(decision.reason, /no fallback/);
-  assert.match(decision.reason, /2 not routed for fable/);
+  assert.match(decision.note ?? '', /no fallback/);
+  assert.match(decision.note ?? '', /2 not routed for fable/);
 });
 
 test('a pool every account contributes to is not warned about', () => {
   const decision = decide({ status: healthy(), control: control(), cycles: [], program: 'demo', now: NOW });
   assert.equal(decision.verdict, 'GO');
   assert.match(decision.reason, /across 3 accounts/);
-  assert.doesNotMatch(decision.reason, /no fallback/);
+  assert.doesNotMatch(decision.note ?? '', /no fallback/);
 });
 
 /**
@@ -764,7 +766,7 @@ test('pace does not read the session bucket, which has no week to be paced acros
     ]),
   });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /session is tightest/);
+  assert.match(decision.note ?? '', /session is tightest/);
 });
 
 /**
@@ -821,7 +823,7 @@ test('a session-bound pool needs one cycle of room, not one plus the reserve', (
   // 1.50 requirement this was refused however healthy the weekly buckets were.
   const decision = oneAccountAt(0);
   assert.equal(decision.verdict, 'GO', decision.reason);
-  assert.match(decision.reason, /session is tightest/);
+  assert.match(decision.note ?? '', /session is tightest/);
 });
 
 test('a session-bound pool with less than one cycle of room still waits', () => {
@@ -851,7 +853,7 @@ test('a weekly-bound pool still has to cover the reserve', () => {
     ),
   });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /fable is tightest/);
+  assert.match(decision.note ?? '', /fable is tightest/);
   assert.match(decision.reason, /a start needs 1\.50/, 'the reserve applies where exhaustion means days');
 });
 
@@ -946,7 +948,7 @@ test('below even the rank-0 bar the hold reads as capacity, not priority', () =>
   const empty = status([account({ name: 'a', fable: 0.05, general: 0.05, session: 0.38 })]);
   const beta = run({ status: empty, control: ranked(), program: 'beta' });
   assert.equal(beta.verdict, 'WAIT');
-  assert.match(beta.reason, /is tightest: room for/);
+  assert.match(beta.reason, /a start needs/);
   assert.doesNotMatch(beta.reason, /held back/);
 });
 

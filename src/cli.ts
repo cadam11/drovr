@@ -7,14 +7,16 @@ import { poolFrom } from './capacity.ts';
 import {
   byPriority, ceilingsFor, effectivePriority, isPaused, parseControl, readControl,
 } from './control.ts';
-import { contributingAccounts, cyclesFundableFrom, decide, type Funding } from './decide.ts';
+import { contributingAccounts, cyclesFundableFrom, decide, poolContext, type Funding } from './decide.ts';
 import {
+  chargeForRunning,
   consecutiveZeroYield,
   estimateCycleCost,
   inFlight,
   lastDecisionAt,
   readTickStamp,
   readCycles,
+  snapshot,
   type CycleRecord,
 } from './ledger.ts';
 import { observedYours, readSamples, shareOf, type UsageSample } from './usage.ts';
@@ -245,6 +247,9 @@ const statusPayload = async () => {
       verdict: decision.verdict,
       verdictMeaning: VERDICT_MEANING[decision.verdict],
       reason: decision.reason,
+      // Pool-level context, identical across programs in this array — kept separate so a
+      // consumer showing several programs is not handed the same sentence N times.
+      poolNote: decision.note,
       bindingBucket: decision.binding,
       cyclesFundable: decision.cyclesFundable === null ? null : round(decision.cyclesFundable),
       recoversAt: iso(decision.earliestRecoveryAt),
@@ -310,8 +315,14 @@ const showStatus = async (): Promise<void> => {
     );
     // Printed next to the pool line because the pool line is what misleads: an account is
     // spendable only where it has room in all three buckets, so free-looking sums can fund
-    // nothing at all.
-    console.log(`capacity: ${describeFunding(cyclesFundableFrom(pool, cost, running.length))}`);
+    // nothing at all. Charged the same way decide() charges — chargeForRunning, never the
+    // raw count — or this line over-reports fundability against the verdicts beneath it
+    // (the state.ts drift trap, which this call had re-made).
+    const funding = cyclesFundableFrom(pool, cost, chargeForRunning(running, snapshot(pool), cost));
+    console.log(`capacity: ${describeFunding(funding)}`);
+    // The pool context, once. Every verdict beneath shares it; their reasons carry only
+    // what is true of that program alone.
+    console.log(`  ${poolContext(funding, pool, now)}`);
   }
   console.log(`cycles recorded: ${cycles.length} · zero-yield streak: ${consecutiveZeroYield(cycles)}`);
 

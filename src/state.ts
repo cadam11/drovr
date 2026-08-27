@@ -1,7 +1,7 @@
 import { allocationFor, type Allocation, type BucketName } from './allocation.ts';
 import { hoursToWeeklyReset, poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, effectivePriority, readControl, type Control } from './control.ts';
-import { contributingAccounts, cyclesFundableFrom, decide, type Verdict } from './decide.ts';
+import { contributingAccounts, cyclesFundableFrom, decide, poolContext, type Verdict } from './decide.ts';
 import {
   chargeForRunning, estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles,
   snapshot, spentSince, type CycleRecord,
@@ -86,6 +86,14 @@ export type DrovrState = {
    * Null when that bucket has no future reset among the usable accounts.
    */
   bindingRecoveryAt: string | null;
+  /**
+   * decide.ts's poolContext — the pool-level half of every capacity verdict, identical
+   * for each program in a pass. Program reasons deliberately no longer carry it, so a
+   * renderer that shows several programs must print this once (beside the bars is where
+   * it belongs: it is what explains free-looking bars refusing cycles) or the coupling
+   * warning is shown nowhere at all.
+   */
+  capacityNote: string;
   hoursToWeeklyReset: number | null;
   allocation: Record<BucketName, Allocation>;
   programs: ProgramState[];
@@ -259,6 +267,10 @@ export const buildState = (input: StateInput): DrovrState => {
     bindingBucket: funding.binding,
     cyclesFundable: r(funding.cycles, 2),
     bindingRecoveryAt: iso(pool.resetAt[funding.binding]),
+    // The same function decide() uses for every decision's note, on the same charged
+    // funding — computed here rather than lifted off one program's decision so a pass
+    // with no capacity verdicts (every program held earlier) still draws the line.
+    capacityNote: poolContext(funding, pool, now),
     hoursToWeeklyReset: hoursLeft === null ? null : r(hoursLeft, 1),
     allocation,
     programs: programsOf(input),

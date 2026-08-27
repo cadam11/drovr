@@ -3,7 +3,7 @@ import { openSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
-import { decide, type Decision } from './decide.ts';
+import { decide, fullReason, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
 import { agentNameFor, agentState, PaneBusy } from './herdr.ts';
 import { listNotes, readAsks, replyToNote, resolveNote, type NoteThread } from './asks.ts';
@@ -42,7 +42,9 @@ const logDecision = (program: string, decision: Decision, now: number): void => 
     at: new Date(now).toISOString(),
     program,
     verdict: decision.verdict,
-    reason: decision.reason,
+    // Recombined: each log line is read alone, so it carries the pool context the
+    // multi-program renderers deliberately print only once.
+    reason: fullReason(decision),
     pool: decision.pool === null ? null : snapshot(decision.pool),
     cyclesFundable: decision.cyclesFundable,
   });
@@ -566,7 +568,7 @@ export const tick = async (): Promise<void> => {
         ...(runnerPresent === undefined ? {} : { runnerPresent }),
       });
       logDecision(program.name, decision, now);
-      console.log(`${program.name}: ${decision.verdict} — ${decision.reason}`);
+      console.log(`${program.name}: ${decision.verdict} — ${fullReason(decision)}`);
 
       if (decision.verdict !== 'GO' || decision.pool === null) {
         const mine = cycles.filter((cycle) => cycle.program === program.name);

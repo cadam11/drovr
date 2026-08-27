@@ -1,4 +1,4 @@
-import type { Decision } from './decide.ts';
+import { fullReason, type Decision } from './decide.ts';
 import type { CycleRecord } from './ledger.ts';
 
 const escape = (value: string): string =>
@@ -54,7 +54,7 @@ export const renderStatus = (input: {
   <table>
     <tbody>
       ${row('Verdict', decision.verdict)}
-      ${row('Reason', decision.reason)}
+      ${row('Reason', fullReason(decision))}
       ${row('Usable accounts', pool === null ? '—' : String(pool.usableAccounts))}
       ${row('Pool fable', pool === null ? '—' : units(pool.fable))}
       ${row('Pool general', pool === null ? '—' : units(pool.general))}

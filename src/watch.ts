@@ -122,38 +122,66 @@ const elapsed = (since: string, now: number): string => {
     : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`;
 };
 
-const KEYS = [
-  'j/k select',
-  'space enable',
-  '[ ] priority',
-  'm mode',
-  'p pause',
-  '+/- cap',
-  '< > reserve',
-  'r refresh',
-  't tick',
-  'o asks',
-  'x interrupt',
-  '? help',
-  'q quit',
+/**
+ * `key` is what a mouse click on the label feeds back in as a keystroke. Null for the
+ * entries a click cannot disambiguate ('[ ]' is two opposite actions) — and for the
+ * selection keys, where the mouse has its own affordances: click a row, or scroll.
+ */
+const KEYS: { label: string; key: string | null }[] = [
+  { label: 'j/k select', key: null },
+  { label: 'space enable', key: ' ' },
+  { label: '[ ] priority', key: null },
+  { label: 'm mode', key: 'm' },
+  { label: 'p pause', key: 'p' },
+  { label: '+/- cap', key: null },
+  { label: '< > reserve', key: null },
+  { label: 'r refresh', key: 'r' },
+  { label: 't tick', key: 't' },
+  { label: 'o asks', key: 'o' },
+  { label: 'x interrupt', key: 'x' },
+  { label: '? help', key: '?' },
+  { label: 'q quit', key: 'q' },
 ];
 
-/** Wrapped rather than clipped: a key you cannot see is a key you do not have. */
-export const keybarLines = (width: number, narrow: boolean): string[] => {
-  const keys = narrow ? KEYS.map((key) => key.split(' ')[0]!) : KEYS;
-  const rows: string[][] = [[]];
+type KeybarEntry = { shown: string; key: string | null; start: number; end: number };
+
+/**
+ * One layout, two readers: keybarLines renders it and keybarKeyAt hit-tests it, so a
+ * click can never land on a different key than the one drawn there. Columns count only
+ * visible characters — the ' · ' separators are three columns however they are painted.
+ */
+const keybarLayout = (width: number, narrow: boolean): KeybarEntry[][] => {
+  const rows: KeybarEntry[][] = [[]];
   let used = 0;
 
-  for (const key of keys) {
-    const cost = key.length + 3;
+  for (const { label, key } of KEYS) {
+    const shown = narrow ? label.split(' ')[0]! : label;
+    const cost = shown.length + 3;
     if (used + cost > width - 4 && rows[rows.length - 1]!.length > 0) {
       rows.push([]);
       used = 0;
     }
-    rows[rows.length - 1]!.push(key);
+    rows[rows.length - 1]!.push({ shown, key, start: 2 + used, end: 2 + used + shown.length });
     used += cost;
   }
-  return rows.map((row) => `  ${row.join(dim(' · '))}`);
+  return rows;
+};
+
+/** Wrapped rather than clipped: a key you cannot see is a key you do not have. */
+export const keybarLines = (width: number, narrow: boolean): string[] =>
+  keybarLayout(width, narrow).map(
+    (row) => `  ${row.map((entry) => entry.shown).join(dim(' · '))}`,
+  );
+
+/** The keystroke a click at this keybar row and column stands for, if any. */
+export const keybarKeyAt = (
+  width: number,
+  narrow: boolean,
+  row: number,
+  column: number,
+): string | null => {
+  const entries = keybarLayout(width, narrow)[row] ?? [];
+  return entries.find((entry) => column >= entry.start && column < entry.end)?.key ?? null;
 };
 
 /**
@@ -199,6 +227,7 @@ const helpLines = (): string[] => [
   '    p P    pause / extend    + -    concurrency cap',
   '    t      tick now          r      redraw',
   '    x      interrupt cycle   q      quit',
+  `  ${dim('Mouse: click a program to select it, scroll to move, click a key below to run it.')}`,
   '',
   // A documented floor, because the frame degrades quietly below it rather than
   // refusing: bars shrink, labels shorten, and under 24 columns rows start clipping.
@@ -331,16 +360,34 @@ const serviceLine = (service: DrovrState['service'], now: number): string => {
 };
 
 /**
+ * What a rendered line stands for under the mouse: a program row (and its wrapped
+ * detail lines), or a keybar row whose columns keybarKeyAt resolves. Null is dead space.
+ */
+export type LineHit = { program: number } | { keybar: number };
+
+type Tagged = { text: string; hit: LineHit | null };
+
+const plain = (text: string): Tagged => ({ text, hit: null });
+
+/**
  * Shared by every frame the view can draw — the normal body-plus-tail frame and the
  * help overlay alike — so a rows budget or a width clip added to one can never be
  * forgotten on the other. `foot` is reserved first because it is the part a viewer
  * must always be able to see (keybar, confirmation prompt); `body` is what gives way.
  *
  * Program rows carry embedded newlines, so both halves are flattened before either is
- * measured — counting entries rather than rendered lines would under-reserve.
+ * measured — counting entries rather than rendered lines would under-reserve. Hits are
+ * carried through the same flatten-and-slice, which is what keeps a click aligned with
+ * what is actually on screen after the clamp rather than with what was rendered.
  */
-const clampAndClip = (body: string[], foot: string[], width: number, rows?: number): string => {
-  const split = (source: string[]): string[] => source.flatMap((line) => line.split('\n'));
+const clampAndClip = (
+  body: Tagged[],
+  foot: Tagged[],
+  width: number,
+  rows?: number,
+): { text: string; hits: (LineHit | null)[] } => {
+  const split = (source: Tagged[]): Tagged[] =>
+    source.flatMap((line) => line.text.split('\n').map((text) => ({ text, hit: line.hit })));
   const flatBody = split(body);
   const flatFoot = split(foot);
   const budget = rows === undefined ? flatBody.length + flatFoot.length : Math.max(1, rows - 1);
@@ -348,8 +395,11 @@ const clampAndClip = (body: string[], foot: string[], width: number, rows?: numb
     flatFoot.length >= budget
       ? flatFoot.slice(0, budget)
       : [...flatBody.slice(0, budget - flatFoot.length), ...flatFoot];
-  // Clip last: any single over-long line would soft-wrap and shove the frame upward.
-  return kept.map((line) => clip(line, width)).join('\n');
+  return {
+    // Clip last: any single over-long line would soft-wrap and shove the frame upward.
+    text: kept.map((line) => clip(line.text, width)).join('\n'),
+    hits: kept.map((line) => line.hit),
+  };
 };
 
 /**
@@ -365,17 +415,17 @@ const clampAndClip = (body: string[], foot: string[], width: number, rows?: numb
  * the message line, the preview warning and the keybar are all appended last. Omitted,
  * the frame is whatever height it needs — only correct for a caller with no viewport.
  */
-export const frame = (
+export const frameWithHits = (
   state: DrovrState,
   view: ViewState,
   columns?: number,
   rows?: number,
-): string => {
+): { text: string; hits: (LineHit | null)[] } => {
   const width = Math.max(24, Math.min(columns ?? process.stdout.columns ?? 100, 120));
   // The help screen has no keybar/message tail of its own — it is one long body — but
   // it still needs the same rows clamp and width clip, or it scrolls the alternate
   // screen exactly like an unclamped normal frame would.
-  if (view.help) return clampAndClip(helpLines(), [], width, rows);
+  if (view.help) return clampAndClip(helpLines().map(plain), [], width, rows);
 
   const now = Date.parse(state.generatedAt);
   const narrow = width < 72;
@@ -387,28 +437,39 @@ export const frame = (
 
   const healthy = state.service.loaded && !state.service.overdue;
 
-  const lines = [
-    `${bold('drovr')}  ${dim(`mode ${state.mode}`)}${held}  ` +
-      dim(new Date(now).toTimeString().slice(0, 8)),
-    `  ${paint(healthy ? 32 : 31, '●')} ${dim(serviceLine(state.service, now))}`,
+  const lines: Tagged[] = [
+    plain(
+      `${bold('drovr')}  ${dim(`mode ${state.mode}`)}${held}  ` +
+        dim(new Date(now).toTimeString().slice(0, 8)),
+    ),
+    plain(`  ${paint(healthy ? 32 : 31, '●')} ${dim(serviceLine(state.service, now))}`),
   ];
 
   lines.push(
     ...(state.mode === 'off'
       ? ['', paint(31, '  mode is off — press m to cycle modes')]
-      : allocationLines({
-          allocation: state.allocation,
-          usableAccounts: state.pool.usableAccounts,
-          fundingAccounts: state.pool.fundingAccounts,
-          hoursToWeeklyReset: state.hoursToWeeklyReset,
-          bindingBucket: state.bindingBucket,
-          // Everything the row carries beside the bar: indent, label, the `you NN%`
-          // reading, and — the part that was missing — the six columns of ` binds`.
-          // Reserving only 16 at narrow widths let clip() eat the marker, so a
-          // 60-column frame showed three bars and no indication which one refuses.
-          barWidth: Math.max(8, width - (narrow ? 22 : 28)),
-          narrow,
-        })),
+      : [
+          ...allocationLines({
+            allocation: state.allocation,
+            usableAccounts: state.pool.usableAccounts,
+            fundingAccounts: state.pool.fundingAccounts,
+            hoursToWeeklyReset: state.hoursToWeeklyReset,
+            bindingBucket: state.bindingBucket,
+            // Everything the row carries beside the bar: indent, label, the `you NN%`
+            // reading, and — the part that was missing — the six columns of ` binds`.
+            // Reserving only 16 at narrow widths let clip() eat the marker, so a
+            // 60-column frame showed three bars and no indication which one refuses.
+            barWidth: Math.max(8, width - (narrow ? 22 : 28)),
+            narrow,
+          }),
+          // The pool context, once. Program reasons no longer carry it (decide.ts's
+          // reason/note split), so this line beside the bars is where the coupling
+          // warning lives — the bars are exactly what it exists to explain.
+          ...wrapText(state.capacityNote, Math.max(8, width - 4), 3).map(
+            (line) => `  ${dim(line)}`,
+          ),
+        ]
+    ).map(plain),
   );
 
   // state.cyclesInFlight (not a count of state.programs with verdict RUN) — a cycle
@@ -416,20 +477,23 @@ export const frame = (
   // still counted by decide() and by buildState's own reservation maths, and the
   // header must agree with the capacity picture, not just the program list.
   lines.push(
-    '',
-    `  ${bold('PROGRAMS')}  ${dim(`${state.cyclesInFlight}/${state.maxConcurrentCycles} in flight`)}`,
-    ...programLines({ programs: state.programs, now, selected: view.selected, narrow, width }),
+    plain(''),
+    plain(`  ${bold('PROGRAMS')}  ${dim(`${state.cyclesInFlight}/${state.maxConcurrentCycles} in flight`)}`),
+    // Tagged with the program's index, wrapped detail lines and ask link included, so
+    // a click anywhere in the block selects the program it belongs to.
+    ...programLines({ programs: state.programs, now, selected: view.selected, narrow, width })
+      .map((text, index) => ({ text, hit: { program: index } })),
   );
 
   const recent = state.recentCycles.slice(0, 5);
   if (recent.length > 0) {
-    lines.push('', `  ${bold('RECENT')}`);
+    lines.push(plain(''), plain(`  ${bold('RECENT')}`));
     lines.push(
       ...recent.map((cycle) =>
-        dim(
+        plain(dim(
           `  ${cycle.startedAt.slice(5, 16).replace('T', ' ')}  ${cycle.program.padEnd(10)}` +
             `${cycle.kind.padEnd(11)}${cycle.exit.padEnd(9)}asks=${cycle.asksRaised}`,
-        ),
+        )),
       ),
     );
   }
@@ -444,15 +508,23 @@ export const frame = (
   // viewport on any terminal shorter than 35. Pressing `x` then armed view.confirmStop
   // with no visible prompt, and the next keystroke either interrupted a live cycle or
   // silently cancelled — a hidden confirmation on the only destructive key.
-  const tail = [
-    '',
-    view.message === '' ? '  ' : paint(36, `  ${view.message}`),
-    ...(view.previewWarning == null ? [] : [paint(33, `  ${view.previewWarning}`)]),
-    ...keybarLines(width, narrow),
+  const tail: Tagged[] = [
+    plain(''),
+    plain(view.message === '' ? '  ' : paint(36, `  ${view.message}`)),
+    ...(view.previewWarning == null ? [] : [plain(paint(33, `  ${view.previewWarning}`))]),
+    ...keybarLines(width, narrow).map((text, index) => ({ text, hit: { keybar: index } })),
   ];
 
   return clampAndClip(lines, tail, width, rows);
 };
+
+/** The rendered frame alone — every caller that has no mouse to serve. */
+export const frame = (
+  state: DrovrState,
+  view: ViewState,
+  columns?: number,
+  rows?: number,
+): string => frameWithHits(state, view, columns, rows).text;
 
 const cliPath = (): string => fileURLToPath(new URL('./cli.ts', import.meta.url));
 
@@ -556,15 +628,32 @@ const handle = async (
   return { message: '', redraw: false };
 };
 
+/**
+ * One SGR mouse report: `ESC [ < button ; column ; row (M|m)`. SGR (?1006) rather than
+ * the legacy X10 encoding because X10 caps coordinates at byte 223 and emits raw bytes
+ * that are indistinguishable from text — SGR is printable, unambiguous, and unbounded.
+ */
+const MOUSE_EVENTS = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+
+/** Wheel bursts arrive as one chunk of many reports; more than this many is a flick. */
+const MOUSE_EVENTS_PER_CHUNK = 8;
+
 /** Runs until interrupted; the terminal is restored on every exit path. */
 export const watch = async (intervalSeconds: number): Promise<void> => {
   const view: ViewState = { selected: 0, message: '', confirmStop: false, help: false, previewWarning: null };
   let lastState: DrovrState | null = null;
+  // What the mouse is over: the hits of the frame actually on screen, and the width
+  // and narrowness it was laid out at — a click resolves against what was drawn, never
+  // against a layout recomputed for a terminal that may have resized since.
+  let lastHits: (LineHit | null)[] = [];
+  let lastWidth = 100;
+  let lastNarrow = false;
 
   const restore = (): void => {
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    // Mouse reporting off first — a shell fed SGR reports pastes them as text.
     // Leave the alternate screen last, so the shell's own scrollback comes back intact.
-    process.stdout.write(`${ESC}?25h${ESC}?1049l`);
+    process.stdout.write(`${ESC}?1000l${ESC}?1006l${ESC}?25h${ESC}?1049l`);
   };
   const leave = (): never => {
     restore();
@@ -600,8 +689,11 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
     // frame() owns the clamp now, and clamps to the same rows - 1 this used to slice
     // to. Slicing here again would be a second budget to keep in step with the first,
     // and it is the one that dropped the keybar and the interrupt confirmation.
-    const lines = frame(state, view, columns, rows).split('\n');
-    const painted = lines.map((line) => `${line}${ESC}K`).join('\r\n');
+    const { text, hits } = frameWithHits(state, view, columns, rows);
+    lastHits = hits;
+    lastWidth = Math.max(24, Math.min(columns, 120));
+    lastNarrow = lastWidth < 72;
+    const painted = text.split('\n').map((line) => `${line}${ESC}K`).join('\r\n');
     process.stdout.write(`${ESC}H${painted}${ESC}0J`);
   };
 
@@ -618,32 +710,82 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
   };
 
   // The alternate screen is what keeps frames out of the shell's scrollback.
-  process.stdout.write(`${ESC}?1049h${ESC}?25l`);
+  // ?1000 reports clicks and wheel, ?1006 makes the reports SGR-encoded (see
+  // MOUSE_EVENTS). Terminals that support neither simply never send a report.
+  process.stdout.write(`${ESC}?1049h${ESC}?25l${ESC}?1000h${ESC}?1006h`);
   process.on('SIGINT', leave);
   process.on('uncaughtException', die);
   process.stdout.on('resize', () => {
     draw().catch(die);
   });
 
+  const onKey = (key: string): void => {
+    if (key === CTRL_C || key === 'q') leave();
+    try {
+      const control = readControl(paths().control);
+      const programs = byPriority(control.programs, Date.now(), control.deadlineHorizonDays);
+      handle(key, view, programs, lastState)
+        .then((action) => {
+          view.message = action.message;
+          if (action.redraw) draw().catch(die);
+        })
+        .catch(die);
+    } catch (error) {
+      view.message = error instanceof Error ? error.message : String(error);
+      draw().catch(die);
+    }
+  };
+
+  // An armed interrupt confirmation treats any keystroke but 'y' as a cancel; the
+  // mouse gets the same semantics, so a stray click can never confirm the one
+  // destructive action.
+  const selectProgram = (index: number): void => {
+    if (view.confirmStop) {
+      view.confirmStop = false;
+      view.message = 'stop cancelled';
+    } else {
+      const last = (lastState?.programs.length ?? 1) - 1;
+      view.selected = Math.max(0, Math.min(last, index));
+      view.message = '';
+    }
+    draw().catch(die);
+  };
+
+  const onMouse = (button: number, column: number, row: number): void => {
+    // Bit 6 marks a wheel report: 64 scrolls up, 65 down. Selection, like j/k.
+    if ((button & 64) !== 0) {
+      selectProgram(view.selected + ((button & 1) === 0 ? -1 : 1));
+      return;
+    }
+    if ((button & 3) !== 0) return; // left button only; right and middle stay free
+    const hit = lastHits[row - 1] ?? null;
+    if (hit === null) return;
+    if ('program' in hit) {
+      selectProgram(hit.program);
+      return;
+    }
+    const key = keybarKeyAt(lastWidth, lastNarrow, hit.keybar, column - 1);
+    if (key !== null) onKey(key);
+  };
+
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', (chunk: string) => {
-      if (chunk === CTRL_C || chunk === 'q') leave();
-      try {
-        const control = readControl(paths().control);
-        const programs = byPriority(control.programs, Date.now(), control.deadlineHorizonDays);
-        handle(chunk, view, programs, lastState)
-          .then((action) => {
-            view.message = action.message;
-            if (action.redraw) draw().catch(die);
-          })
-          .catch(die);
-      } catch (error) {
-        view.message = error instanceof Error ? error.message : String(error);
-        draw().catch(die);
+      // Mouse reports can share a chunk with each other (a wheel flick) and, rarely,
+      // with real keystrokes. Handle the reports, then whatever text remains.
+      const events = [...chunk.matchAll(MOUSE_EVENTS)];
+      if (events.length > 0) {
+        for (const event of events.slice(0, MOUSE_EVENTS_PER_CHUNK)) {
+          // Press reports only: 'm' is the release of a click already handled.
+          if (event[4] === 'M') onMouse(Number(event[1]), Number(event[2]), Number(event[3]));
+        }
+        const rest = chunk.replace(MOUSE_EVENTS, '');
+        if (rest.length > 0) onKey(rest);
+        return;
       }
+      onKey(chunk);
     });
   }
 

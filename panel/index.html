@@ -493,8 +493,13 @@
     // A session (5h) hold recovers in hours; a weekly one (fable/general) in days —
     // CLAUDE.md's own binding-bucket trap, restated for whichever bucket actually binds.
     const horizon = state.bindingBucket === 'session' ? 'hours, not days' : 'days, not hours';
+    // capacityNote is decide.ts's pool context (binding, recovery, coupling), shared by
+    // every program: their reasons no longer carry it, so this is the only place the
+    // coupling warning can appear. Guarded because a snapshot published by an older
+    // drovr has no such field.
+    const note = typeof state.capacityNote === 'string' ? ` ${state.capacityNote}.` : '';
     document.getElementById('capacity-prose').textContent =
-      `All three bind at once and the tightest decides. ${state.bindingBucket} is tightest right now, so it is the one refusing cycles — and it recovers in ${horizon}.`;
+      `All three bind at once and the tightest decides. ${state.bindingBucket} is tightest right now, so it is the one refusing cycles — and it recovers in ${horizon}.${note}`;
   };
 
   // ─── Accounts ───────────────────────────────────────────────────────────────

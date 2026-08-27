@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildState } from '../src/state.ts';
-import { frame, visibleLength } from '../src/watch.ts';
+import { frame, frameWithHits, keybarLines, visibleLength } from '../src/watch.ts';
 import { payload } from '../src/panel.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
 
@@ -115,11 +115,13 @@ for (const width of [60, 72, 100, 120]) {
       .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
       .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
       .replace(/\s+/g, ' ');
-    assert.match(flat, /session is tightest: room for 0\.00 cycles/, 'the verdict half was clipped');
+    assert.match(flat, /the pool has room for 0\.00 cycles/, 'the verdict half was clipped');
     // 1.00, not 1.50: this fixture binds on session, where reserveCycles does not apply
     // (see decide.ts requiredCycles — a 5h window refills, so it cannot cut a cycle off).
     assert.match(flat, /a start needs 1\.00/, 'the verdict half was truncated');
-    assert.match(flat, /no account has room in all three buckets/, 'the note half was clipped');
+    // The coupling lives on the shared capacityNote line beside the bars now, printed
+    // once however many programs there are — not on every program row.
+    assert.match(flat, /no account has room in all three buckets/, 'the shared note was clipped');
     assert.match(flat, /karen\.adam/, 'the note lost its last account name');
     // The keybar is drawn last, so wrapped reasons eating the frame shows up here first.
     // Narrow frames abbreviate every key to its first token, so `q quit` becomes `q`.
@@ -239,4 +241,60 @@ test('the help screen is clamped and clipped like every other frame', () => {
   for (const line of lines) {
     assert.ok(visibleLength(line) <= width, `help line over ${width} columns: ${line}`);
   }
+});
+
+/**
+ * The reason/note split exists for exactly this: the pool-level context (binding
+ * bucket, recovery, the coupling warning) is one fact shared by every program, and
+ * it used to be rewritten near-identically on every program row. It now lives on
+ * one line beside the bars it explains — however many programs are held by it.
+ */
+test('the pool context is printed once, however many programs share it', () => {
+  const state = buildState({
+    status: status([
+      account({ name: 'first@example.com', fable: 0.22, general: 0.2, session: 0.98 }),
+      account({ name: 'second@example.com', fable: 0.07, general: 0.08, session: 0.66 }),
+      account({ name: 'fourth@example.com', fable: 0.98, general: 0.9, session: 0.0 }),
+    ]),
+    control: control({
+      seedCycleCost: { fable: 0.025, general: 0.02, session: 0.063 },
+      programs: [
+        { name: 'demo', cwd: '/tmp/demo' },
+        { name: 'other', cwd: '/tmp/other' },
+        { name: 'third', cwd: '/tmp/third' },
+      ],
+    }),
+    cycles: [], now: NOW,
+    service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
+    previews: new Map(), locks: new Map(), asksUrls: new Map(), queuedIntents: [],
+  });
+  const flat = frame(state, view, 120)
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+    .replace(/\s+/g, ' ');
+  const marker = 'no account has room in all three buckets';
+  assert.equal(flat.split(marker).length - 1, 1, 'the coupling note must appear exactly once');
+  // Every held program still says what it, alone, needs.
+  assert.equal(flat.split('a start needs').length - 1, 3);
+});
+
+/**
+ * The hit map is what the mouse resolves against, so it has to describe the frame
+ * actually on screen: program blocks (wrapped details included) tagged with their
+ * program, keybar rows tagged for key lookup, and everything else dead space.
+ */
+test('mouse hits: program rows carry their program, chrome carries nothing', () => {
+  const state = fixture({
+    programs: [
+      { name: 'alpha', cwd: '/tmp/alpha' },
+      { name: 'beta', cwd: '/tmp/beta' },
+    ],
+  });
+  const { text, hits } = frameWithHits(state, view, 100);
+  const lines = text.split('\n');
+  assert.equal(hits.length, lines.length, 'one hit entry per rendered line');
+  assert.deepEqual(hits[lines.findIndex((line) => line.includes('alpha'))], { program: 0 });
+  assert.deepEqual(hits[lines.findIndex((line) => line.includes('beta'))], { program: 1 });
+  assert.equal(hits[0], null, 'the header is not clickable');
+  assert.deepEqual(hits.at(-1), { keybar: keybarLines(100, false).length - 1 });
 });

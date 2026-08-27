@@ -24,13 +24,26 @@ export type Verdict = 'GO' | 'WAIT' | 'STOP';
 
 export type Decision = {
   verdict: Verdict;
+  /**
+   * The part that is about *this program*. Pool-level context lives in `note`, because
+   * every program shares one pool: reasons that carried the whole picture were rewritten
+   * near-identically for every program row on `drovr status` and `drovr watch`. A
+   * multi-program surface prints `note` once; a single-decision surface (the decision
+   * log, a program's own status page) recombines them with `fullReason`.
+   */
   reason: string;
+  /** Pool-level context — identical for every program in a pass; null off the capacity path. */
+  note: string | null;
   pool: Pool | null;
   cyclesFundable: number | null;
   /** Which bucket is tightest — the difference between waiting hours and waiting days. */
   binding: BucketName | null;
   earliestRecoveryAt: number | null;
 };
+
+/** The reason with its pool context reattached, for surfaces where a line must stand alone. */
+export const fullReason = (decision: Pick<Decision, 'reason' | 'note'>): string =>
+  decision.note === null ? decision.reason : `${decision.reason} — ${decision.note}`;
 
 export type DecideInput = {
   status: TeamclaudeStatus;
@@ -211,6 +224,24 @@ const couplingNote = (funding: Funding): string | null => {
 };
 
 /**
+ * The pool-level half of a capacity verdict: which bucket binds, when it recovers, and
+ * the coupling/concentration warnings. Identical for every program in a pass, which is
+ * why it is separate from `reason` — `drovr status` and `drovr watch` print it once,
+ * while the decision log and each program's status page recombine via `fullReason`.
+ * `buildState` calls this too, so the shared line every renderer draws can never
+ * disagree with the note the decisions carry.
+ */
+export const poolContext = (funding: Funding, pool: Pool, now: number): string => {
+  const recovery = untilText(pool.resetAt[funding.binding], now);
+  const notes = [couplingNote(funding), concentrationNote(funding, pool.usableAccounts)]
+    .filter((note) => note !== null);
+  return (
+    `${funding.binding} is tightest, more room in ${recovery}` +
+    (notes.length === 0 ? '' : ` — ${notes.join('; ')}`)
+  );
+};
+
+/**
  * Cycles drovr may always run right after a reset, whatever the line says. Linear
  * entitlement from zero refuses the first cycle of every window — at 1% elapsed the line
  * sits near zero while one finished cycle is already above it — which would turn a gate
@@ -278,6 +309,7 @@ const untilText = (at: number | null, now: number): string => {
 const halt = (reason: string): Decision => ({
   verdict: 'STOP',
   reason,
+  note: null,
   pool: null,
   cyclesFundable: null,
   binding: null,
@@ -289,9 +321,11 @@ const hold = (
   reason: string,
   pool: Pool | null,
   funding: Funding | null,
+  note: string | null = null,
 ): Decision => ({
   verdict: 'WAIT',
   reason,
+  note,
   pool,
   cyclesFundable: funding?.cycles ?? null,
   binding: funding?.binding ?? null,
@@ -501,48 +535,42 @@ const capacityVerdict = (input: DecideInput, pool: Pool, running: CycleRecord[])
   const funding = cyclesFundableFrom(pool, cost, charged);
   const { rank, above } = priorityRank(control, input.program, now);
   const required = requiredCycles(funding.binding, control, rank);
-  if (funding.cycles < required) {
-    const recovery = untilText(pool.resetAt[funding.binding], now);
+  // Every capacity verdict carries the same pool context, and only that context names
+  // the binding bucket, its recovery, and the coupling — the reason keeps to what is
+  // true of this program alone. The session/weekly threshold asymmetry is still not
+  // explained anywhere on the line: `requiredCycles` and design.md carry the reason,
+  // and a question asked once does not belong on a line printed every tick.
+  const context = poolContext(funding, pool, now);
 
+  if (funding.cycles < required) {
     // A pool that would admit this program at rank 0 is being held by priority alone,
-    // and that is the one raised threshold worth explaining on the line: the reader sees
-    // room and needs to know who it is being kept for. The coupling note is skipped here
-    // on purpose — priority, not the bucket coupling, is what refuses.
+    // and that is the one raised threshold worth explaining: the reader sees room and
+    // needs to know who it is being kept for.
     if (rank > 0 && funding.cycles >= requiredCycles(funding.binding, control, 0)) {
       return hold(
         `room for ${funding.cycles.toFixed(2)} cycles, held back for ${listOf(above)} — ` +
-          `${input.program} starts above ${required.toFixed(2)} ` +
-          `(${funding.binding} is tightest); more room in ${recovery}`,
+          `${input.program} starts above ${required.toFixed(2)}`,
         pool,
         funding,
+        context,
       );
     }
 
-    const note = couplingNote(funding);
-    // The session/weekly asymmetry in the threshold is deliberately not explained here.
-    // The honest answer costs characters the frame does not have: the worst case below is
-    // already near the 200 that survive `drovr watch`'s wrapped detail lines, and that
-    // budget exists because this is the one surface that also draws the free-looking bars
-    // the note is there to explain. `requiredCycles` and design.md carry the reason; a
-    // question asked once does not belong on a line printed every tick.
     return hold(
-      `${funding.binding} is tightest: room for ${funding.cycles.toFixed(2)} cycles, ` +
-        `a start needs ${required.toFixed(2)} (${running.length} running); ` +
-        `more room in ${recovery}` +
-        `${note === null ? '' : ` — ${note}`}`,
+      `a start needs ${required.toFixed(2)} and the pool has room for ` +
+        `${funding.cycles.toFixed(2)} cycles (${running.length} running)`,
       pool,
       funding,
+      context,
     );
   }
 
-  const concentration = concentrationNote(funding, pool.usableAccounts);
   return {
     verdict: 'GO',
     reason:
       `room for ${funding.cycles.toFixed(2)} more cycles ` +
-      `${sourcedFrom(funding, pool.usableAccounts)} ` +
-      `(${running.length} running; ${funding.binding} is tightest)` +
-      `${concentration === null ? '' : ` — ${concentration}`}`,
+      `${sourcedFrom(funding, pool.usableAccounts)} (${running.length} running)`,
+    note: context,
     pool,
     cyclesFundable: funding.cycles,
     binding: funding.binding,

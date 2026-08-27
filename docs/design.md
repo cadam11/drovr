@@ -142,8 +142,16 @@ But they are not interchangeable either, and treating them as symmetric caused t
 **Recovery time depends on which bucket binds.** A 5h window recovers in hours; a weekly one in
 days. The first version reported the soonest reset across all three, so a weekly-bound wait
 would claim it recovered in two hours. `Pool` now carries a reset per bucket, `cyclesFundableFrom`
-returns which bucket binds, and the WAIT reason names it: `general is tightest: room for 0.40
-cycles, a start needs 1.50 (0 running); more room in 90h`.
+returns which bucket binds, and every capacity verdict names it in its pool-level `note`:
+`general is tightest, more room in 90h`.
+
+The note is a separate field from the reason on purpose. One pool means one context, so a
+reason that carried the whole picture was rewritten near-identically for every program row on
+`drovr status` and `drovr watch` — with four programs, the same coupling sentence four times.
+The reason now keeps to the program's own numbers (`a start needs 1.50 and the pool has room
+for 0.40 cycles`); multi-program surfaces print the note once, beside the bars it exists to
+explain, and single-decision surfaces — the decision log, a program's status page — recombine
+the two with `fullReason` so each line still stands alone.
 
 With capacity summed per account there is a bucket per account to choose between. Above zero the
 reported bucket is the one pinning the account that would serve next — the one with the most to
