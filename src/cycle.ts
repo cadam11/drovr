@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
+import { textCraig } from './nudge.ts';
 import { wrap } from './publish.ts';
 import {
   agentState,
@@ -60,7 +61,15 @@ const substitute = (command: string, program: Program, onboarding: boolean): str
 export type CycleOutcome = { finished: boolean; detail: string; stalled?: boolean };
 
 /** Everything bounding one cycle's watch, resolved from control.json by the caller. */
-export type CycleLimits = { maxHours: number; stallNudgeMs: number; maxStallNudges: number };
+export type CycleLimits = {
+  maxHours: number;
+  stallNudgeMs: number;
+  maxStallNudges: number;
+  /** How long a runner may sit on a dialog before Craig is asked to come and clear it. */
+  blockedAlertMs: number;
+  /** Null disables the text; the log line is written either way. */
+  phoneNumber: string | null;
+};
 
 const paneShape = z.object({ paneId: z.string() });
 
@@ -82,7 +91,7 @@ const rememberPane = (program: string, paneId: string): void => {
 
 const POLL_MS = 30_000;
 
-export type StallAction = 'wait' | 'nudge' | 'give-up';
+export type StallAction = 'wait' | 'nudge' | 'give-up' | 'alert';
 
 /**
  * An idle runner that has written no report will never move again on its own: an
@@ -94,6 +103,18 @@ export type StallAction = 'wait' | 'nudge' | 'give-up';
  *
  * `blocked` is deliberately not nudged: it means the pane is waiting on a dialog
  * only Craig can answer, and a prompt queues up behind it rather than clearing it.
+ *
+ * It is not, however, left silent — which is what "not nudged" used to mean in practice,
+ * because every non-idle state fell through to `wait`. Measured 2026-08-27: sunnyt sat at
+ * a bash-permission prompt for most of a 12.8h run. drovr saw `blocked`, logged it to a
+ * file nobody reads, held the pane and a concurrency slot for the full `maxCycleHours`,
+ * then recorded a finished cycle as a crash. The one state that *requires* a human was the
+ * one state that never reached one — while an unanswered ask, a softer and asynchronous
+ * question, texts him after 240 minutes.
+ *
+ * Alert rather than give up. A blocked runner still holds all of its context and its work
+ * is intact, merely paused; abandoning it would throw away a cycle that only needs an
+ * answer. Once per cycle, because a dialog does not become more urgent by being repeated.
  */
 export const stallAction = (input: {
   state: AgentState;
@@ -102,10 +123,17 @@ export const stallAction = (input: {
   nudgesSent: number;
   nudgeAfterMs: number;
   maxNudges: number;
+  blockedForMs: number;
+  blockedAlertAfterMs: number;
+  /** Whether this cycle has already asked for a human, so it asks exactly once. */
+  alerted: boolean;
 }): StallAction => {
   // Once the report exists the cycle has declared itself done, and idling at the
   // prompt is exactly what it should be doing — that is the release path, not a stall.
   if (input.hasReport) return 'wait';
+  if (input.state === 'blocked') {
+    return !input.alerted && input.blockedForMs >= input.blockedAlertAfterMs ? 'alert' : 'wait';
+  }
   if (input.state !== 'idle') return 'wait';
   if (input.idleForMs < input.nudgeAfterMs) return 'wait';
   return input.nudgesSent < input.maxNudges ? 'nudge' : 'give-up';
@@ -169,6 +197,32 @@ const abandonStalled = async (started: StartedCycle, nudges: number): Promise<Cy
  * clock. drovr does not own the process, so every one of those is observed rather
  * than waited on: there is no exit code to read.
  */
+/**
+ * The only escalation drovr has for a state it cannot resolve itself. A dialog in the
+ * pane stops the cycle dead and no amount of waiting or prompting clears it, so the
+ * message says where to go rather than what happened.
+ *
+ * Best-effort like every other send, and the log line is written first — an alert that
+ * fails to reach a handset must still be recoverable from the worker log.
+ */
+const askForHuman = async (
+  program: string,
+  agentName: string,
+  blockedForMs: number,
+  phoneNumber: string | null,
+): Promise<void> => {
+  const minutes = Math.round(blockedForMs / 60_000);
+  const message =
+    `drovr: ${program} has been waiting ${minutes}m on a dialog in its pane — a permission ` +
+    `prompt or a trust question. Only you can clear it. Open the ${agentName} tab in herdr ` +
+    'and answer it; the cycle carries on from there. It holds its pane until you do.';
+  console.error(`${program}: blocked ${minutes}m on a dialog — asked Craig to clear it`);
+  await textCraig(phoneNumber, message).catch((error: unknown) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`could not text about ${program} being blocked: ${detail}`);
+  });
+};
+
 const watchCycle = async (
   started: StartedCycle,
   program: string,
@@ -177,7 +231,9 @@ const watchCycle = async (
   // Bounded: a wedged runner must not hold its capacity slot indefinitely.
   const deadline = Date.now() + limits.maxHours * 3_600_000;
   let idleSince: number | null = null;
+  let blockedSince: number | null = null;
   let nudges = 0;
+  let alerted = false;
 
   while (Date.now() < deadline) {
     await sleep(POLL_MS);
@@ -189,6 +245,11 @@ const watchCycle = async (
     }
 
     idleSince = state === 'idle' ? (idleSince ?? Date.now()) : null;
+    // Cleared when it moves, so answering the dialog re-arms the alert for the next one.
+    // A twelve-hour cycle can hit several, and only the first was ever going to be free.
+    blockedSince = state === 'blocked' ? (blockedSince ?? Date.now()) : null;
+    if (state !== 'blocked') alerted = false;
+
     const action = stallAction({
       state,
       hasReport: false,
@@ -196,10 +257,20 @@ const watchCycle = async (
       nudgesSent: nudges,
       nudgeAfterMs: limits.stallNudgeMs,
       maxNudges: limits.maxStallNudges,
+      blockedForMs: blockedSince === null ? 0 : Date.now() - blockedSince,
+      blockedAlertAfterMs: limits.blockedAlertMs,
+      alerted,
     });
 
     if (action === 'wait') continue;
     if (action === 'give-up') return abandonStalled(started, nudges);
+    if (action === 'alert') {
+      // Marked before sending, not after: a send that throws must not turn a one-off
+      // request for help into a text every poll for the rest of the cycle.
+      alerted = true;
+      await askForHuman(program, started.agentName, Date.now() - (blockedSince ?? Date.now()), limits.phoneNumber);
+      continue;
+    }
 
     // Counted and the clock reset even when the send fails, so a herdr that is
     // refusing prompts cannot turn the nudge budget into a 30-second retry loop.

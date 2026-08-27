@@ -291,6 +291,20 @@ const waitForIdle = async (agentName: string, attempts = 20): Promise<boolean> =
  * later (interrupting it, reading its preview) has to build the exact same string,
  * so this is the one place that does — every other caller imports it from here.
  */
+/**
+ * The pane an agent occupies, which `releaseAgent` needs and only herdr knows. Null when
+ * the agent is gone or unreadable — both mean there is nothing left to release.
+ */
+export const agentPane = async (agentName: string): Promise<string | null> => {
+  const payload = await herdr(['agent', 'get', agentName]).catch(() => null);
+  if (payload === null) return null;
+  const shape = z.object({
+    result: z.object({ agent: z.object({ pane_id: z.string() }).passthrough() }),
+  });
+  const parsed = shape.safeParse(payload);
+  return parsed.success ? parsed.data.result.agent.pane_id : null;
+};
+
 export const agentNameFor = (programName: string): string => `drovr-${programName}`.slice(0, 32).toLowerCase();
 
 export const startCycleAgent = async (input: {

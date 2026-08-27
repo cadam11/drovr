@@ -290,6 +290,37 @@ a program with a `deadline` inside the horizon is promoted one priority step, an
 promotion while overdue. One number, legible in `drovr status`, and it decays naturally when the
 date stops mattering (by the program being finished or reconfigured).
 
+## When only a human can help
+
+Two states stop a cycle dead and neither is a malfunction, so neither had any escalation.
+
+A runner **blocked on a dialog** — a bash-permission prompt, a trust question — is waiting on
+something only Craig can answer. It must never be nudged, because a prompt typed into a dialog
+queues up behind it. That was correctly implemented as "do not nudge" and incorrectly implemented
+as "do nothing": every non-idle state fell through to `wait`. On 2026-08-27 sunnyt sat at a
+permission prompt for most of a 12.8-hour run, holding its pane and a concurrency slot, and was
+recorded as a crash at the end of it. Meanwhile an unanswered *ask* — the loop's softer,
+asynchronous question channel — had been texting him after 240 minutes for months. The hard
+blocker was the silent one.
+
+It now texts after `blockedAlertMinutes` (default 20), once per block, re-armed if the runner
+moves and blocks again. It is still never nudged and never given up on: the work is intact, merely
+paused, and abandoning it would throw away a cycle that needs only an answer.
+
+A **leftover runner** is the other. When a cycle outlives `maxCycleHours` the watch loop exits and
+nothing releases the pane, because `releaseAgent` is only ever called from inside that loop. Every
+later cycle for the program then failed on `PaneBusy` — and the real damage was upstream of that:
+admission had already booked the program as launched, so `chargeForRunning` charged a whole cycle
+against the pool for the rest of the pass. Two other programs went from 1.35 fundable to 0.35 and
+were refused, every ten minutes, with `deferred` counting toward no gate at all.
+
+Pane occupancy is now a readiness input, refused before any funding is computed, so an unstartable
+program neither takes a slot nor spends anyone else's capacity. Freeing the pane stays manual —
+`drovr release <program>` — because an idle runner with no report may hold unsaved work, and
+ending it is the one kind of kill the design refuses to make on its own. It declines to touch a
+runner that is working or blocked, since `/exit` into a live turn is swallowed and the pane stays
+held.
+
 ## Staying up unattended
 
 drovr runs from launchd every 600s with nobody watching, so the failure that matters most is not

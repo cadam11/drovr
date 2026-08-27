@@ -25,6 +25,7 @@ const run = (overrides: {
   status?: ReturnType<typeof healthy>;
   control?: ReturnType<typeof control>;
   cycles?: CycleRecord[];
+  runnerPresent?: boolean;
 } = {}) =>
   decide({
     status: overrides.status ?? healthy(),
@@ -32,6 +33,7 @@ const run = (overrides: {
     cycles: overrides.cycles ?? [],
     program: overrides.program ?? 'demo',
     now: NOW,
+    ...(overrides.runnerPresent === undefined ? {} : { runnerPresent: overrides.runnerPresent }),
   });
 
 test('a healthy pool admits a cycle', () => {
@@ -851,4 +853,43 @@ test('a weekly-bound pool still has to cover the reserve', () => {
   assert.equal(decision.verdict, 'WAIT');
   assert.match(decision.reason, /fable tightest/);
   assert.match(decision.reason, /need 1\.50/, 'the reserve applies where exhaustion means days');
+});
+
+/**
+ * A leftover runner in the pane is the one thing that makes a program unstartable while
+ * every gate says GO. Measured 2026-08-27: sunnyt's previous runner outlived its watch,
+ * so each tick admitted a cycle, booked it as launched, then failed on PaneBusy and
+ * recorded `deferred` — 38 times. The pane check lived inside runCycle, after admission,
+ * so admission could not know.
+ *
+ * The cost was not the wasted launch. It was that the phantom launch charged a full cycle
+ * against the pool for the rest of the tick, taking aice-x and joinery from 1.35 fundable
+ * to 0.35 and refusing them both, every ten minutes, invisibly.
+ */
+test('a program whose runner still holds its pane is not admitted', () => {
+  const decision = run({ runnerPresent: true });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /still holds its pane/);
+  assert.match(decision.reason, /drovr-demo/, 'names the agent so it can be found');
+});
+
+test('a leftover runner is refused before the pool is charged for it', () => {
+  // Ordering is the whole fix: refused here, it is never added to the tick's launched
+  // list, so it cannot charge a cycle against the funding the other programs are testing.
+  const decision = run({ runnerPresent: true });
+  assert.equal(decision.cyclesFundable, null, 'no funding was computed, so none was claimed');
+});
+
+test('a present runner with a cycle actually in flight reports that, not a leftover', () => {
+  const decision = run({
+    runnerPresent: true,
+    cycles: [cycle({ endedAt: null, exit: 'running', poolAfter: null })],
+  });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /already in flight/, 'the normal case is not a leftover');
+});
+
+test('an absent runner leaves admission alone', () => {
+  assert.equal(run({ runnerPresent: false }).verdict, 'GO');
+  assert.equal(run({}).verdict, 'GO', 'omitted means unknown, which must not refuse');
 });

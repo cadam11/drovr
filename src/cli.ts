@@ -22,7 +22,7 @@ import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from '.
 import { readAsks } from './asks.ts';
 import { textCraig } from './nudge.ts';
 import { unverified, verifyDelivery } from './delivery.ts';
-import { resolveWorkspace, tidyCycleTabs } from './herdr.ts';
+import { agentNameFor, agentPane, agentState, isSettled, releaseAgent, resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { heldBy, holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
@@ -101,7 +101,23 @@ const evaluateAll = async (input: {
     ),
   );
 
+  // Read here too, and by hand, because this is a *fourth* place decide() is called —
+  // after tick.ts, state.ts and, through it, the panel. A guard passed by only some of
+  // them prints GO on the surfaces that lack it for a program the tick refuses, which is
+  // the drift CLAUDE.md keeps warning about. Undefined on an error or a headless runner:
+  // "no agent" and "no answer" are different facts and only the first refuses a cycle.
+  const runners = new Map(
+    await Promise.all(
+      ordered.map(async (program) => {
+        if (program.runner !== 'herdr') return [program.name, undefined] as const;
+        const state = await agentState(agentNameFor(program.name)).catch(() => null);
+        return [program.name, state === null ? undefined : state !== 'gone'] as const;
+      }),
+    ),
+  );
+
   return ordered.map((program) => {
+    const runnerPresent = runners.get(program.name);
     const decision = decide({
       status,
       control,
@@ -110,6 +126,7 @@ const evaluateAll = async (input: {
       now,
       answeredAt: asks.get(program.name)?.latestAt ?? null,
       asksShared: asks.get(program.name)?.shared ?? null,
+      ...(runnerPresent === undefined ? {} : { runnerPresent }),
     });
     if (decision.verdict === 'GO' && program.enabled) {
       projected.push({
@@ -308,6 +325,52 @@ const showStatus = async (): Promise<void> => {
     const flags = `${program.enabled ? '' : ' [disabled]'}${pid === null ? '' : ` [pid ${pid}]`}`;
     console.log(`  [p${shown}] ${program.name}${flags}: ${decision.verdict} — ${decision.reason}`);
   }
+};
+
+
+/**
+ * Frees a program's pane when its runner has outlived the cycle that started it. Manual
+ * on purpose: an idle runner with no report may hold unsaved work, and drovr choosing to
+ * end it unprompted is the one kind of kill the design refuses. This is Craig deciding.
+ *
+ * Safe by construction rather than by care — `releaseAgent` will not send `/exit` to an
+ * agent that is not settled, so a runner still working or waiting on a dialog is reported
+ * and left alone rather than interrupted.
+ */
+const releaseRunner = async (name: string | undefined): Promise<void> => {
+  if (name === undefined) throw new Error('release needs a program, e.g. `drovr release sunnyt`');
+  const control = readControl(p.control);
+  if (!control.programs.some((entry) => entry.name === name)) {
+    throw new Error(`no program named "${name}" in ${p.control}`);
+  }
+
+  const agentName = agentNameFor(name);
+  const state = await agentState(agentName);
+  if (state === 'gone') {
+    console.log(`${name}: no runner to release — its pane is already free`);
+    return;
+  }
+
+  const pane = await agentPane(agentName);
+  if (pane === null) throw new Error(`${agentName} reports no pane, so there is nothing to release`);
+
+  if (!isSettled(state)) {
+    console.error(
+      `${name}: ${agentName} is ${state}, so it was left alone — /exit typed into a live ` +
+        `turn is swallowed and the pane stays held. Open its tab in herdr (pane ${pane}) and ` +
+        'answer what it is waiting on, then run this again.',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const released = await releaseAgent(agentName, pane);
+  console.log(
+    released
+      ? `${name}: released ${agentName} — the next tick can start a cycle`
+      : `${name}: ${agentName} did not exit; it still holds pane ${pane}. Try again, or close its tab in herdr`,
+  );
+  if (!released) process.exitCode = 1;
 };
 
 /**
@@ -607,6 +670,8 @@ const main = async (argv: string[]): Promise<void> => {
   }
 
   if (command === 'usage') return showUsage(json);
+
+  if (command === 'release') return releaseRunner(rest[0]);
 
   if (command === 'pause') {
     const spec = rest[0];

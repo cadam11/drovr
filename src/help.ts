@@ -288,6 +288,23 @@ export const COMMANDS: Command[] = [
     ],
   },
   {
+    name: 'release',
+    usage: 'drovr release <program>',
+    summary: "free a program's pane when its runner outlived the cycle that started it",
+    details: [
+      'A runner that outlives its watch (maxCycleHours) keeps its pane, and every later',
+      'cycle for that program is refused because the pane is occupied. Nothing releases it',
+      'automatically: an idle runner with no report may hold unsaved work, and ending it is',
+      "a decision drovr will not make for you. `drovr tidy` cannot do this — it only closes",
+      'tabs that have no agent at all.',
+      '',
+      'Refuses, without touching it, when the runner is working or waiting on a dialog:',
+      '/exit typed into a live turn is swallowed and the pane stays held. Answer whatever it',
+      'is waiting on in herdr first, then run this.',
+    ],
+    writes: "sends /exit to the program's herdr agent",
+  },
+  {
     name: 'usage',
     usage: 'drovr usage [--json]',
     summary: "how much of the pool Craig's own sessions take, against the reserve held for them",

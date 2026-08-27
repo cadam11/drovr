@@ -6,7 +6,7 @@ import {
   chargeForRunning, estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles,
   snapshot, spentSince, type CycleRecord,
 } from './ledger.ts';
-import { agentNameFor, aiceBaseUrl, readPreview } from './herdr.ts';
+import { agentNameFor, agentState, aiceBaseUrl, readPreview } from './herdr.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import type { Preview } from './preview.ts';
@@ -112,6 +112,8 @@ export type StateInput = {
   now: number;
   service: { loaded: boolean; intervalSeconds: number | null; lastTickAt: number | null };
   previews: Map<string, Preview>;
+  /** Per program: whether a herdr agent is still present. Absent means unknown. */
+  runners?: Map<string, boolean>;
   locks: Map<string, number>;
   asksUrls: Map<string, string>;
   queuedIntents: DrovrState['queuedIntents'];
@@ -161,18 +163,21 @@ const RUNNING_PLACEHOLDER: CycleRecord = {
 
 const programsOf = (input: StateInput): ProgramState[] => {
   const { control, cycles, now, previews, locks, asksUrls } = input;
+  const runners = input.runners ?? new Map<string, boolean>();
   const running = inFlight(cycles, now, control.maxCycleHours);
   const ordered = byPriority(control.programs, now, control.deadlineHorizonDays);
   const projected: CycleRecord[] = [];
 
   return ordered.map((program) => {
     const live = running.find((cycle) => cycle.program === program.name);
+    const runnerPresent = runners.get(program.name);
     const decision = decide({
       status: input.status,
       control,
       cycles: [...cycles, ...projected],
       program: program.name,
       now,
+      ...(runnerPresent === undefined ? {} : { runnerPresent }),
     });
     if (decision.verdict === 'GO' && program.enabled && live === undefined) {
       projected.push({
@@ -294,6 +299,11 @@ export const collectState = async (
   const previews = new Map<string, Preview>();
   const asksUrls = new Map<string, string>();
   const locks = new Map<string, number>();
+  // Whether each program's runner is still present, which decide() needs to see a
+  // leftover pane. Gathered here rather than left to tick because every renderer runs
+  // decide() itself: a guard only the tick passes shows GO on four surfaces for a
+  // program the tick will refuse, which is exactly the drift CLAUDE.md warns about.
+  const runners = new Map<string, boolean>();
 
   for (const program of control.programs) {
     const pid = holder(p.programLock(program.name));
@@ -304,6 +314,15 @@ export const collectState = async (
     if (program.aice?.asksPage != null) {
       const base = await aiceBaseUrl(program);
       if (base !== null) asksUrls.set(program.name, `${base}/${program.aice.asksPage}`);
+    }
+    if (program.runner === 'herdr') {
+      // Left unset on an error, not false: "no agent" and "no answer" are different facts
+      // and only the first may refuse a cycle.
+      const state = await agentState(agentNameFor(program.name)).catch((error: unknown) => {
+        onWarning?.(`could not read ${program.name}'s runner state: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+      });
+      if (state !== null) runners.set(program.name, state !== 'gone');
     }
     if (!running.some((cycle) => cycle.program === program.name)) return;
     const { preview, warning } = await readPreview(agentNameFor(program.name));
@@ -322,6 +341,6 @@ export const collectState = async (
       // an install that predates the heartbeat from reading as never having run.
       lastTickAt: readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions),
     },
-    previews, locks, asksUrls, queuedIntents,
+    previews, locks, asksUrls, queuedIntents, runners,
   });
 };

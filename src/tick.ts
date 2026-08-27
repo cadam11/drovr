@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
-import { PaneBusy } from './herdr.ts';
+import { agentNameFor, agentState, PaneBusy } from './herdr.ts';
 import { listNotes, readAsks, replyToNote, resolveNote, type NoteThread } from './asks.ts';
 import { nudgeIfNeglected, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
@@ -316,6 +316,23 @@ export const drainIntents = async (now = Date.now()): Promise<Drained> => {
 };
 
 /**
+ * Whether a herdr agent for this program is still present, for decide()'s leftover-pane
+ * gate. Undefined rather than false when herdr cannot be reached: "no agent" and "no
+ * answer" are different facts, and only the first may refuse a cycle.
+ */
+const runnerStillThere = async (program: string): Promise<boolean | undefined> => {
+  try {
+    return (await agentState(agentNameFor(program))) !== 'gone';
+  } catch (error) {
+    console.error(
+      `${program}: could not read its runner's state (${explain(error)}) — ` +
+        'admission proceeds as if there were none.',
+    );
+    return undefined;
+  }
+};
+
+/**
  * A hard wall-clock ceiling on one pass, and the thing that makes the tick lock
  * impossible to hold forever.
  *
@@ -478,6 +495,12 @@ export const tick = async (): Promise<void> => {
         });
       }
 
+      // One bounded herdr call per enabled program. Only for the herdr runner: a headless
+      // cycle has no agent, so reporting one absent would be true but meaningless. Left
+      // undefined when herdr cannot answer — unknown must not refuse a cycle.
+      const runnerPresent =
+        program.runner === 'herdr' ? await runnerStillThere(program.name) : undefined;
+
       const decision = decide({
         status,
         control,
@@ -486,6 +509,7 @@ export const tick = async (): Promise<void> => {
         now,
         answeredAt: asks?.latestAt ?? null,
         asksShared: asks?.shared ?? null,
+        ...(runnerPresent === undefined ? {} : { runnerPresent }),
       });
       logDecision(program.name, decision, now);
       console.log(`${program.name}: ${decision.verdict} — ${decision.reason}`);
@@ -586,6 +610,8 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       maxHours: control.maxCycleHours,
       stallNudgeMs: control.stallNudgeMinutes * 60_000,
       maxStallNudges: control.maxStallNudges,
+      blockedAlertMs: control.blockedAlertMinutes * 60_000,
+      phoneNumber: control.phoneNumber,
     };
     const outcome = await runCycle(program, startedAt, limits).catch(
       (error: unknown) => {

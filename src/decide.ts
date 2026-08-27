@@ -14,6 +14,7 @@ import { chargeForRunning,
   type CycleRecord,
 } from './ledger.ts';
 import type { BucketName } from './allocation.ts';
+import { agentNameFor } from './herdr.ts';
 import type { TeamclaudeStatus } from './teamclaude.ts';
 
 const WEEKLY_WINDOW_HOURS = 168;
@@ -42,6 +43,13 @@ export type DecideInput = {
   answeredAt?: number | null;
   /** False when shared notes are off, which is what stops drovr seeing an answer. */
   asksShared?: boolean | null;
+  /**
+   * Whether a herdr agent for this program is still present. Read by the caller, because
+   * decide() does no I/O — and read at all because a leftover runner is the one thing that
+   * makes a program unstartable while every other gate says GO. Undefined means unknown
+   * (herdr unreachable, or a headless runner), which must never refuse a cycle.
+   */
+  runnerPresent?: boolean;
 };
 
 const ratio = (available: number, cost: number): number =>
@@ -372,6 +380,24 @@ const admissionLimits = (
   if (running.some((cycle) => cycle.program === program)) {
     return hold('a cycle for this program is already in flight', pool, null);
   }
+
+  // Second, and before anything that computes funding. A runner present with no cycle in
+  // flight is a leftover that outlived its watch, and it will refuse the launch with
+  // PaneBusy however healthy the pool is. Admitting it anyway is not merely a wasted
+  // launch: tick books an admitted program as launched, so the phantom charges a full
+  // cycle against the pool for the rest of the pass and starves every program behind it.
+  // Measured 2026-08-27 — 38 deferrals, each one taking two other programs from 1.35
+  // fundable to 0.35.
+  if (input.runnerPresent === true) {
+    return hold(
+      `its previous runner still holds its pane — agent ${agentNameFor(program)} outlived ` +
+        `its cycle. Run "drovr release ${program}" once it is settled, or open its tab in ` +
+        'herdr and answer whatever it is waiting on',
+      pool,
+      null,
+    );
+  }
+
   if (running.length >= control.maxConcurrentCycles) {
     return hold(
       `${running.length} cycles ahead of it, cap is ${control.maxConcurrentCycles}`,
