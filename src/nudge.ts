@@ -70,6 +70,14 @@ export const messageIdOf = (stdout: string): string | null => {
  * the state an unattended overnight supervisor finds them in. The default profile
  * is a static IAM user, so it still works at 4am. Do not add --profile.
  *
+ * `originationNumber` is required, not defaulted, for the same reason runBounded's
+ * timeout is: it defaulted to null once, four of five call sites forgot it, and null
+ * means "let SNS pick a number" — SNS picks one of sunnyt's, so drovr's alerts arrived
+ * from the product's number and a reply would land in inbound topics sunnyt's cycles
+ * poll. Measured 2026-08-27 on the blocked-asks nudge. Every caller passes
+ * `control.originationNumber`; only a caller with no control file in reach may pass
+ * a literal null, and must say why.
+ *
  * Best-effort by design: a phone that cannot be reached must never take down a tick
  * or a cycle, so failure is logged and reported rather than thrown. `sent` means the
  * API accepted the message — never that a handset received it.
@@ -77,7 +85,7 @@ export const messageIdOf = (stdout: string): string | null => {
 export const textCraig = async (
   phoneNumber: string | null,
   message: string,
-  originationNumber: string | null = null,
+  originationNumber: string | null,
 ): Promise<SendResult> => {
   const via = originationNumber === null ? 'sns' : 'end-user-messaging';
   if (phoneNumber === null) return { sent: false, messageId: null, via };
@@ -120,9 +128,10 @@ export const nudgeIfNeglected = async (input: {
   now: number;
   afterMinutes: number;
   phoneNumber: string | null;
+  originationNumber: string | null;
   asksUrl: string | null;
 }): Promise<boolean> => {
-  const { program, asks, askedAt, now, afterMinutes, phoneNumber, asksUrl } = input;
+  const { program, asks, askedAt, now, afterMinutes, phoneNumber, originationNumber, asksUrl } = input;
   if (phoneNumber === null) return false;
   if (now - askedAt < afterMinutes * 60_000) return false;
   if (alreadyNudged(program, askedAt)) return false;
@@ -132,7 +141,7 @@ export const nudgeIfNeglected = async (input: {
     `drovr: ${program} has been blocked ${hours}h on ${asks} unanswered ask(s).` +
     (asksUrl === null ? '' : ` ${asksUrl}`);
 
-  if (!(await textCraig(phoneNumber, message)).sent) return false;
+  if (!(await textCraig(phoneNumber, message, originationNumber)).sent) return false;
 
   ensureDirs(program);
   writeFileSync(sentPath(program), `${JSON.stringify({ askedAt, sentAt: now })}\n`, 'utf8');

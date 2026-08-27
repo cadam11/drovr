@@ -428,7 +428,8 @@ const durationText = (ms: number): string =>
  */
 const notifyOverrun = async (controlPath: string, message: string): Promise<void> => {
   try {
-    await textCraig(readControl(controlPath).phoneNumber, message);
+    const control = readControl(controlPath);
+    await textCraig(control.phoneNumber, message, control.originationNumber);
   } catch (error) {
     console.error(`could not text the overrun: ${explain(error)}`);
   }
@@ -547,6 +548,7 @@ export const tick = async (): Promise<void> => {
           now,
           afterMinutes: control.nudgeAfterMinutes,
           phoneNumber: control.phoneNumber,
+          originationNumber: control.originationNumber,
           asksUrl: null,
         });
       }
@@ -677,6 +679,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       maxStallNudges: control.maxStallNudges,
       blockedAlertMs: control.blockedAlertMinutes * 60_000,
       phoneNumber: control.phoneNumber,
+      originationNumber: control.originationNumber,
     };
     const outcome = await runCycle(program, startedAt, limits).catch(
       (error: unknown) => {
@@ -715,6 +718,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
         control.phoneNumber,
         `drovr: ${name} stalled — its runner idled through ${control.maxStallNudges} nudges ` +
           `without writing a report. Its pane is free and the next tick starts a fresh cycle.`,
+        control.originationNumber,
       );
     }
 

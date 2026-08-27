@@ -79,6 +79,8 @@ export type CycleLimits = {
   blockedAlertMs: number;
   /** Null disables the text; the log line is written either way. */
   phoneNumber: string | null;
+  /** drovr's own long code — without it SNS picks one of sunnyt's numbers (nudge.ts). */
+  originationNumber: string | null;
 };
 
 const paneShape = z.object({ paneId: z.string() });
@@ -219,7 +221,7 @@ const askForHuman = async (
   program: string,
   agentName: string,
   blockedForMs: number,
-  phoneNumber: string | null,
+  limits: Pick<CycleLimits, 'phoneNumber' | 'originationNumber'>,
 ): Promise<void> => {
   const minutes = Math.round(blockedForMs / 60_000);
   const message =
@@ -227,7 +229,7 @@ const askForHuman = async (
     `prompt or a trust question. Only you can clear it. Open the ${agentName} tab in herdr ` +
     'and answer it; the cycle carries on from there. It holds its pane until you do.';
   console.error(`${program}: blocked ${minutes}m on a dialog — asked Craig to clear it`);
-  await textCraig(phoneNumber, message).catch((error: unknown) => {
+  await textCraig(limits.phoneNumber, message, limits.originationNumber).catch((error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(`could not text about ${program} being blocked: ${detail}`);
   });
@@ -278,7 +280,7 @@ const watchCycle = async (
       // Marked before sending, not after: a send that throws must not turn a one-off
       // request for help into a text every poll for the rest of the cycle.
       alerted = true;
-      await askForHuman(program, started.agentName, Date.now() - (blockedSince ?? Date.now()), limits.phoneNumber);
+      await askForHuman(program, started.agentName, Date.now() - (blockedSince ?? Date.now()), limits);
       continue;
     }
 
