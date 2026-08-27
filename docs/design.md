@@ -307,6 +307,30 @@ It now texts after `blockedAlertMinutes` (default 20), once per block, re-armed 
 moves and blocks again. It is still never nudged and never given up on: the work is intact, merely
 paused, and abandoning it would throw away a cycle that needs only an answer.
 
+### The watch is not the cycle
+
+`maxCycleHours` bounds how long drovr *watches*. It cannot bound the cycle, because drovr never
+kills one. So at the deadline the watch loop exits and the runner carries on — leaving drovr
+holding a verdict about something it has stopped observing. It recorded `crash`, which is a lie in
+the one direction that matters: it says the cycle delivered nothing, and it drops the quota sample
+of the longest and most expensive cycles there are.
+
+That is now `abandoned` — a statement about drovr having stopped looking, not about the cycle. It
+counts as a **cost sample**, because the spend was real and measured, and it counts toward the
+**daily cap not at all**, because delivery is genuinely unknown. Those are different questions and
+`DELIVERY_UNKNOWN` exists to keep them apart from the never-ran exits.
+
+The outcome usually arrives minutes later. A runner given up on at 12h that finishes at 12h20m
+writes `last-cycle.json` to a file nothing is reading any more. So the next tick **supersedes** the
+abandoned record with the report — appended, never rewritten, so history stays append-only and
+`latestEnds` is what makes the later record operative. That is why every measurement in
+`ledger.ts` reads through it: two end records for one cycle would otherwise price it twice.
+
+It runs before admission, and that ordering is the entire window: `runCycle` clears the report file
+before every attempt, so the next admitted cycle would delete the evidence. A late outcome has
+exactly one tick in which to be recovered. The same fact makes the guard sound — a report sitting
+beside an `abandoned` record can only have been written by that cycle.
+
 A **leftover runner** is the other. When a cycle outlives `maxCycleHours` the watch loop exits and
 nothing releases the pane, because `releaseAgent` is only ever called from inside that loop. Every
 later cycle for the program then failed on `PaneBusy` — and the real damage was upstream of that:

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { openSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appendRecord, inFlight, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
+import { appendRecord, inFlight, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle } from './cycle.ts';
 import { agentNameFor, agentState, PaneBusy } from './herdr.ts';
@@ -117,6 +117,57 @@ const reconcileAbandoned = (now: number, maxCycleHours: number): number => {
     );
   }
   return abandoned.length;
+};
+
+/**
+ * Supersede an abandoned cycle's record with the report the runner wrote after drovr
+ * stopped watching it.
+ *
+ * This is the other half of `abandoned`. Recording that drovr stopped looking is honest
+ * but it is not the outcome, and the outcome usually arrives minutes later: a runner given
+ * up on at 12h that finishes at 12h20m writes its report to a file nothing was reading.
+ * Without this the ledger keeps a permanent "delivery unknown" for a cycle that plainly
+ * delivered, its yield is lost, and its real cost never reaches the estimate.
+ *
+ * Appended, never rewritten. History stays append-only, so `latestEnds` is what makes the
+ * later record the operative one — and that is why every measurement in ledger.ts reads
+ * through it rather than over the raw file.
+ *
+ * Narrow on purpose, and safe because of `clearReport`: it fires only for a program whose
+ * most recent record is `abandoned`, and `runCycle` deletes the report file before every
+ * attempt, so a report sitting there now can only have been written by that cycle. It runs
+ * before admission for the same reason — the next cycle's `clearReport` would delete the
+ * evidence.
+ */
+const reconcileLateReports = (now: number): number => {
+  const p = paths();
+  const cycles = readCycles(p.cycles);
+  const control = readControl(p.control);
+  let superseded = 0;
+
+  for (const program of control.programs) {
+    const mine = latestEnds(cycles).filter((cycle) => cycle.program === program.name);
+    const last = mine.at(-1);
+    if (last?.exit !== 'abandoned') continue;
+
+    const report = readReport(program.name);
+    if (report === null) continue;
+
+    appendRecord(p.cycles, {
+      ...last,
+      endedAt: new Date(now).toISOString(),
+      exit: report.exit,
+      startupTokens: report.startupTokens,
+      yield: report.yield,
+      asksRaised: report.asksRaised,
+    });
+    superseded += 1;
+    console.log(
+      `${program.name}: cycle started ${last.startedAt} reported "${report.exit}" after drovr ` +
+        'stopped watching — record superseded, its yield and cost now count',
+    );
+  }
+  return superseded;
 };
 
 /**
@@ -467,6 +518,9 @@ export const tick = async (): Promise<void> => {
     const control = readControl(p.control);
     const status = await readStatus();
     reconcileAbandoned(now, control.maxCycleHours);
+    // Before admission: the next cycle's clearReport() would delete the very report this
+    // reads, so a late outcome has exactly one tick in which to be recovered.
+    reconcileLateReports(now);
 
     // Workers write their own start record, so within one tick the earlier launches
     // are not yet visible in the ledger. Without tracking them here the concurrency
@@ -554,10 +608,19 @@ export const tick = async (): Promise<void> => {
   }
 };
 
-/** What a cycle that never wrote a report is recorded as. */
-const unreportedExit = (deferred: boolean, stalled: boolean): CycleRecord['exit'] => {
+/**
+ * What a cycle that never wrote a report is recorded as. Order matters only in that each
+ * of these is a different fact: it never started, it sat idle through every nudge, drovr
+ * stopped watching a live runner, or it really did die without a word.
+ */
+const unreportedExit = (
+  deferred: boolean,
+  stalled: boolean,
+  abandoned: boolean,
+): CycleRecord['exit'] => {
   if (deferred) return 'deferred';
   if (stalled) return 'stalled';
+  if (abandoned) return 'abandoned';
   return 'crash';
 };
 
@@ -628,13 +691,14 @@ export const runProgramCycle = async (name: string): Promise<void> => {
 
     const deferred = 'deferred' in outcome && outcome.deferred === true;
     const stalled = 'stalled' in outcome && outcome.stalled === true;
+    const abandoned = 'abandoned' in outcome && outcome.abandoned === true;
 
     const report = readReport(name);
     const after = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 
     record({
       endedAt: new Date().toISOString(),
-      exit: report?.exit ?? unreportedExit(deferred, stalled),
+      exit: report?.exit ?? unreportedExit(deferred, stalled, abandoned),
       poolAfter: after,
       startupTokens: report?.startupTokens ?? null,
       yield: report?.yield ?? null,
@@ -652,7 +716,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       );
     }
 
-    if (report === null && !deferred && !stalled) {
+    if (report === null && !deferred && !stalled && !abandoned) {
       console.error(
         `cycle for ${name} produced no report — recorded as crash. ${outcome.detail}`,
       );

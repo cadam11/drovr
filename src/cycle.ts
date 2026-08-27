@@ -58,7 +58,17 @@ const substitute = (command: string, program: Program, onboarding: boolean): str
     .replaceAll('{model}', program.model)
     .replaceAll('{mode}', onboarding ? 'onboard' : 'deliver');
 
-export type CycleOutcome = { finished: boolean; detail: string; stalled?: boolean };
+export type CycleOutcome = {
+  finished: boolean;
+  detail: string;
+  stalled?: boolean;
+  /**
+   * The watch hit maxCycleHours with the runner still alive. Distinct from every other
+   * outcome because it is not a statement about the cycle at all — it is a statement about
+   * drovr having stopped looking.
+   */
+  abandoned?: boolean;
+};
 
 /** Everything bounding one cycle's watch, resolved from control.json by the caller. */
 export type CycleLimits = {
@@ -282,9 +292,17 @@ const watchCycle = async (
     });
     console.log(`${program}: idle with no report — nudged it (${nudges}/${limits.maxStallNudges})`);
   }
+  // Not `crash`. The runner is alive and may still be minutes from writing its report;
+  // drovr has simply run out of watch. Saying "crash" here asserted that a cycle which
+  // often *had* delivered produced nothing, and discarded the quota sample of the longest
+  // and most expensive cycles there are. tick.ts reconciles a report that lands later.
   return {
     finished: false,
-    detail: `still running after ${limits.maxHours}h — agent ${started.agentName} left in place for inspection`,
+    abandoned: true,
+    detail:
+      `still watching after ${limits.maxHours}h and the runner is still alive — agent ` +
+      `${started.agentName} left in place. Recorded as abandoned, not crashed; if it ` +
+      'writes a report the next tick supersedes this record with the real outcome',
   };
 };
 

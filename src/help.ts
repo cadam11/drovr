@@ -40,6 +40,10 @@ export const AGENT_NOTES = {
     context: 'the runner hit its context ceiling and wound down — normal and healthy',
     capacity: 'quota thinned mid-cycle, so it wound down early',
     seam: 'the milestone completed at a clean boundary — the best outcome',
+    abandoned:
+      'the watch hit maxCycleHours with the runner still alive, so drovr stopped looking. ' +
+      'Says nothing about delivery: if the runner writes a report afterwards the next tick ' +
+      'appends the real outcome and that later record is the operative one',
     blocked: 'every remaining item is waiting on a human answer',
     crash: 'the process exited without writing a report — check ~/.drovr/logs/',
     stalled:
@@ -278,7 +282,8 @@ export const COMMANDS: Command[] = [
     details: [
       'Exit reasons: context (hit the context ceiling), capacity (quota thinned), seam (milestone',
       'complete), blocked (everything waiting on an ask), crash (exited without a report),',
-      'stalled (went idle without reporting and ignored every nudge).',
+      'stalled (went idle without reporting and ignored every nudge), abandoned (still alive',
+      'when the watch ran out — superseded by the real outcome if a report lands later).',
     ],
     flags: [
       {

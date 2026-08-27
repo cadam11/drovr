@@ -11,7 +11,15 @@ export const cycleShape = z.object({
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   /** Why the cycle stopped — the main input for tuning the context ceiling. */
-  exit: z.enum(['context', 'capacity', 'seam', 'blocked', 'crash', 'stalled', 'deferred', 'running']),
+  /**
+   * `abandoned` is the honest answer where `crash` used to be guessed: the watch hit
+   * maxCycleHours while the runner was still alive, so drovr stopped observing a cycle it
+   * had not seen the end of. It says nothing about delivery, which is the point.
+   */
+  exit: z.enum([
+    'context', 'capacity', 'seam', 'blocked', 'crash', 'stalled', 'deferred', 'abandoned',
+    'running',
+  ]),
   poolBefore: poolSnapshot,
   poolAfter: poolSnapshot.nullable(),
   /** Tokens consumed before the first productive action: the re-onboarding tax. */
@@ -42,6 +50,35 @@ export type CycleCost = { fable: number; general: number; session: number };
  * burn a program's daily cap.
  */
 const DID_NOT_DELIVER = new Set(['crash', 'stalled', 'deferred']);
+
+/**
+ * Exits that say nothing about whether the cycle delivered. Distinct from
+ * DID_NOT_DELIVER, which asserts it did not: an abandoned cycle very likely did, drovr
+ * just stopped watching before it could find out. It must not burn a program's daily cap
+ * on an assumption either way — but its quota spend is real and measured, so unlike the
+ * never-ran exits it *is* a cost sample.
+ */
+const DELIVERY_UNKNOWN = new Set(['abandoned']);
+
+/**
+ * The last end record for each cycle, keyed on its identity.
+ *
+ * Reconciliation appends the truth rather than rewriting history, so an abandoned cycle
+ * that later reported has two end records. Anything that measures a cycle has to read the
+ * last word on it: counting both would price that cycle twice, once at its understated
+ * abandonment cost and once at its real one, and those are exactly the long expensive
+ * cycles the percentile is there to catch.
+ *
+ * Start records are dropped — `exit: 'running'` with a null poolAfter carries no outcome.
+ */
+export const latestEnds = (cycles: CycleRecord[]): CycleRecord[] => {
+  const byIdentity = new Map<string, CycleRecord>();
+  for (const cycle of cycles) {
+    if (cycle.endedAt === null) continue;
+    byIdentity.set(`${cycle.program}|${cycle.startedAt}`, cycle);
+  }
+  return [...byIdentity.values()];
+};
 
 export const snapshot = (pool: Pool): CycleCost => ({
   fable: pool.fable,
@@ -125,7 +162,7 @@ export const estimateCycleCost = (
   minSamples = 3,
   fraction = 0.9,
 ): CycleCost => {
-  const costs = cycles
+  const costs = latestEnds(cycles)
     .filter((cycle) => cycle.kind === 'delivery' && !DID_NOT_DELIVER.has(cycle.exit))
     .map(costOf)
     .filter((cost): cost is PartialCost => cost !== null);
@@ -186,7 +223,7 @@ export const spentSince = (
   windowStart: number,
   until = Number.POSITIVE_INFINITY,
 ): CycleCost => {
-  const spends = cycles
+  const spends = latestEnds(cycles)
     .filter(
       (cycle) =>
         Date.parse(cycle.startedAt) >= windowStart &&
@@ -236,9 +273,12 @@ export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number
   // ran, a deferral never started, a stalled cycle sat at its prompt, and a blocked
   // cycle only rediscovered that someone owes it an answer. Their own backoffs and
   // the failure latch are what bound them instead.
-  const idle = new Set([...DID_NOT_DELIVER, 'blocked']);
+  const idle = new Set([...DID_NOT_DELIVER, ...DELIVERY_UNKNOWN, 'blocked']);
+  // The *latest* exit per identity, not any of them: an abandoned cycle later reconciled
+  // to a seam has both records, and matching on either would keep excluding it from the
+  // cap after drovr learned it had delivered.
   const unspent = new Set(
-    cycles
+    latestEnds(cycles)
       .filter((cycle) => idle.has(cycle.exit))
       .map((cycle) => `${cycle.program}|${cycle.startedAt}`),
   );
