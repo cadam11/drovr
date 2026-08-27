@@ -172,6 +172,11 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **A reserve argued from `drovr usage`.** The sampler is live and the numbers cross-check against
   the review's hand-computed figures, but p90 needs 24 samples — four hours of ticks — and no
   reserve has been changed on its evidence yet.
+- **The priority waterline holding a lower-priority program in the wild.** Landed 2026-08-27
+  and visible immediately in `drovr status` (staggered bars: 1.00/1.50/1.75), but no tick has
+  yet refused a low-priority program over room a higher one then used.
+- **A drovr cycle delivering an improvement that was merged back to main.** The program is
+  registered and its worktree exists; no cycle has run against it yet.
 - **A panel intent applied end to end.** Every piece is tested against a real control file, but no
   intent has been read off the live page, because shared notes are **off** on `craig/intents.html`
   and only Craig can turn them on, from the notes widget on the page itself. Until he does, every
@@ -203,6 +208,18 @@ Delivery status is only readable on the SNS path, from the `DirectPublishToPhone
 `.../Failure` log groups. End User Messaging reports through a configuration set that drovr
 does not have, so `notify` says `unknown` there and names the two commands that would create
 one. Sending is unaffected.
+
+## drovr is also a program
+
+drovr supervises a program named `drovr` that works on this codebase — but never in this
+checkout. Its cycles run in the `~/code/drovr-loop` worktree on the `loop` branch, because
+launchd executes TypeScript straight from this working tree: a cycle editing `tick.ts` here
+would rewrite the supervisor mid-flight. Merging `loop` into `main` is Craig's manual act,
+followed by `drovr service install` when the merge touches the service. The program's pages
+live on drovr's own install (drovr.aicex.app, supplied by the worktree's `.envrc`):
+`craig/loop-status.html` for drovr's mechanical status page, hub and asks pages created by
+the loop agent at onboarding — all distinct from the panel's `index.html` and
+`craig/intents.html`.
 
 ## The repo is local-only
 
