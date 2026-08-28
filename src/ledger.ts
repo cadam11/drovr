@@ -28,6 +28,8 @@ export const cycleShape = z.object({
     .object({ ticketsMoved: z.number(), prsOpened: z.number(), commits: z.number() })
     .nullable(),
   asksRaised: z.number().default(0),
+  /** The cycle asked to rest until then — its zero yield was declared, not a symptom. */
+  pauseUntil: z.string().nullable().default(null),
 });
 
 export const decisionShape = z.object({
@@ -328,8 +330,14 @@ export const consecutiveFailures = (
  * as stuck reports a malfunction when the truth is that someone owes it a reply.
  */
 export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
+  // A cycle that asked to rest declared *why* it produced nothing, exactly like a
+  // blocked one — counting it would latch a program as stuck for waiting well.
   const finished = cycles.filter(
-    (cycle) => cycle.kind === 'delivery' && cycle.endedAt !== null && cycle.exit !== 'blocked',
+    (cycle) =>
+      cycle.kind === 'delivery' &&
+      cycle.endedAt !== null &&
+      cycle.exit !== 'blocked' &&
+      cycle.pauseUntil === null,
   );
   let streak = 0;
   for (let index = finished.length - 1; index >= 0; index -= 1) {
@@ -339,6 +347,16 @@ export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
     streak += 1;
   }
   return streak;
+};
+
+/** The most recent start, ended or not — a cycle in flight opens its cadence window too. */
+export const lastStartedAt = (cycles: CycleRecord[]): number | null => {
+  let latest: number | null = null;
+  for (const cycle of cycles) {
+    const at = Date.parse(cycle.startedAt);
+    if (!Number.isNaN(at) && (latest === null || at > latest)) latest = at;
+  }
+  return latest;
 };
 
 /** The most recently finished cycle, whatever it was. */

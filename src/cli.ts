@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { poolFrom } from './capacity.ts';
 import {
-  byPriority, ceilingsFor, effectivePriority, isPaused, parseControl, readControl,
+  byPriority, ceilingsFor, effectivePriority, isPaused, parseControl, parseDuration, readControl,
 } from './control.ts';
 import { contributingAccounts, cyclesFundableFrom, decide, poolContext, type Funding } from './decide.ts';
 import {
@@ -75,15 +75,6 @@ const mutate = (change: (control: Record<string, unknown>) => void): void => {
   writeFileSync(p.control, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
 };
 
-const parseDuration = (input: string): number => {
-  const match = /^(\d+)([mhd])$/.exec(input);
-  if (match === null) throw new Error(`duration must look like 30m, 3h, or 2d — got "${input}"`);
-  const value = Number.parseInt(match[1]!, 10);
-  const unit = match[2]!;
-  const ms = unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
-  return value * ms;
-};
-
 /**
  * Verdicts are computed in priority order with each admitted program reserving
  * capacity, so the list reflects what a tick would actually do rather than
@@ -144,6 +135,7 @@ const evaluateAll = async (input: {
         startupTokens: null,
         yield: null,
         asksRaised: 0,
+        pauseUntil: null,
       });
     }
     return { program, decision, pid: holder(p.programLock(program.name)) };
@@ -559,7 +551,7 @@ const addProgram = (rest: string[]): void => {
  * watches while the real cycle runs on to a stall.
  */
 const reportCycle = (rest: string[]): void => {
-  const { program, report } = parseReportArgs(rest);
+  const { program, report } = parseReportArgs(rest, Date.now());
   const control = readControl(p.control);
   if (!control.programs.some((entry) => entry.name === program)) {
     const known = control.programs.map((entry) => entry.name).join(', ');
@@ -567,7 +559,50 @@ const reportCycle = (rest: string[]): void => {
   }
   const written = writeReport(program, report);
   console.log(`reported ${program}: exit=${written.exit} → ${p.lastCycle(program)}`);
+
+  // Applied here rather than by the tick so the request takes effect the moment it is
+  // made, through the one code path that already validates the whole control file.
+  if (written.pauseUntil !== null || written.cadence !== null) {
+    mutate((control) => {
+      const programs = Array.isArray(control.programs) ? (control.programs as Record<string, unknown>[]) : [];
+      const entry = programs.find((candidate) => candidate.name === program);
+      if (entry === undefined) throw new Error(`no program named "${program}" in control.json`);
+      if (written.pauseUntil !== null) entry.pauseUntil = written.pauseUntil;
+      if (written.cadence !== null) entry.cadence = written.cadence;
+    });
+    if (written.pauseUntil !== null) {
+      console.log(`${program} rests until ${written.pauseUntil} — resume early: drovr resume ${program}`);
+    }
+    if (written.cadence !== null) {
+      console.log(`${program} now runs at most once per ${written.cadence} — change: drovr cadence ${program} off`);
+    }
+  }
   console.log('the cycle is now over — drovr will close this session; start nothing new');
+};
+
+/**
+ * `drovr cadence` — read, set, or clear a program's standing run frequency. Kept beside
+ * report because a cycle can set the same field; this is Craig's handle on it.
+ */
+const setCadence = (rest: string[]): void => {
+  const [name, value] = rest;
+  const control = readControl(p.control);
+  if (name === undefined) {
+    for (const program of control.programs) {
+      console.log(`  ${program.name}: ${program.cadence ?? 'every tick is a candidate'}`);
+    }
+    console.log('set with: drovr cadence <program> <every, e.g. 12h or 7d>  |  drovr cadence <program> off');
+    return;
+  }
+  if (value === undefined) throw new Error('usage: drovr cadence <program> <every|off>');
+  if (value !== 'off') parseDuration(value);
+  mutate((raw) => {
+    const programs = Array.isArray(raw.programs) ? (raw.programs as Record<string, unknown>[]) : [];
+    const entry = programs.find((candidate) => candidate.name === name);
+    if (entry === undefined) throw new Error(`no program named "${name}"`);
+    entry.cadence = value === 'off' ? null : value;
+  });
+  console.log(value === 'off' ? `${name}: cadence cleared` : `${name}: at most one cycle per ${value}`);
 };
 
 const removeProgram = (name: string | undefined): void => {
@@ -705,19 +740,46 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'release') return releaseRunner(rest[0]);
 
   if (command === 'pause') {
-    const spec = rest[0];
-    if (spec === undefined) throw new Error('pause needs a duration, e.g. `drovr pause 3h`');
+    const [first, second] = rest;
+    if (first === undefined) {
+      throw new Error('usage: drovr pause <duration>  |  drovr pause <program> <duration>');
+    }
+    // A bare duration pauses everything; a program name pauses that program alone.
+    const scoped = !/^\d+[mhd]$/.test(first);
+    const spec = scoped ? second : first;
+    if (spec === undefined) throw new Error(`pause needs a duration, e.g. \`drovr pause ${first} 3h\``);
     const until = new Date(Date.now() + parseDuration(spec)).toISOString();
-    mutate((control) => { control.pauseUntil = until; });
-    console.log(`paused until ${until}`);
+    mutate((control) => {
+      if (!scoped) {
+        control.pauseUntil = until;
+        return;
+      }
+      const programs = Array.isArray(control.programs) ? (control.programs as Record<string, unknown>[]) : [];
+      const entry = programs.find((candidate) => candidate.name === first);
+      if (entry === undefined) throw new Error(`no program named "${first}"`);
+      entry.pauseUntil = until;
+    });
+    console.log(scoped ? `${first} paused until ${until}` : `paused until ${until}`);
     return;
   }
 
   if (command === 'resume') {
-    mutate((control) => { control.pauseUntil = null; });
-    console.log('resumed');
+    const name = rest.find((argument) => !argument.startsWith('-'));
+    mutate((control) => {
+      if (name === undefined) {
+        control.pauseUntil = null;
+        return;
+      }
+      const programs = Array.isArray(control.programs) ? (control.programs as Record<string, unknown>[]) : [];
+      const entry = programs.find((candidate) => candidate.name === name);
+      if (entry === undefined) throw new Error(`no program named "${name}"`);
+      entry.pauseUntil = null;
+    });
+    console.log(name === undefined ? 'resumed' : `${name} resumed`);
     return;
   }
+
+  if (command === 'cadence') return setCadence(rest);
 
   if (command === 'cap') {
     const [name, value] = rest;

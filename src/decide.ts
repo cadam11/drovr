@@ -1,5 +1,7 @@
 import { hoursToWeeklyReset, poolFrom, type AccountHeadroom, type Pool } from './capacity.ts';
-import { ceilingsFor, isPaused, priorityRank, type Control } from './control.ts';
+import {
+  ceilingsFor, isPaused, nextCadenceStart, priorityRank, programPausedUntil, type Control,
+} from './control.ts';
 import { chargeForRunning,
   consecutiveFailures,
   consecutiveZeroYield,
@@ -7,6 +9,7 @@ import { chargeForRunning,
   estimateCycleCost,
   inFlight,
   lastFinished,
+  lastStartedAt,
   snapshot,
   spentSince,
   unansweredAsks,
@@ -303,7 +306,10 @@ const paceExceeded = (input: DecideInput, pool: Pool, cost: CycleCost): string |
 const untilText = (at: number | null, now: number): string => {
   if (at === null) return 'unknown';
   const minutes = Math.max(0, Math.round((at - now) / 60_000));
-  return minutes < 60 ? `${minutes}m` : `${Math.round(minutes / 60)}h`;
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  // "168h" is technically a recovery time and practically a riddle.
+  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 };
 
 const halt = (reason: string): Decision => ({
@@ -370,6 +376,27 @@ export const programReadiness = (input: DecideInput): Decision | null => {
   }
 
   if (isPaused(control, now)) return hold(`paused until ${control.pauseUntil}`, null, null);
+
+  if (entry !== undefined) {
+    // Its own last cycle judged that everything left was waiting on time — soak tests,
+    // external actors — so starting another would pay full onboarding to rediscover it.
+    if (programPausedUntil(entry, now) !== null) {
+      return hold(
+        `resting until ${entry.pauseUntil} at its own request — resume early: drovr resume ${program}`,
+        null,
+        null,
+      );
+    }
+    const windowOpens = nextCadenceStart(entry, lastStartedAt(mine));
+    if (windowOpens !== null && windowOpens > now) {
+      return hold(
+        `on a ${entry.cadence} cadence — next window in ${untilText(windowOpens, now)}; ` +
+          `change it: drovr cadence ${program} off`,
+        null,
+        null,
+      );
+    }
+  }
 
   // A blocked cycle means every remaining item is waiting on a human answer, so
   // starting another straight away only pays to rediscover that. Back off instead of

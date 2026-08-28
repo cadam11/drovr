@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { Program } from './control.ts';
+import { MAX_REST_DAYS, parseDuration, type Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { textCraig } from './nudge.ts';
 import { wrap } from './publish.ts';
@@ -30,6 +30,10 @@ const reportShape = z.object({
     .nullable()
     .default(null),
   asksRaised: z.number().default(0),
+  /** ISO timestamp: everything left is waiting on time, hold the program until then. */
+  pauseUntil: z.string().nullable().default(null),
+  /** Standing request: this program only needs a cycle every so often ("12h", "7d"). */
+  cadence: z.string().regex(/^\d+[mhd]$/).nullable().default(null),
 });
 
 export type CycleReport = z.infer<typeof reportShape>;
@@ -98,14 +102,48 @@ const REPORT_FLAGS = new Set([
   '--prs-opened',
   '--commits',
   '--asks-raised',
+  '--pause-until',
+  '--cadence',
 ]);
+
+const stringArg = (args: string[], name: string): string | undefined => {
+  const index = args.indexOf(`--${name}`);
+  return index === -1 ? undefined : args[index + 1];
+};
+
+/**
+ * "48h" and "2026-08-30T09:00Z" are both fine: an agent asking to soak thinks in
+ * durations, one waiting for a release date thinks in dates. Bounded by MAX_REST_DAYS
+ * either way, and a pause that is already over is refused rather than silently inert.
+ */
+const parsePauseUntil = (raw: string, now: number): string => {
+  const asDuration = /^\d+[mhd]$/.test(raw) ? now + parseDuration(raw) : Date.parse(raw);
+  if (Number.isNaN(asDuration)) {
+    throw new Error(`--pause-until needs a duration (48h, 7d) or an ISO date, got "${raw}"`);
+  }
+  if (asDuration <= now) throw new Error(`--pause-until "${raw}" is already in the past`);
+  if (asDuration > now + MAX_REST_DAYS * 86_400_000) {
+    throw new Error(`--pause-until "${raw}" is more than ${MAX_REST_DAYS} days out — the maximum`);
+  }
+  return new Date(asDuration).toISOString();
+};
+
+const parseCadence = (raw: string): string => {
+  if (!/^\d+[mhd]$/.test(raw)) {
+    throw new Error(`--cadence must look like 30m, 12h, or 7d — got "${raw}"`);
+  }
+  if (parseDuration(raw) > MAX_REST_DAYS * 86_400_000) {
+    throw new Error(`--cadence "${raw}" is longer than ${MAX_REST_DAYS} days — the maximum`);
+  }
+  return raw;
+};
 
 /**
  * `drovr report`'s argument half, kept pure so the refusals an agent will actually see
  * are testable. Unknown flags are refused rather than skipped: a typo that silently
  * dropped a field would defeat the reason the command exists.
  */
-export const parseReportArgs = (args: string[]): { program: string; report: unknown } => {
+export const parseReportArgs = (args: string[], now: number): { program: string; report: unknown } => {
   const [program] = args;
   if (program === undefined || program.startsWith('--')) {
     throw new Error('usage: drovr report <program> --exit <context|capacity|seam|blocked> [flags]');
@@ -122,6 +160,8 @@ export const parseReportArgs = (args: string[]): { program: string; report: unkn
   const prsOpened = numberArg(args, 'prs-opened');
   const commits = numberArg(args, 'commits');
   const anyYield = [ticketsMoved, prsOpened, commits].some((value) => value !== undefined);
+  const pauseUntil = stringArg(args, 'pause-until');
+  const cadence = stringArg(args, 'cadence');
   return {
     program,
     report: {
@@ -131,6 +171,8 @@ export const parseReportArgs = (args: string[]): { program: string; report: unkn
         ? { ticketsMoved: ticketsMoved ?? 0, prsOpened: prsOpened ?? 0, commits: commits ?? 0 }
         : null,
       asksRaised: numberArg(args, 'asks-raised') ?? 0,
+      pauseUntil: pauseUntil === undefined ? null : parsePauseUntil(pauseUntil, now),
+      cadence: cadence === undefined ? null : parseCadence(cadence),
     },
   };
 };

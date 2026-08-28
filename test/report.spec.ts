@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { parseReportArgs, pollReport, readReport, writeReport } from '../src/cycle.ts';
 import { paths } from '../src/paths.ts';
 
+const NOW = Date.parse('2026-08-28T12:00:00Z');
+
 /** Real files under a throwaway DROVR_HOME, same policy as keys.spec.ts. */
 const freshHome = (): string => {
   const dir = mkdtempSync(join(tmpdir(), 'drovr-report-'));
@@ -17,23 +19,27 @@ test('parseReportArgs builds a full report from flags', () => {
   const { program, report } = parseReportArgs([
     'sunnyt', '--exit', 'seam', '--startup-tokens', '14000',
     '--tickets-moved', '2', '--prs-opened', '1', '--commits', '6', '--asks-raised', '1',
-  ]);
+  ], NOW);
   assert.equal(program, 'sunnyt');
   assert.deepEqual(report, {
     exit: 'seam',
     startupTokens: 14000,
     yield: { ticketsMoved: 2, prsOpened: 1, commits: 6 },
     asksRaised: 1,
+    pauseUntil: null,
+    cadence: null,
   });
 });
 
 test('no yield flags means yield unknown, not zero', () => {
-  const { report } = parseReportArgs(['sunnyt', '--exit', 'context']);
-  assert.deepEqual(report, { exit: 'context', startupTokens: null, yield: null, asksRaised: 0 });
+  const { report } = parseReportArgs(['sunnyt', '--exit', 'context'], NOW);
+  assert.deepEqual(report, {
+    exit: 'context', startupTokens: null, yield: null, asksRaised: 0, pauseUntil: null, cadence: null,
+  });
 });
 
 test('one yield flag defaults the other two to zero', () => {
-  const { report } = parseReportArgs(['sunnyt', '--exit', 'seam', '--commits', '3']);
+  const { report } = parseReportArgs(['sunnyt', '--exit', 'seam', '--commits', '3'], NOW);
   assert.deepEqual(
     (report as { yield: unknown }).yield,
     { ticketsMoved: 0, prsOpened: 0, commits: 3 },
@@ -41,22 +47,22 @@ test('one yield flag defaults the other two to zero', () => {
 });
 
 test('a missing program or --exit is refused with usage', () => {
-  assert.throws(() => parseReportArgs([]), /usage: drovr report/);
-  assert.throws(() => parseReportArgs(['--exit', 'seam']), /usage: drovr report/);
-  assert.throws(() => parseReportArgs(['sunnyt']), /--exit is required/);
+  assert.throws(() => parseReportArgs([], NOW), /usage: drovr report/);
+  assert.throws(() => parseReportArgs(['--exit', 'seam'], NOW), /usage: drovr report/);
+  assert.throws(() => parseReportArgs(['sunnyt'], NOW), /--exit is required/);
 });
 
 test('an unknown flag is refused, never silently dropped', () => {
   // A typo that skipped a field would defeat the reason the command exists.
   assert.throws(
-    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--startup_tokens', '14000']),
+    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--startup_tokens', '14000'], NOW),
     /unknown flag --startup_tokens/,
   );
 });
 
 test('a non-numeric value is refused naming its flag', () => {
   assert.throws(
-    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--commits', 'lots']),
+    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--commits', 'lots'], NOW),
     /--commits needs a number, got "lots"/,
   );
 });
@@ -99,4 +105,44 @@ test('pollReport still throws on a complete report with the wrong shape', () => 
   // Complete, parseable, and in breach of the contract — not a torn write.
   writeFileSync(paths().lastCycle('alpha'), '{ "exit": "finished" }\n', 'utf8');
   assert.throws(() => pollReport('alpha'), /not a valid cycle report/);
+});
+
+test('--pause-until takes a duration or an ISO date, bounded and future-only', () => {
+  const asDuration = parseReportArgs(['sunnyt', '--exit', 'seam', '--pause-until', '48h'], NOW);
+  assert.equal(
+    (asDuration.report as { pauseUntil: string }).pauseUntil,
+    new Date(NOW + 48 * 3_600_000).toISOString(),
+  );
+  const asDate = parseReportArgs(
+    ['sunnyt', '--exit', 'seam', '--pause-until', '2026-08-30T09:00:00Z'], NOW,
+  );
+  assert.equal(
+    (asDate.report as { pauseUntil: string }).pauseUntil,
+    new Date(Date.parse('2026-08-30T09:00:00Z')).toISOString(),
+  );
+  assert.throws(
+    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--pause-until', '2026-08-01'], NOW),
+    /already in the past/,
+  );
+  assert.throws(
+    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--pause-until', '90d'], NOW),
+    /more than 35 days/,
+  );
+  assert.throws(
+    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--pause-until', 'whenever'], NOW),
+    /needs a duration .* or an ISO date/,
+  );
+});
+
+test('--cadence is shape-checked and bounded', () => {
+  const { report } = parseReportArgs(['sunnyt', '--exit', 'seam', '--cadence', '7d'], NOW);
+  assert.equal((report as { cadence: string }).cadence, '7d');
+  assert.throws(
+    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--cadence', 'weekly'], NOW),
+    /--cadence must look like/,
+  );
+  assert.throws(
+    () => parseReportArgs(['sunnyt', '--exit', 'seam', '--cadence', '60d'], NOW),
+    /longer than 35 days/,
+  );
 });

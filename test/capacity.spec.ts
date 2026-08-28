@@ -100,6 +100,7 @@ const runningCycle = (before: { fable: number; general: number; session: number 
   startupTokens: null,
   yield: null,
   asksRaised: 0,
+  pauseUntil: null,
 });
 
 const COST = { fable: 0.025, general: 0.02, session: 0.085 };

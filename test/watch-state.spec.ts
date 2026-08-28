@@ -157,6 +157,7 @@ const finished = (program: string, hoursAgo: number) => ({
   startupTokens: null,
   yield: null,
   asksRaised: 1,
+  pauseUntil: null,
 });
 
 const craigsConfiguration = () => buildState({

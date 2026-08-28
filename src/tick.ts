@@ -179,6 +179,7 @@ const reconcileLateReports = (now: number): number => {
       startupTokens: report.startupTokens,
       yield: report.yield,
       asksRaised: report.asksRaised,
+      pauseUntil: report.pauseUntil,
     });
     superseded += 1;
     console.log(
@@ -607,6 +608,7 @@ export const tick = async (): Promise<void> => {
         startupTokens: null,
         yield: null,
         asksRaised: 0,
+        pauseUntil: null,
       });
     }
     // Craig's own consumption is the pool's largest draw and nothing reconstructs it
@@ -681,6 +683,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
         startupTokens: null,
         yield: null,
         asksRaised: 0,
+        pauseUntil: null,
         ...extra,
       });
     };
@@ -728,6 +731,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       startupTokens: report?.startupTokens ?? null,
       yield: report?.yield ?? null,
       asksRaised: report?.asksRaised ?? 0,
+      pauseUntil: report?.pauseUntil ?? null,
     });
 
     // A stalled runner was nudged and stayed silent, so Craig is the only one left

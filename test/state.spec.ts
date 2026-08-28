@@ -85,6 +85,7 @@ test('buildState stops counting a cycle as running once it is older than control
     startupTokens: null,
     yield: null,
     asksRaised: 0,
+    pauseUntil: null,
   };
 
   const state = buildState({
@@ -129,6 +130,7 @@ test('buildState honours the passed now rather than the real wall clock for a re
     startupTokens: null,
     yield: null,
     asksRaised: 0,
+    pauseUntil: null,
   };
 
   const state = buildState({

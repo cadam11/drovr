@@ -102,6 +102,21 @@ const programShape = z.object({
   priority: z.number().default(0),
   /** ISO date. Inside the horizon the program is promoted one priority step. */
   deadline: z.string().nullable().default(null),
+  /**
+   * ISO timestamp; while in the future no cycle starts for this program alone. Usually
+   * set by the program's own cycle (`drovr report --pause-until`) when everything left
+   * is waiting on time — soak tests, external actors — rather than on a person. Lapses
+   * on its own; `drovr resume <program>` clears it early.
+   */
+  pauseUntil: z.string().nullable().default(null),
+  /**
+   * Duration like "12h" or "7d": at most one cycle start per window, measured from the
+   * last start. Null means every tick is a candidate. For programs that only need
+   * periodic attention; `drovr cadence <program> off` clears it.
+   */
+  cadence: z.string().regex(/^\d+[mhd]$/, 'cadence must look like 30m, 12h, or 7d')
+    .nullable()
+    .default(null),
   aice: aiceShape.nullable().default(null),
 });
 
@@ -247,6 +262,39 @@ export const priorityRank = (
     rank,
     above: byPriority(higher, now, control.deadlineHorizonDays).map((entry) => entry.name),
   };
+};
+
+export const parseDuration = (input: string): number => {
+  const match = /^(\d+)([mhd])$/.exec(input);
+  if (match === null) throw new Error(`duration must look like 30m, 3h, or 2d — got "${input}"`);
+  const value = Number.parseInt(match[1]!, 10);
+  const unit = match[2]!;
+  const ms = unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+  return value * ms;
+};
+
+/** Longest a program may rest itself, so a confused agent cannot dark one for a season. */
+export const MAX_REST_DAYS = 35;
+
+/** A lapsed pause is not a pause (the panel/index.html trap): only a future timestamp holds. */
+export const programPausedUntil = (entry: Program, now: number): number | null => {
+  if (entry.pauseUntil === null) return null;
+  const until = Date.parse(entry.pauseUntil);
+  if (Number.isNaN(until)) {
+    throw new Error(`${entry.name}.pauseUntil is not a valid timestamp: ${entry.pauseUntil}`);
+  }
+  return until > now ? until : null;
+};
+
+/**
+ * When the cadence window opens again. Measured from the last *start* — a cycle in
+ * flight opens its window too, or a long cycle plus its cadence would drift the
+ * schedule. Null when cadence is unset or nothing has ever run: a cadence must never
+ * stop a program's first cycle.
+ */
+export const nextCadenceStart = (entry: Program, lastStartedAt: number | null): number | null => {
+  if (entry.cadence === null || lastStartedAt === null) return null;
+  return lastStartedAt + parseDuration(entry.cadence);
 };
 
 export const isPaused = (control: Control, now: number): boolean => {

@@ -17,6 +17,7 @@ const cycle = (overrides: Partial<CycleRecord> = {}): CycleRecord => ({
   startupTokens: 12_000,
   yield: { ticketsMoved: 2, prsOpened: 1, commits: 6 },
   asksRaised: 0,
+  pauseUntil: null,
   ...overrides,
 });
 
@@ -398,7 +399,7 @@ test('recovery time comes from the binding bucket, not the soonest reset overall
   assert.equal(decision.verdict, 'WAIT');
   assert.equal(decision.binding, 'general');
   assert.equal(decision.earliestRecoveryAt, NOW + 90 * HOUR);
-  assert.match(decision.note ?? '', /more room in 90h/);
+  assert.match(decision.note ?? '', /more room in 4d/);
 });
 
 test('an in-flight cycle older than the watch window stops blocking its program', () => {
@@ -982,4 +983,63 @@ test('the waterline stacks on the weekly reserve, not instead of it', () => {
   assert.equal(requiredCycles('session', ranked(), 1), 1.25);
   // Step zero restores priority to a same-tick tiebreak.
   assert.equal(requiredCycles('session', ranked({ priorityStepCycles: 0 }), 2), 1);
+});
+
+test('a program resting at its own request is held, with the resume command named', () => {
+  const resting = control({
+    programs: [{ name: 'demo', cwd: '/tmp/demo', pauseUntil: new Date(NOW + 2 * HOUR).toISOString() }],
+  });
+  const decision = run({ control: resting });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /resting until .+ at its own request/);
+  assert.match(decision.reason, /drovr resume demo/);
+});
+
+test('a lapsed self-pause is not a pause', () => {
+  // The panel/index.html trap, at the program level this time.
+  const lapsed = control({
+    programs: [{ name: 'demo', cwd: '/tmp/demo', pauseUntil: new Date(NOW - HOUR).toISOString() }],
+  });
+  assert.equal(run({ control: lapsed }).verdict, 'GO');
+});
+
+test('a cadence holds until the window reopens, measured from the last start', () => {
+  const weekly = control({ programs: [{ name: 'demo', cwd: '/tmp/demo', cadence: '7d' }] });
+  // The fixture cycle started two hours ago, so a 7d window is still shut.
+  const decision = run({ control: weekly, cycles: [cycle()] });
+  assert.equal(decision.verdict, 'WAIT');
+  assert.match(decision.reason, /on a 7d cadence/);
+  assert.match(decision.reason, /drovr cadence demo off/);
+});
+
+test('a cadence never holds a program that has not run yet', () => {
+  const weekly = control({ programs: [{ name: 'demo', cwd: '/tmp/demo', cadence: '7d' }] });
+  assert.equal(run({ control: weekly }).verdict, 'GO');
+});
+
+test('an elapsed cadence window admits again', () => {
+  const hourly = control({ programs: [{ name: 'demo', cwd: '/tmp/demo', cadence: '1h' }] });
+  assert.equal(run({ control: hourly, cycles: [cycle()] }).verdict, 'GO');
+});
+
+test('cycles that asked to rest do not count toward the zero-yield stuck latch', () => {
+  const zero = { ticketsMoved: 0, prsOpened: 0, commits: 0 };
+  const rested = (hoursAgo: number) =>
+    cycle({
+      startedAt: new Date(NOW - (hoursAgo + 1) * HOUR).toISOString(),
+      endedAt: new Date(NOW - hoursAgo * HOUR).toISOString(),
+      exit: 'seam',
+      yield: zero,
+      pauseUntil: new Date(NOW - hoursAgo * HOUR + 60_000).toISOString(),
+    });
+  const idle = (hoursAgo: number) =>
+    cycle({
+      startedAt: new Date(NOW - (hoursAgo + 1) * HOUR).toISOString(),
+      endedAt: new Date(NOW - hoursAgo * HOUR).toISOString(),
+      exit: 'seam',
+      yield: zero,
+    });
+  // Three plain zero-yield cycles latch; the same three declaring a rest do not.
+  assert.equal(run({ cycles: [idle(6), idle(4), idle(2)] }).verdict, 'STOP');
+  assert.equal(run({ cycles: [rested(6), rested(4), rested(2)] }).verdict, 'GO');
 });
