@@ -110,6 +110,8 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `publish-snapshot.ts` | Every panel publish carries `--ttl` **and** `--force`. Without `--force` a republish to the same path is refused and the panel silently freezes at the last accepted payload; without `--ttl` a prolonged outage leaves a convincing dead frame up forever instead of turning into the 404 the page reports honestly. |
 | `publish-snapshot.ts` | aice must be >= 0.16.0 — earlier builds have no `--ttl`, so the publish fails on an unknown flag rather than on anything about the payload. `assertAiceVersion` names the floor and the fix (`aice update`); keep the check ahead of the publish, not after it. |
 | `panel/index.html` | The snapshot fetch needs a cache-buster (`?t=${Date.now()}`) alongside `cache: 'no-store'`. CloudFront happily serves a stale object to a plain URL, and a panel showing minute-old capacity as current is worse than one showing nothing. |
+| `cycle.ts` | `last-cycle.json` has one blessed writer: `drovr report`, which validates against `reportShape` before anything touches disk and stages through a rename. A runner writing the file directly can be caught **mid-write by the watch's poll**, so `pollReport` reads unparseable bytes as "not yet" (the next poll sees the whole file) while a complete report with the wrong shape still throws — it is a declared interface, not a scrape. Everywhere the file is settled (`readReport`) stays strict. |
+| `tick.ts` | Neither tick-side read of `last-cycle.json` may throw. In `reconcileLateReports` a malformed leftover file would stop everything after it — admission included — every tick until hand-deleted; after `runCycle` a throw skips `record()`, so the cycle stays open in the ledger and is charged as running forever. `readReportOrWarn` logs and reads it as absent; the cost is one program's reconciliation or an `unreportedExit`, never the pass. |
 | `preview.ts` | The preview parser is lenient **because it is a scrape** of claude's TUI — an undeclared format that changes between releases, where an unrecognised shape must yield `null` and cost the panel a preview, never fail a tick. This is the exact inverse of `herdr.ts`'s `agent_status` rule: parse a declared interface strictly and let a surprise throw, parse a scrape leniently and let it return nothing. Know which one you are reading before choosing. |
 | `asks.ts` | Two note shapes on purpose. `readAsks` parses leniently for a liveness heuristic; `listNotes` parses strictly because what it returns is applied to `control.json`. Do not merge them into one tolerant shape — that would make an unrecognised payload look like a page with no intents on it. |
 | `asks.ts` | A zero exit from an `aice notes` **write** is not proof the note exists. Measured 2026-08-24 against drovr.aicex.app: `notes add` to a page whose notes are not shared exits 0 and prints `added: true` — with **no `id`**, which is the tell, since a persisted entry comes back carrying a server-minted one. Reproduced twice with an explicit `--prefix` on both calls, each naming the identical resolved page, so it is not the path-ambiguity asymmetry it first looks like. aice's source *does* gate writes (`aice-manage/src/notes.ts` returns 403 `sharing_off`, and the client maps that to `SHARING_OFF`), so the deployed install appears to be behind that tree — inferred, not confirmed. Either way: to know a page is writable read it and check `shared: true`, never the write's exit code. |
@@ -185,6 +187,9 @@ Written and type-checked, never seen to fire. Unproven, not done:
   intent has been read off the live page, because shared notes are **off** on `craig/intents.html`
   and only Craig can turn them on, from the notes widget on the page itself. Until he does, every
   tick logs the page as unreadable and nothing can be sent from the panel.
+- **A real cycle ending itself with `drovr report`.** The command is tested and was smoke-run
+  against a temp home on 2026-08-28, and the skill now names it as the way to report — but every
+  cycle in flight was briefed under the old write-the-file contract, so no runner has used it yet.
 
 ## Notifications
 
@@ -249,5 +254,7 @@ anywhere; do not create one unprompted, but say so if the subject arises.
 - **aice** — one install per program (`sunnyt.aicex.app`, `joinery.aicex.app`, `aice.aice-x.com`).
   drovr only ever publishes `status.html`; the loop agent owns the other pages.
 - **`~/.claude/skills/project-loop/SKILL.md`** — the other half of this system. It owns cycle-end
-  triggers, the `last-cycle.json` report contract, onboarding, and the aice pages. Changes to the
-  report shape must land in both places.
+  triggers, onboarding, and the aice pages. The cycle report's shape lives only in `cycle.ts`'s
+  `reportShape`, because the skill now tells agents to run `drovr report`, which validates against
+  it — but the *meaning* of the fields and the write-it-last semantics are stated in both, so a
+  semantic change still lands in both places.

@@ -22,6 +22,7 @@ import {
 import { observedYours, readSamples, shareOf, type UsageSample } from './usage.ts';
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
 import { readAsks } from './asks.ts';
+import { parseReportArgs, writeReport } from './cycle.ts';
 import { textCraig } from './nudge.ts';
 import { unverified, verifyDelivery } from './delivery.ts';
 import { agentNameFor, agentPane, agentState, isSettled, releaseAgent, resolveWorkspace, tidyCycleTabs } from './herdr.ts';
@@ -551,6 +552,24 @@ const addProgram = (rest: string[]): void => {
   console.log('first tick will onboard it: reconstruct state, publish, raise one ask, then stop');
 };
 
+/**
+ * The loop agent's way to end its cycle: validated before anything touches disk, and
+ * written atomically, so drovr's watch can never read a torn or malformed report. The
+ * program-name check keeps a typo from stranding the report in a directory nothing
+ * watches while the real cycle runs on to a stall.
+ */
+const reportCycle = (rest: string[]): void => {
+  const { program, report } = parseReportArgs(rest);
+  const control = readControl(p.control);
+  if (!control.programs.some((entry) => entry.name === program)) {
+    const known = control.programs.map((entry) => entry.name).join(', ');
+    throw new Error(`no program named "${program}" — tracked: ${known}`);
+  }
+  const written = writeReport(program, report);
+  console.log(`reported ${program}: exit=${written.exit} → ${p.lastCycle(program)}`);
+  console.log('the cycle is now over — drovr will close this session; start nothing new');
+};
+
 const removeProgram = (name: string | undefined): void => {
   if (name === undefined) throw new Error('usage: drovr rm <name>');
   mutate((control) => {
@@ -674,6 +693,7 @@ const main = async (argv: string[]): Promise<void> => {
   }
   if (command === 'add') return addProgram(rest);
   if (command === 'rm') return removeProgram(rest[0]);
+  if (command === 'report') return reportCycle(rest);
   if (command === 'watch') return watch(Number.parseInt(rest[0] ?? '15', 10));
   if (command === 'ledger') {
     const limit = Number.parseInt(rest.find((a) => !a.startsWith('-')) ?? '20', 10);

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Program } from './control.ts';
@@ -34,14 +34,105 @@ const reportShape = z.object({
 
 export type CycleReport = z.infer<typeof reportShape>;
 
+const validated = (label: string, data: unknown): CycleReport => {
+  const parsed = reportShape.safeParse(data);
+  if (!parsed.success) {
+    throw new Error(`${label} is not a valid cycle report: ${parsed.error.message}`);
+  }
+  return parsed.data;
+};
+
 export const readReport = (program: string): CycleReport | null => {
   const path = paths().lastCycle(program);
   if (!existsSync(path)) return null;
-  const parsed = reportShape.safeParse(JSON.parse(readFileSync(path, 'utf8')));
-  if (!parsed.success) {
-    throw new Error(`${path} is not a valid cycle report: ${parsed.error.message}`);
+  return validated(path, JSON.parse(readFileSync(path, 'utf8')));
+};
+
+/**
+ * For the watch loop only. It polls while a direct writer may still be mid-write, so
+ * unparseable bytes mean "not yet" — the next poll sees the whole file. `drovr report`
+ * stages through a rename and can never be caught like this; the tolerance exists for
+ * runners briefed under the old write-the-file contract. Valid JSON with the wrong
+ * shape is a *complete* report that breaks the contract, and still throws.
+ */
+export const pollReport = (program: string): CycleReport | null => {
+  const path = paths().lastCycle(program);
+  if (!existsSync(path)) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
   }
-  return parsed.data;
+  return validated(path, data);
+};
+
+/**
+ * The one writer that cannot leave a torn or invalid file: refused before anything
+ * touches disk, then staged through a rename so the watch's poll never sees half a
+ * report. The rename is also the commit — a report's existence ends the cycle.
+ */
+export const writeReport = (program: string, report: unknown): CycleReport => {
+  const parsed = validated('the given report', report);
+  ensureDirs(program);
+  const path = paths().lastCycle(program);
+  const staged = `${path}.staged`;
+  writeFileSync(staged, `${JSON.stringify(parsed)}\n`, 'utf8');
+  renameSync(staged, path);
+  return parsed;
+};
+
+const numberArg = (args: string[], name: string): number | undefined => {
+  const index = args.indexOf(`--${name}`);
+  if (index === -1) return undefined;
+  const raw = args[index + 1];
+  const value = Number.parseInt(raw ?? '', 10);
+  if (Number.isNaN(value)) throw new Error(`--${name} needs a number, got "${raw ?? ''}"`);
+  return value;
+};
+
+const REPORT_FLAGS = new Set([
+  '--exit',
+  '--startup-tokens',
+  '--tickets-moved',
+  '--prs-opened',
+  '--commits',
+  '--asks-raised',
+]);
+
+/**
+ * `drovr report`'s argument half, kept pure so the refusals an agent will actually see
+ * are testable. Unknown flags are refused rather than skipped: a typo that silently
+ * dropped a field would defeat the reason the command exists.
+ */
+export const parseReportArgs = (args: string[]): { program: string; report: unknown } => {
+  const [program] = args;
+  if (program === undefined || program.startsWith('--')) {
+    throw new Error('usage: drovr report <program> --exit <context|capacity|seam|blocked> [flags]');
+  }
+  const unknown = args.slice(1).filter((arg) => arg.startsWith('--') && !REPORT_FLAGS.has(arg));
+  if (unknown.length > 0) {
+    throw new Error(`unknown flag ${unknown[0]} — \`drovr help report\` lists them`);
+  }
+  const exitIndex = args.indexOf('--exit');
+  if (exitIndex === -1) {
+    throw new Error('--exit is required: context | capacity | seam | blocked');
+  }
+  const ticketsMoved = numberArg(args, 'tickets-moved');
+  const prsOpened = numberArg(args, 'prs-opened');
+  const commits = numberArg(args, 'commits');
+  const anyYield = [ticketsMoved, prsOpened, commits].some((value) => value !== undefined);
+  return {
+    program,
+    report: {
+      exit: args[exitIndex + 1],
+      startupTokens: numberArg(args, 'startup-tokens') ?? null,
+      yield: anyYield
+        ? { ticketsMoved: ticketsMoved ?? 0, prsOpened: prsOpened ?? 0, commits: commits ?? 0 }
+        : null,
+      asksRaised: numberArg(args, 'asks-raised') ?? 0,
+    },
+  };
 };
 
 export const clearReport = (program: string): void => {
@@ -249,7 +340,7 @@ const watchCycle = async (
 
   while (Date.now() < deadline) {
     await sleep(POLL_MS);
-    if (readReport(program) !== null) return releaseFinished(started);
+    if (pollReport(program) !== null) return releaseFinished(started);
 
     const state = await agentState(started.agentName);
     if (state === 'gone') {

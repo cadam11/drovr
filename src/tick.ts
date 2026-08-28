@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, fullReason, type Decision } from './decide.ts';
-import { isOnboarding, readReport, runCycle } from './cycle.ts';
+import { isOnboarding, readReport, runCycle, type CycleReport } from './cycle.ts';
 import { agentNameFor, agentState, PaneBusy } from './herdr.ts';
 import { listNotes, readAsks, replyToNote, resolveNote, type NoteThread } from './asks.ts';
 import { nudgeIfNeglected, textCraig } from './nudge.ts';
@@ -35,6 +35,20 @@ import { publishStatus } from './publish.ts';
 import { DROVR_REPO } from './publish-snapshot.ts';
 
 const explain = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/**
+ * Both tick-side readers of last-cycle.json must make progress past a malformed file:
+ * `readReport` throws on one, and here that throw would land in the middle of a pass.
+ * Logged to the tick log and read as absent — never swallowed, never fatal.
+ */
+const readReportOrWarn = (program: string): CycleReport | null => {
+  try {
+    return readReport(program);
+  } catch (error) {
+    console.error(`ignoring unreadable cycle report for ${program}: ${explain(error)}`);
+    return null;
+  }
+};
 
 const logDecision = (program: string, decision: Decision, now: number): void => {
   appendRecord(paths().decisions, {
@@ -152,7 +166,10 @@ const reconcileLateReports = (now: number): number => {
     const last = mine.at(-1);
     if (last?.exit !== 'abandoned') continue;
 
-    const report = readReport(program.name);
+    // A malformed leftover file must cost this program's reconciliation, never the tick:
+    // everything after this point — admission included — would otherwise stop until
+    // someone deleted the file by hand.
+    const report = readReportOrWarn(program.name);
     if (report === null) continue;
 
     appendRecord(p.cycles, {
@@ -698,7 +715,10 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     const stalled = 'stalled' in outcome && outcome.stalled === true;
     const abandoned = 'abandoned' in outcome && outcome.abandoned === true;
 
-    const report = readReport(name);
+    // Unreadable falls back to the unreported exit rather than throwing: a throw here
+    // would skip record() and leave the cycle open in the ledger, charged as running
+    // against the pool forever.
+    const report = readReportOrWarn(name);
     const after = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 
     record({
