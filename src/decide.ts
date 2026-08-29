@@ -560,7 +560,11 @@ const capacityVerdict = (input: DecideInput, pool: Pool, running: CycleRecord[])
   // stop admission while it happens, not once it has finished and been measured.
   const charged = chargeForRunning(running, snapshot(pool), cost);
   const funding = cyclesFundableFrom(pool, cost, charged);
-  const { rank, above } = priorityRank(control, input.program, now);
+  // The ledger lookup the ranking needs to judge other programs' cadence windows —
+  // control.ts takes it as an argument rather than reading cycles itself.
+  const lastStartFor = (name: string): number | null =>
+    lastStartedAt(input.cycles.filter((cycle) => cycle.program === name));
+  const { rank, above } = priorityRank(control, input.program, now, lastStartFor);
   const required = requiredCycles(funding.binding, control, rank);
   // Every capacity verdict carries the same pool context, and only that context names
   // the binding bucket, its recovery, and the coupling — the reason keeps to what is

@@ -978,6 +978,64 @@ test('a disabled program above does not deepen the bar', () => {
   assert.equal(run({ status: draining(), control: alphaOff, program: 'beta' }).verdict, 'GO');
 });
 
+/**
+ * A program that has declared it will not start — resting, or inside a shut cadence
+ * window — casts no shadow: holding room for it is the disabled-program failure with a
+ * timer on it. Measured 2026-08-29: sunnyt resting 20h held aice-x out of a pool whose
+ * binding session bucket refilled four times before the wake.
+ */
+test('a higher-priority program resting at its own request does not deepen the bar', () => {
+  const alphaResting = ranked({
+    programs: [
+      { name: 'alpha', cwd: '/tmp/alpha', priority: 1, pauseUntil: new Date(NOW + 20 * HOUR).toISOString() },
+      { name: 'beta', cwd: '/tmp/beta', priority: 3 },
+    ],
+  });
+  const beta = run({ status: draining(), control: alphaResting, program: 'beta' });
+  assert.equal(beta.verdict, 'GO', beta.reason);
+});
+
+test('a lapsed rest restores the shadow on its own', () => {
+  const alphaWoke = ranked({
+    programs: [
+      { name: 'alpha', cwd: '/tmp/alpha', priority: 1, pauseUntil: new Date(NOW - HOUR).toISOString() },
+      { name: 'beta', cwd: '/tmp/beta', priority: 3 },
+    ],
+  });
+  const beta = run({ status: draining(), control: alphaWoke, program: 'beta' });
+  assert.equal(beta.verdict, 'WAIT');
+  assert.match(beta.reason, /held back for alpha/);
+});
+
+test('a shut cadence window above does not deepen the bar; an open one does', () => {
+  const cadenced = (every: string) =>
+    ranked({
+      programs: [
+        { name: 'alpha', cwd: '/tmp/alpha', priority: 1, cadence: every },
+        { name: 'beta', cwd: '/tmp/beta', priority: 3 },
+      ],
+    });
+  // Alpha started two hours ago, so its 7d window is shut and its 1h window is open.
+  const alphaRan = [cycle({ program: 'alpha' })];
+  const shut = run({ status: draining(), control: cadenced('7d'), program: 'beta', cycles: alphaRan });
+  assert.equal(shut.verdict, 'GO', shut.reason);
+  const open = run({ status: draining(), control: cadenced('1h'), program: 'beta', cycles: alphaRan });
+  assert.equal(open.verdict, 'WAIT');
+  assert.match(open.reason, /held back for alpha/);
+});
+
+test('a cadenced program that has never run still shadows — its window is open', () => {
+  const cadenced = ranked({
+    programs: [
+      { name: 'alpha', cwd: '/tmp/alpha', priority: 1, cadence: '7d' },
+      { name: 'beta', cwd: '/tmp/beta', priority: 3 },
+    ],
+  });
+  const beta = run({ status: draining(), control: cadenced, program: 'beta' });
+  assert.equal(beta.verdict, 'WAIT');
+  assert.match(beta.reason, /held back for alpha/);
+});
+
 test('the waterline stacks on the weekly reserve, not instead of it', () => {
   assert.equal(requiredCycles('fable', ranked(), 1), 1.75);
   assert.equal(requiredCycles('session', ranked(), 1), 1.25);

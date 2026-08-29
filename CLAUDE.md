@@ -58,7 +58,8 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `decide.ts` | `reserveCycles` applies to the **weekly** buckets only. A dry weekly bucket is days of nothing and can genuinely kill a cycle mid-flight; a dry 5h window refills four or five times a day, is documented as resetting mid-cycle, and only makes a runner wait. Requiring `1 + reserveCycles` of a rate limit was also unsatisfiable in practice: measured 2026-08-26, p90 session cost 0.390 against a `normal` session ceiling of 0.400 demanded 0.585 of a window holding 0.400, so no single account could clear admission whatever its weekly buckets held. Harmless while session was priced at the median 0.10 (0.15 fits inside 0.40) — the high-percentile change was right for weekly and collided here. Session still needs a full 1.0, or a cycle starts and idles on a held pane. |
 | `decide.ts` | Do not explain the session/weekly threshold asymmetry on the WAIT line. `requiredCycles` and design.md carry the why; a question asked once does not belong on a line printed every tick. The one raise that *is* explained is the priority waterline ("held back for …"), because a reader who sees room needs to know who it is kept for. Reason and note each stay inside `drovr watch`'s 200-character `REASON_BUDGET` — they are drawn as separate wrapped blocks. |
 | `decide.ts` | `reason` is the per-program half only; the pool context (binding bucket, recovery, coupling) lives in `note`, identical for every program in a pass. A single-decision surface (decisions.jsonl, a program's status page) must recombine with `fullReason()` or it silently drops the coupling warning; a multi-program surface must print `DrovrState.capacityNote` once beside the bars, or it either shows the warning nowhere or rewrites it for every program row — the duplication the split exists to stop. |
-| `decide.ts` | `requiredCycles` takes a rank. A renderer that calls it with a hardcoded 0 shows a lower bar than admission uses — the `state.ts` drift failure again, in the direction that reads as free capacity. `priorityRank` counts **enabled** programs and **distinct** effective priorities: count raw entries and a disabled program deepens everyone's bar, or two equal-priority programs get different bars by name sort. |
+| `decide.ts` | `requiredCycles` takes a rank. A renderer that calls it with a hardcoded 0 shows a lower bar than admission uses — the `state.ts` drift failure again, in the direction that reads as free capacity. `priorityRank` counts **startable** programs and **distinct** effective priorities: count raw entries and a disabled program deepens everyone's bar, or two equal-priority programs get different bars by name sort. |
+| `control.ts` | Startable means enabled **and not held for time**: a program resting (`pauseUntil`) or inside a shut cadence window has declared it will not start, and holding room below the waterline for it is the disabled-program failure with a timer on it — measured 2026-08-29, sunnyt resting 20h shadowed aice-x out of a pool whose session bucket refilled four times before the wake. `blocked` still shadows: an answer can arrive any second. `priorityRank` takes `lastStartFor` because judging *other* programs' cadence windows needs ledger data control.ts must not read itself. |
 | `decide.ts` | **A ceiling is a starting gate, not a budget.** Headroom is evaluated at admission and drovr never kills a cycle, so a cycle admitted just under `session 0.40` can run to 0.99 and there is nothing downstream to stop it. Admission is the only lever there is, which is exactly why the price has to cover the expensive case rather than the typical one. |
 | `ledger.ts` | The 5h window resets *during* a multi-hour cycle, so `poolAfter > poolBefore` is normal. Recording that as zero cost drags the median to nothing until session stops constraining admission. Discard the sample instead. |
 | `decide.ts` | Report *which* bucket binds. A 5h hold recovers in hours, a weekly one in days; reporting the soonest reset across all three is actively misleading. |
@@ -189,12 +190,10 @@ Written and type-checked, never seen to fire. Unproven, not done:
   intent has been read off the live page, because shared notes are **off** on `craig/intents.html`
   and only Craig can turn them on, from the notes widget on the page itself. Until he does, every
   tick logs the page as unreadable and nothing can be sent from the panel.
-- **A real cycle ending itself with `drovr report`.** The command is tested and was smoke-run
-  against a temp home on 2026-08-28, and the skill now names it as the way to report — but every
-  cycle in flight was briefed under the old write-the-file contract, so no runner has used it yet.
-- **A program resting itself.** `--pause-until` and `--cadence` are tested end to end against a
-  temp control file (2026-08-28), and the decide gates hold in the suite — but no real cycle has
-  yet judged that waiting beat acting, so the judgement half of the feature is unproven.
+- **The shadow re-forming when a rest lapses.** The un-shadowing half fired live within a
+  minute of landing (2026-08-29 15:57: aice-x admitted over resting sunnyt, refused at 15:47
+  by the old ranking); the reverse — a lapsed rest raising lower programs' bars again on its
+  own — is proven only in the suite.
 
 ## Notifications
 

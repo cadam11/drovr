@@ -242,21 +242,38 @@ export const byPriority = (programs: Program[], now: number, horizonDays: number
  * important enabled program; each step down deepens the admission bar by
  * `priorityStepCycles`, which is what pauses lower-priority programs first as the pool
  * drains. Counted over *distinct* priority values so equal-priority programs face the
- * same bar rather than one of them losing to a name sort, and over enabled programs
- * only — a disabled program spends nothing, so it must not deepen anyone's bar.
+ * same bar rather than one of them losing to a name sort, and only over programs that
+ * could actually take a cycle: a disabled program spends nothing, so it must not deepen
+ * anyone's bar, and one resting (`pauseUntil`) or outside its cadence window has
+ * declared it will not start now — holding room for it is the disabled-program failure
+ * with a timer on it (measured 2026-08-29: sunnyt resting 20h shadowed aice-x out of a
+ * pool whose binding bucket refilled four times before the wake). The shadow re-forms
+ * on its own the tick the rest lapses or the window opens. A `blocked` program still
+ * counts: an answer can arrive any second, and a block is a wait, not a refusal of
+ * capacity.
+ *
+ * `lastStartFor` supplies each program's last cycle start (ledger data control.ts must
+ * not read itself) so cadence windows can be judged for the shadowing programs, not
+ * just the one being ranked.
  */
 export const priorityRank = (
   control: Control,
   program: string,
   now: number,
+  lastStartFor: (name: string) => number | null,
 ): { rank: number; above: string[] } => {
   const enabled = control.programs.filter((entry) => entry.enabled);
   const mine = enabled.find((entry) => entry.name === program);
   if (mine === undefined) return { rank: 0, above: [] };
 
+  const startable = enabled.filter((entry) => {
+    if (programPausedUntil(entry, now) !== null) return false;
+    const windowOpens = nextCadenceStart(entry, lastStartFor(entry.name));
+    return windowOpens === null || windowOpens <= now;
+  });
   const priorityOf = (entry: Program): number =>
     effectivePriority(entry, now, control.deadlineHorizonDays);
-  const higher = enabled.filter((entry) => priorityOf(entry) < priorityOf(mine));
+  const higher = startable.filter((entry) => priorityOf(entry) < priorityOf(mine));
   const rank = new Set(higher.map(priorityOf)).size;
   return {
     rank,
