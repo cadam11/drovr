@@ -11,7 +11,7 @@ const fixture = (overrides: Record<string, unknown> = {}) => buildState({
   previews: new Map(), locks: new Map(), asksUrls: new Map(), queuedIntents: [],
 });
 
-const view = { selected: 0, message: '', confirmStop: false, help: false };
+const view = { selected: 0, message: '', confirmStop: false, confirmStart: false, help: false };
 
 test('frame renders from a DrovrState without touching the filesystem', () => {
   const text = frame(fixture(), view);
@@ -193,6 +193,7 @@ for (const width of [60, 80, 100, 120]) {
       selected: 0,
       message: 'interrupt sunnyt? y to confirm, any other key to cancel',
       confirmStop: true,
+      confirmStart: false,
       help: false,
       previewWarning: 'could not read sunnyt: agent not found',
     };
@@ -228,7 +229,7 @@ for (const width of [60, 80, 100, 120]) {
  * the clamp cannot pass this test vacuously.
  */
 test('the help screen is clamped and clipped like every other frame', () => {
-  const helpView = { selected: 0, message: '', confirmStop: false, help: true };
+  const helpView = { selected: 0, message: '', confirmStop: false, confirmStart: false, help: true };
   const width = 80;
 
   const unclamped = frame(fixture(), helpView, width).split('\n');

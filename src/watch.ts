@@ -138,6 +138,7 @@ const KEYS: { label: string; key: string | null }[] = [
   { label: 'r refresh', key: 'r' },
   { label: 't tick', key: 't' },
   { label: 'o asks', key: 'o' },
+  { label: 's start', key: 's' },
   { label: 'x interrupt', key: 'x' },
   { label: '? help', key: '?' },
   { label: 'q quit', key: 'q' },
@@ -193,6 +194,7 @@ type ViewState = {
   selected: number;
   message: string;
   confirmStop: boolean;
+  confirmStart: boolean;
   help: boolean;
   previewWarning?: string | null;
 };
@@ -541,6 +543,21 @@ const runTickNow = (): Action => {
 };
 
 /**
+ * The TUI twin of `drovr start`: Craig's explicit override past every admission gate,
+ * which is why it arms a y-confirmation first — a stray keypress must not spend a
+ * cycle's worth of quota. It answers "I answered the asks, crack on" without waiting
+ * out the blocked backoff or the next tick.
+ */
+const startCycle = (program: Program): Action => {
+  const child = spawn(process.execPath, [cliPath(), 'start', program.name], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  return { message: `${program.name}: cycle launched`, redraw: true };
+};
+
+/**
  * A herdr cycle is a real session Craig can talk to, so this interrupts it rather
  * than killing it — the runner gets to wind down and write its report. The headless
  * runner has no such affordance, so its process group is signalled instead.
@@ -585,6 +602,13 @@ const handle = async (
     return selected === undefined
       ? { message: 'no program selected', redraw: false }
       : stopCycle(selected);
+  }
+  if (view.confirmStart) {
+    view.confirmStart = false;
+    if (key !== 'y') return { message: 'start cancelled', redraw: true };
+    return selected === undefined
+      ? { message: 'no program selected', redraw: false }
+      : startCycle(selected);
   }
 
   if (key === 'j' || key === `${ESC}B`) {
@@ -631,6 +655,17 @@ const handle = async (
     const verb = selected.runner === 'herdr' ? 'interrupt' : 'stop';
     return { message: `${verb} ${selected.name}? y to confirm, any other key to cancel`, redraw: true };
   }
+  if (key === 's') {
+    const pid = holder(paths().programLock(selected.name));
+    if (pid !== null) {
+      return { message: `${selected.name} already has a cycle running (pid ${pid})`, redraw: false };
+    }
+    view.confirmStart = true;
+    return {
+      message: `start ${selected.name} now, past every gate? y to confirm, any other key to cancel`,
+      redraw: true,
+    };
+  }
   return { message: '', redraw: false };
 };
 
@@ -646,7 +681,7 @@ const MOUSE_EVENTS_PER_CHUNK = 8;
 
 /** Runs until interrupted; the terminal is restored on every exit path. */
 export const watch = async (intervalSeconds: number): Promise<void> => {
-  const view: ViewState = { selected: 0, message: '', confirmStop: false, help: false, previewWarning: null };
+  const view: ViewState = { selected: 0, message: '', confirmStop: false, confirmStart: false, help: false, previewWarning: null };
   let lastState: DrovrState | null = null;
   // What the mouse is over: the hits of the frame actually on screen, and the width
   // and narrowness it was laid out at — a click resolves against what was drawn, never
@@ -742,13 +777,16 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
     }
   };
 
-  // An armed interrupt confirmation treats any keystroke but 'y' as a cancel; the
-  // mouse gets the same semantics, so a stray click can never confirm the one
-  // destructive action.
+  // An armed confirmation treats any keystroke but 'y' as a cancel; the mouse gets
+  // the same semantics, so a stray click can never confirm an interrupt or spend a
+  // cycle's worth of quota.
   const selectProgram = (index: number): void => {
     if (view.confirmStop) {
       view.confirmStop = false;
       view.message = 'stop cancelled';
+    } else if (view.confirmStart) {
+      view.confirmStart = false;
+      view.message = 'start cancelled';
     } else {
       const last = (lastState?.programs.length ?? 1) - 1;
       view.selected = Math.max(0, Math.min(last, index));
@@ -773,8 +811,8 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
     if ('asks' in hit) {
       // The terminal would have opened this link itself before mouse reporting was on;
       // now the click arrives here instead, so select the program and open its page —
-      // the same thing 'o' does. An armed interrupt confirmation still wins.
-      if (view.confirmStop) {
+      // the same thing 'o' does. An armed confirmation still wins.
+      if (view.confirmStop || view.confirmStart) {
         selectProgram(hit.asks);
         return;
       }
