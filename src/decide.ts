@@ -447,6 +447,23 @@ const admissionLimits = (
     return hold('a cycle for this program is already in flight', pool, null);
   }
 
+  // Programs may share a directory, but never a moment: two interactive runners in one
+  // checkout race the git index and commit each other's half-done work. Enabled or not —
+  // the sibling's runner is real either way. Tick folds same-pass launches into
+  // `running`, so this also stops two same-cwd programs being admitted in one pass.
+  const sibling = running.find((cycle) => {
+    const other = control.programs.find((candidate) => candidate.name === cycle.program);
+    return other !== undefined && entry !== undefined && other.cwd === entry.cwd;
+  });
+  if (sibling !== undefined) {
+    return hold(
+      `${sibling.program}'s cycle is running in the same directory (${entry?.cwd}) — ` +
+        'one runner per checkout; starts when it ends',
+      pool,
+      null,
+    );
+  }
+
   // Second, and before anything that computes funding. A runner present with no cycle in
   // flight is a leftover that outlived its watch, and it will refuse the launch with
   // PaneBusy however healthy the pool is. Admitting it anyway is not merely a wasted

@@ -323,6 +323,42 @@ test('a program with a cycle already in flight does not start a second one', () 
   assert.match(decision.reason, /already in flight/);
 });
 
+test('two programs sharing a directory never run at once', () => {
+  // Two interactive runners in one checkout race the git index; serialize on cwd.
+  const shared = control({
+    programs: [
+      { name: 'demo', cwd: '/tmp/shared' },
+      { name: 'sibling', cwd: '/tmp/shared' },
+      { name: 'apart', cwd: '/tmp/apart' },
+    ],
+  });
+  const siblingRunning = cycle({
+    program: 'sibling', endedAt: null, exit: 'running', poolAfter: null, yield: null,
+  });
+  const held = run({ control: shared, cycles: [siblingRunning] });
+  assert.equal(held.verdict, 'WAIT');
+  assert.match(held.reason, /sibling's cycle is running in the same directory/);
+  // A different directory is untouched, and a settled sibling frees the checkout.
+  assert.equal(run({ control: shared, program: 'apart', cycles: [siblingRunning] }).verdict, 'GO');
+  assert.equal(
+    run({ control: shared, cycles: [cycle({ program: 'sibling' })] }).verdict,
+    'GO',
+  );
+});
+
+test('a disabled sibling in the same directory still holds it — its runner is real', () => {
+  const shared = control({
+    programs: [
+      { name: 'demo', cwd: '/tmp/shared' },
+      { name: 'sibling', cwd: '/tmp/shared', enabled: false },
+    ],
+  });
+  const siblingRunning = cycle({
+    program: 'sibling', endedAt: null, exit: 'running', poolAfter: null, yield: null,
+  });
+  assert.equal(run({ control: shared, cycles: [siblingRunning] }).verdict, 'WAIT');
+});
+
 test('another program in flight reserves capacity from the shared pool', () => {
   // Without the reservation each program would see the whole pool and all would start.
   const elsewhere = cycle({ program: 'other', endedAt: null, exit: 'running', poolAfter: null, yield: null });
