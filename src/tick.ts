@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, fullReason, type Decision } from './decide.ts';
 import { isOnboarding, readReport, runCycle, type CycleReport } from './cycle.ts';
-import { agentState, cycleAgentTarget, PaneBusy } from './herdr.ts';
+import { PaneBusy, runnerState } from './orca.ts';
 import { readAsks } from './asks.ts';
 import { nudgeIfNeglected, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
@@ -154,13 +154,13 @@ const reconcileLateReports = (now: number): number => {
 };
 
 /**
- * Whether a herdr agent for this program is still present, for decide()'s leftover-pane
- * gate. Undefined rather than false when herdr cannot be reached: "no agent" and "no
+ * Whether an orca runner for this program is still present, for decide()'s leftover-pane
+ * gate. Undefined rather than false when orca cannot be reached: "no agent" and "no
  * answer" are different facts, and only the first may refuse a cycle.
  */
 const runnerStillThere = async (program: string): Promise<boolean | undefined> => {
   try {
-    return (await agentState(cycleAgentTarget(program))) !== 'gone';
+    return (await runnerState(program)) !== 'gone';
   } catch (error) {
     console.error(
       `${program}: could not read its runner's state (${explain(error)}) — ` +
@@ -325,11 +325,11 @@ export const tick = async (): Promise<void> => {
         });
       }
 
-      // One bounded herdr call per enabled program. Only for the herdr runner: a headless
+      // One bounded orca call per enabled program. Only for the orca runner: a headless
       // cycle has no agent, so reporting one absent would be true but meaningless. Left
-      // undefined when herdr cannot answer — unknown must not refuse a cycle.
+      // undefined when orca cannot answer — unknown must not refuse a cycle.
       const runnerPresent =
-        program.runner === 'herdr' ? await runnerStillThere(program.name) : undefined;
+        program.runner === 'orca' ? await runnerStillThere(program.name) : undefined;
 
       const decision = decide({
         status,
@@ -441,7 +441,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     record({});
 
     // Anything between the start record and the end record can throw — a missing
-    // binary, a herdr error, a lost workspace. Without an end record the cycle stays
+    // binary, an orca error, a lost worktree. Without an end record the cycle stays
     // "in flight" forever, blocking its own program and holding a concurrency slot.
     const limits = {
       maxHours: control.maxCycleHours,

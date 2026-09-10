@@ -6,7 +6,7 @@ import {
   chargeForRunning, estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles,
   snapshot, spentSince, type CycleRecord,
 } from './ledger.ts';
-import { agentState, aiceBaseUrl, cycleAgentTarget, readPreview } from './herdr.ts';
+import { aiceBaseUrl, readPreview, runnerState } from './orca.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import type { Preview } from './preview.ts';
@@ -112,7 +112,7 @@ export type StateInput = {
   now: number;
   service: { loaded: boolean; intervalSeconds: number | null; lastTickAt: number | null };
   previews: Map<string, Preview>;
-  /** Per program: whether a herdr agent is still present. Absent means unknown. */
+  /** Per program: whether an orca runner is still present. Absent means unknown. */
   runners?: Map<string, boolean>;
   locks: Map<string, number>;
   asksUrls: Map<string, string>;
@@ -281,7 +281,7 @@ export const buildState = (input: StateInput): DrovrState => {
  * The only I/O. Previews are read concurrently and never allowed to reject.
  *
  * `onWarning` exists because readPreview's own failures are surfaced, not logged
- * (see herdr.ts:readPreview), and the two real callers need it to land differently.
+ * (see orca.ts:readPreview), and the two real callers need it to land differently.
  * The terminal UI (watch.ts) can never print mid-frame, so it folds the warning into
  * the view instead. A caller with no frame to fold it into — anything running
  * unattended from launchd — passes console.error, and that is exactly the case this
@@ -317,17 +317,17 @@ export const collectState = async (
       const base = await aiceBaseUrl(program);
       if (base !== null) asksUrls.set(program.name, `${base}/${program.aice.asksPage}`);
     }
-    if (program.runner === 'herdr') {
+    if (program.runner === 'orca') {
       // Left unset on an error, not false: "no agent" and "no answer" are different facts
       // and only the first may refuse a cycle.
-      const state = await agentState(cycleAgentTarget(program.name)).catch((error: unknown) => {
+      const state = await runnerState(program.name).catch((error: unknown) => {
         onWarning?.(`could not read ${program.name}'s runner state: ${error instanceof Error ? error.message : String(error)}`);
         return null;
       });
       if (state !== null) runners.set(program.name, state !== 'gone');
     }
     if (!running.some((cycle) => cycle.program === program.name)) return;
-    const { preview, warning } = await readPreview(cycleAgentTarget(program.name));
+    const { preview, warning } = await readPreview(program.name);
     if (preview !== null) previews.set(program.name, preview);
     if (warning !== null) onWarning?.(warning);
   }));

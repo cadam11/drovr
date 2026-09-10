@@ -85,12 +85,11 @@ const programShape = z.object({
   /** Run the cycle through direnv so the repo's own .envrc supplies its environment. */
   useDirenv: z.boolean().default(true),
   /**
-   * 'herdr' opens the cycle as an interactive agent tab in the program's workspace, so it can
-   * be talked to like any other session. 'headless' runs claude -p to a log file instead.
+   * 'orca' opens the cycle as an interactive claude in a terminal of the program's Orca
+   * worktree, so it can be talked to like any other session. 'headless' runs claude -p to a
+   * log file instead.
    */
-  runner: z.enum(['herdr', 'headless']).default('herdr'),
-  /** Pin the herdr workspace; otherwise it is matched by label, then by cwd. */
-  herdrWorkspace: z.string().nullable().default(null),
+  runner: z.enum(['orca', 'headless']).default('orca'),
   /** Prompt sent to the runner. {program} is substituted.
    *  Only used by the headless runner as a full shell command. */
   cyclePrompt: z.string().default('/project-loop {program}'),

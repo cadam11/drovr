@@ -25,7 +25,7 @@ import { readAsks } from './asks.ts';
 import { parseReportArgs, writeReport } from './cycle.ts';
 import { textCraig } from './nudge.ts';
 import { unverified, verifyDelivery } from './delivery.ts';
-import { agentPane, agentState, cycleAgentTarget, isSettled, paneAddress, releaseAgent, resolveWorkspace, tidyCycleTabs } from './herdr.ts';
+import { isSettled, releaseRunner as freeRunner, runnerAddress, runnerState, tidyRunnerTerminal } from './orca.ts';
 import { setReserve } from './keys.ts';
 import { heldBy, holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
@@ -98,8 +98,8 @@ const evaluateAll = async (input: {
   const runners = new Map(
     await Promise.all(
       ordered.map(async (program) => {
-        if (program.runner !== 'herdr') return [program.name, undefined] as const;
-        const state = await agentState(cycleAgentTarget(program.name)).catch(() => null);
+        if (program.runner !== 'orca') return [program.name, undefined] as const;
+        const state = await runnerState(program.name).catch(() => null);
         return [program.name, state === null ? undefined : state !== 'gone'] as const;
       }),
     ),
@@ -332,7 +332,7 @@ const showStatus = async (): Promise<void> => {
  * on purpose: an idle runner with no report may hold unsaved work, and drovr choosing to
  * end it unprompted is the one kind of kill the design refuses. This is Craig deciding.
  *
- * Safe by construction rather than by care — `releaseAgent` will not send `/exit` to an
+ * Safe by construction rather than by care — `releaseRunner` will not send `/exit` to an
  * agent that is not settled, so a runner still working or waiting on a dialog is reported
  * and left alone rather than interrupted.
  */
@@ -343,23 +343,17 @@ const releaseRunner = async (name: string | undefined): Promise<void> => {
     throw new Error(`no program named "${name}" in ${p.control}`);
   }
 
-  // By pane, not by name: a restored session comes back unnamed, and looking it up by
-  // name answered `gone` — so this reported an occupied pane as already free.
-  const target = cycleAgentTarget(name);
-  const state = await agentState(target);
+  const state = await runnerState(name);
   if (state === 'gone') {
-    console.log(`${name}: no runner to release — its pane is already free`);
+    console.log(`${name}: no runner to release — its terminal is already free`);
     return;
   }
-
-  const pane = await agentPane(target);
-  if (pane === null) throw new Error(`${name}'s runner reports no pane, so there is nothing to release`);
-  const address = await paneAddress(pane);
+  const address = await runnerAddress(name);
 
   if (!isSettled(state)) {
     console.error(
       `${name}: its runner is ${state}, so it was left alone — /exit typed into a live ` +
-        `turn is swallowed and the pane stays held. Open ${address.where} and answer what it ` +
+        `turn is swallowed and the terminal stays held. Open ${address.where} and answer what it ` +
         `is waiting on, then run this again.` +
         (address.open === null ? '' : `\n  open it:  ${address.open}`),
     );
@@ -367,7 +361,7 @@ const releaseRunner = async (name: string | undefined): Promise<void> => {
     return;
   }
 
-  const released = await releaseAgent(pane);
+  const released = await freeRunner(name);
   console.log(
     released
       ? `${name}: released its runner — the next tick can start a cycle`
@@ -855,16 +849,11 @@ const main = async (argv: string[]): Promise<void> => {
         console.log(`${program.name}: cycle in flight, left alone`);
         continue;
       }
-      const workspaceId = await resolveWorkspace(program).catch(() => null);
-      if (workspaceId === null) {
-        console.log(`${program.name}: no herdr workspace, nothing to tidy`);
-        continue;
-      }
-      const closed = await tidyCycleTabs({ program: program.name, workspaceId, keepTabId: null });
+      const closed = await tidyRunnerTerminal(program.name);
       console.log(
-        closed.length === 0
-          ? `${program.name}: no empty cycle tabs`
-          : `${program.name}: closed ${closed.join(', ')}`,
+        closed === null
+          ? `${program.name}: no empty cycle terminal`
+          : `${program.name}: closed ${closed}`,
       );
     }
     return;

@@ -47,7 +47,7 @@ export const AGENT_NOTES = {
     blocked: 'every remaining item is waiting on a human answer',
     crash: 'the process exited without writing a report — check ~/.drovr/logs/',
     stalled:
-      'the runner went idle without reporting and ignored every nudge — its pane was ' +
+      'the runner went idle without reporting and ignored every nudge — its terminal was ' +
       'freed and the next tick starts a fresh cycle. Repeated stalls latch the program.',
   },
   gotchas: [
@@ -109,7 +109,7 @@ export const COMMANDS: Command[] = [
     details: [
       'What launchd runs. Admission itself returns in seconds: each admitted program is handed to',
       'a detached run-cycle worker rather than awaited.',
-      'A launched cycle opens as an interactive claude tab in that program’s own herdr workspace,',
+      'A launched cycle opens as an interactive claude terminal in that program’s own Orca worktree,',
       'so a human can read it and talk to it while it runs. drovr watches it but never kills it.',
       'It publishes nothing: a tick writes only local state. Read it with drovr status,',
       'drovr watch, or decisions.jsonl.',
@@ -123,7 +123,7 @@ export const COMMANDS: Command[] = [
     details: [
       'Normally launched by tick. Blocks for the whole cycle (hours) and holds the program lock,',
       'so a second invocation for the same program is refused.',
-      'It opens the cycle in herdr and then only watches — for the runner’s report file, or for the',
+      'It opens the cycle in Orca and then only watches — for the runner’s report file, or for the',
       'agent to disappear. Killing the runner is never drovr’s decision.',
     ],
     writes: 'cycles.jsonl',
@@ -203,13 +203,13 @@ export const COMMANDS: Command[] = [
   {
     name: 'tidy',
     usage: 'drovr tidy',
-    summary: 'close empty cycle tabs drovr left behind',
+    summary: 'close cycle terminals drovr left behind',
     details: [
-      'Only tabs drovr itself labelled, only in that program own workspace, and only when every',
-      'pane in them has no agent. A program with a cycle in flight is skipped entirely.',
+      'Only the terminal drovr itself opened for a program, and only when no claude is in it.',
+      'A program with a cycle in flight is skipped entirely.',
       'Cycle starts tidy automatically; this is for when nothing is running.',
     ],
-    writes: 'closes herdr tabs',
+    writes: 'closes Orca terminals',
   },
   {
     name: 'cap',
@@ -313,19 +313,19 @@ export const COMMANDS: Command[] = [
   {
     name: 'release',
     usage: 'drovr release <program>',
-    summary: "free a program's pane when its runner outlived the cycle that started it",
+    summary: "free a program's terminal when its runner outlived the cycle that started it",
     details: [
-      'A runner that outlives its watch (maxCycleHours) keeps its pane, and every later',
-      'cycle for that program is refused because the pane is occupied. Nothing releases it',
+      'A runner that outlives its watch (maxCycleHours) keeps its terminal, and every later',
+      'cycle for that program is refused because the terminal is occupied. Nothing releases it',
       'automatically: an idle runner with no report may hold unsaved work, and ending it is',
       "a decision drovr will not make for you. `drovr tidy` cannot do this — it only closes",
       'tabs that have no agent at all.',
       '',
       'Refuses, without touching it, when the runner is working or waiting on a dialog:',
-      '/exit typed into a live turn is swallowed and the pane stays held. Answer whatever it',
-      'is waiting on in herdr first, then run this.',
+      '/exit typed into a live turn is swallowed and the terminal stays held. Answer whatever it',
+      'is waiting on in Orca first, then run this.',
     ],
-    writes: "sends /exit to the program's herdr agent",
+    writes: "sends /exit to the program's runner and closes its terminal",
   },
   {
     name: 'usage',

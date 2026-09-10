@@ -6,18 +6,17 @@ import { MAX_REST_DAYS, parseDuration, type Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { textCraig } from './nudge.ts';
 import {
-  agentState,
   openLine,
-  paneAddress,
-  promptAgent,
-  resolveWorkspace,
-  releaseAgent,
+  PaneBusy,
+  promptRunner,
+  releaseRunner,
+  resolveWorktree,
+  runnerAddress,
+  runnerState,
   startCycleAgent,
-  teamclaudeEnv,
-  tidyCycleTabs,
   type AgentState,
   type StartedCycle,
-} from './herdr.ts';
+} from './orca.ts';
 
 /**
  * Written by the runner before it exits. Its absence after the process ends is
@@ -217,24 +216,6 @@ export type CycleLimits = {
   originationNumber: string | null;
 };
 
-const paneShape = z.object({ paneId: z.string() });
-
-/** The cycle tab persists across cycles, so its pane is remembered between them. */
-const rememberedPane = (program: string): string | null => {
-  const path = join(paths().programState(program), 'cycle-pane.json');
-  if (!existsSync(path)) return null;
-  const parsed = paneShape.safeParse(JSON.parse(readFileSync(path, 'utf8')));
-  return parsed.success ? parsed.data.paneId : null;
-};
-
-const rememberPane = (program: string, paneId: string): void => {
-  writeFileSync(
-    join(paths().programState(program), 'cycle-pane.json'),
-    `${JSON.stringify({ paneId }, null, 2)}\n`,
-    'utf8',
-  );
-};
-
 const POLL_MS = 30_000;
 
 export type StallAction = 'wait' | 'nudge' | 'give-up' | 'alert';
@@ -325,11 +306,11 @@ const runHeadless = async (program: Program, startedAt: string): Promise<CycleOu
   return { finished: true, detail: `headless runner exited ${code}, log at ${logPath}` };
 };
 
-/** The report exists, so the cycle has declared itself done and the pane is cleanup. */
-const releaseFinished = async (started: StartedCycle, program: string): Promise<CycleOutcome> => {
-  const released = await releaseAgent(started.paneId).catch(() => false);
-  if (released) return { finished: true, detail: 'runner reported in and its pane was released for the next cycle' };
-  const address = await paneAddress(started.paneId);
+/** The report exists, so the cycle has declared itself done and the terminal is cleanup. */
+const releaseFinished = async (program: string): Promise<CycleOutcome> => {
+  const released = await releaseRunner(program).catch(() => false);
+  if (released) return { finished: true, detail: 'runner reported in and its terminal was released for the next cycle' };
+  const address = await runnerAddress(program);
   return {
     finished: true,
     detail:
@@ -338,18 +319,18 @@ const releaseFinished = async (started: StartedCycle, program: string): Promise<
   };
 };
 
-/** Out of nudges. Free the pane so the next tick starts clean rather than deferring. */
-const abandonStalled = async (started: StartedCycle, nudges: number): Promise<CycleOutcome> => {
-  const released = await releaseAgent(started.paneId).catch(() => false);
+/** Out of nudges. Free the terminal so the next tick starts clean rather than deferring. */
+const abandonStalled = async (program: string, nudges: number): Promise<CycleOutcome> => {
+  const released = await releaseRunner(program).catch(() => false);
   return {
     finished: true,
     stalled: true,
     detail:
       `runner sat idle through ${nudges} nudges without writing a report` +
       (released
-        ? ' — its pane was released for a fresh cycle'
+        ? ' — its terminal was released for a fresh cycle'
         : await (async (): Promise<string> => {
-            const address = await paneAddress(started.paneId);
+            const address = await runnerAddress(program);
             return ` — its session still holds ${address.where}${openLine(address)}`;
           })()),
   };
@@ -370,15 +351,15 @@ const abandonStalled = async (started: StartedCycle, nudges: number): Promise<Cy
  */
 const askForHuman = async (
   program: string,
-  agentName: string,
   blockedForMs: number,
   limits: Pick<CycleLimits, 'phoneNumber' | 'originationNumber'>,
 ): Promise<void> => {
   const minutes = Math.round(blockedForMs / 60_000);
+  const address = await runnerAddress(program);
   const message =
-    `drovr: ${program} has been waiting ${minutes}m on a dialog in its pane — a permission ` +
-    `prompt or a trust question. Only you can clear it. Open the ${agentName} tab in herdr ` +
-    'and answer it; the cycle carries on from there. It holds its pane until you do.';
+    `drovr: ${program} has been waiting ${minutes}m on a dialog in its terminal — a permission ` +
+    `prompt or a trust question. Only you can clear it. Open ${address.where} in orca ` +
+    `and answer it; the cycle carries on from there. It holds its terminal until you do.${openLine(address)}`;
   console.error(`${program}: blocked ${minutes}m on a dialog — asked Craig to clear it`);
   await textCraig(limits.phoneNumber, message, limits.originationNumber).catch((error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
@@ -386,11 +367,7 @@ const askForHuman = async (
   });
 };
 
-const watchCycle = async (
-  started: StartedCycle,
-  program: string,
-  limits: CycleLimits,
-): Promise<CycleOutcome> => {
+const watchCycle = async (program: string, limits: CycleLimits): Promise<CycleOutcome> => {
   // Bounded: a wedged runner must not hold its capacity slot indefinitely.
   const deadline = Date.now() + limits.maxHours * 3_600_000;
   let idleSince: number | null = null;
@@ -400,11 +377,11 @@ const watchCycle = async (
 
   while (Date.now() < deadline) {
     await sleep(POLL_MS);
-    if (pollReport(program) !== null) return releaseFinished(started, program);
+    if (pollReport(program) !== null) return releaseFinished(program);
 
-    const state = await agentState(started.paneId);
+    const state: AgentState = await runnerState(program);
     if (state === 'gone') {
-      return { finished: true, detail: `the runner is no longer present in ${(await paneAddress(started.paneId)).where}` };
+      return { finished: true, detail: `the runner is no longer present in ${(await runnerAddress(program)).where}` };
     }
 
     idleSince = state === 'idle' ? (idleSince ?? Date.now()) : null;
@@ -426,22 +403,22 @@ const watchCycle = async (
     });
 
     if (action === 'wait') continue;
-    if (action === 'give-up') return abandonStalled(started, nudges);
+    if (action === 'give-up') return abandonStalled(program, nudges);
     if (action === 'alert') {
       // Marked before sending, not after: a send that throws must not turn a one-off
       // request for help into a text every poll for the rest of the cycle.
       alerted = true;
-      await askForHuman(program, started.agentName, Date.now() - (blockedSince ?? Date.now()), limits);
+      await askForHuman(program, Date.now() - (blockedSince ?? Date.now()), limits);
       continue;
     }
 
-    // Counted and the clock reset even when the send fails, so a herdr that is
+    // Counted and the clock reset even when the send fails, so an orca that is
     // refusing prompts cannot turn the nudge budget into a 30-second retry loop.
     nudges += 1;
     idleSince = null;
-    await promptAgent(started.paneId, STALL_PROMPT).catch((error: unknown) => {
+    await promptRunner(program, STALL_PROMPT).catch((error: unknown) => {
       const detail = error instanceof Error ? error.message : String(error);
-      console.error(`could not nudge ${started.agentName}: ${detail}`);
+      console.error(`could not nudge ${program}: ${detail}`);
     });
     console.log(`${program}: idle with no report — nudged it (${nudges}/${limits.maxStallNudges})`);
   }
@@ -453,52 +430,38 @@ const watchCycle = async (
     finished: false,
     abandoned: true,
     detail:
-      `still watching after ${limits.maxHours}h and the runner is still alive — agent ` +
-      `${started.agentName} left in place. Recorded as abandoned, not crashed; if it ` +
+      `still watching after ${limits.maxHours}h and the runner is still alive — ` +
+      `${program}'s terminal left in place. Recorded as abandoned, not crashed; if it ` +
       'writes a report the next tick supersedes this record with the real outcome',
   };
 };
 
 /**
- * Opens the cycle as an interactive agent tab in the program's own herdr workspace,
- * so Craig can read it and talk to it mid-cycle like any other session. drovr does
- * not own the process, so completion is detected from the runner's own report or
+ * Opens the cycle as an interactive claude in a terminal of the program's own Orca
+ * worktree, so Craig can read it and talk to it mid-cycle like any other session. drovr
+ * does not own the process, so completion is detected from the runner's own report or
  * from the agent disappearing — never by killing anything.
  */
-const runInHerdr = async (
+const runInOrca = async (
   program: Program,
   startedAt: string,
   limits: CycleLimits,
 ): Promise<CycleOutcome> => {
-  const workspaceId = await resolveWorkspace(program);
+  const worktreeId = await resolveWorktree(program);
   const prompt = substitute(program.cyclePrompt, program, isOnboarding(program.name));
-  const started = await startCycleAgent({
-    program,
-    workspaceId,
-    prompt,
-    sessionName: substitute(program.sessionName, program, isOnboarding(program.name)),
-    env: await teamclaudeEnv(),
-    remembered: rememberedPane(program.name),
-  });
-
-  rememberPane(program.name, started.paneId);
-
-  // Earlier cycles can leave empty tabs behind when a pane was lost and a new one
-  // had to be made. Tidy them once the replacement is up, never before.
-  const closed = await tidyCycleTabs({
-    program: program.name,
-    workspaceId,
-    keepTabId: started.tabId,
-  }).catch(() => []);
-  if (closed.length > 0) console.log(`closed ${closed.length} empty cycle tab(s): ${closed.join(', ')}`);
+  const sessionName = substitute(program.sessionName, program, isOnboarding(program.name));
+  // --model per session, so the runner is always Fable without touching Craig's default;
+  // --name makes it obvious in the prompt box and /resume which program a session belongs to.
+  const { file, args } = wrap(program, ['teamclaude', 'run', '--', '--model', program.model, '--name', sessionName]);
+  const started: StartedCycle = await startCycleAgent({ program, worktreeId, command: [file, ...args], prompt });
 
   writeFileSync(
     join(paths().programState(program.name), 'current-cycle.json'),
-    `${JSON.stringify({ ...started, workspaceId, prompt, startedAt }, null, 2)}\n`,
+    `${JSON.stringify({ ...started, worktreeId, prompt, startedAt }, null, 2)}\n`,
     'utf8',
   );
 
-  return watchCycle(started, program.name, limits);
+  return watchCycle(program.name, limits);
 };
 
 /** Resolves once the cycle finishes or the watch window expires; cycles run for hours. */
@@ -511,5 +474,5 @@ export const runCycle = async (
   clearReport(program.name);
   return program.runner === 'headless'
     ? runHeadless(program, startedAt)
-    : runInHerdr(program, startedAt, limits);
+    : runInOrca(program, startedAt, limits);
 };

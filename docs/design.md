@@ -399,7 +399,7 @@ drovr runs from launchd every 600s with nobody watching, so the failure that mat
 a wrong decision — it is a silent stop. There were two ways to get one, and they compounded.
 
 **`execFile` has no default timeout.** Every subprocess drovr spawned could hang forever: the
-`teamclaude status --json` that runs *first* in both `tick()` and `collectState()`, every `herdr`
+`teamclaude status --json` that runs *first* in both `tick()` and `collectState()`, every `orca`
 socket call, `teamclaude env`, the direnv probe, the preview read, `aws` on the alerting path, and
 — least documented and most reachable — the `aice publish` inside the tick loop, once per program,
 over the network. All of them now go through `runBounded` in `exec.ts`, which takes the ceiling as

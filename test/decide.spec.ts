@@ -905,10 +905,10 @@ test('a weekly-bound pool still has to cover the reserve', () => {
  * against the pool for the rest of the tick, taking aice-x and joinery from 1.35 fundable
  * to 0.35 and refusing them both, every ten minutes, invisibly.
  */
-test('a program whose runner still holds its pane is not admitted', () => {
+test('a program whose runner still holds its terminal is not admitted', () => {
   const decision = run({ runnerPresent: true });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /still holds its "demo cycles" tab/);
+  assert.match(decision.reason, /still holds its cycle terminal in Orca/);
   // It used to name the agent id, on the theory that this was how a reader would find
   // it. `drovr-demo` names no place a human can open — and after the pane-addressing
   // fix it is not even the identity drovr uses. The tab label and the command are.

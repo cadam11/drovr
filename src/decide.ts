@@ -17,7 +17,6 @@ import { chargeForRunning,
   type CycleRecord,
 } from './ledger.ts';
 import type { BucketName } from './allocation.ts';
-import { cycleTabLabel } from './herdr.ts';
 import type { TeamclaudeStatus } from './teamclaude.ts';
 
 const WEEKLY_WINDOW_HOURS = 168;
@@ -60,10 +59,10 @@ export type DecideInput = {
   /** False when shared notes are off, which is what stops drovr seeing an answer. */
   asksShared?: boolean | null;
   /**
-   * Whether a herdr agent for this program is still present. Read by the caller, because
+   * Whether an orca runner for this program is still present. Read by the caller, because
    * decide() does no I/O — and read at all because a leftover runner is the one thing that
    * makes a program unstartable while every other gate says GO. Undefined means unknown
-   * (herdr unreachable, or a headless runner), which must never refuse a cycle.
+   * (orca unreachable, or a headless runner), which must never refuse a cycle.
    */
   runnerPresent?: boolean;
 };
@@ -473,8 +472,8 @@ const admissionLimits = (
   // fundable to 0.35.
   if (input.runnerPresent === true) {
     return hold(
-      `its previous runner outlived its cycle and still holds its "${cycleTabLabel(program)}" ` +
-        `tab. Run "drovr release ${program}" once it is settled, or open that tab and answer ` +
+      `its previous runner outlived its cycle and still holds its cycle terminal in Orca. ` +
+        `Run "drovr release ${program}" once it is settled, or open that terminal and answer ` +
         'whatever it is waiting on',
       pool,
       null,

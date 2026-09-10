@@ -8,8 +8,8 @@ quota is left across your teamclaude accounts and how much of your own weekly bu
 already spent. It never kills a cycle — cycles end themselves — and it never touches the accounts
 themselves.
 
-Companion to [herdr](https://github.com/) (which manages many parallel sessions right now);
-drovr drives one program over weeks.
+Companion to Orca (which manages many parallel sessions right now); drovr drives one program
+over weeks.
 
 ## How it works
 
@@ -29,7 +29,7 @@ Programs run **concurrently**, each in its own detached process holding its own 
 in-flight cycle reserves its estimated cost from the shared pool, so N programs cannot each
 claim the whole budget.
 
-Each cycle is a **fresh interactive Claude session** in that program's herdr workspace — one you can
+Each cycle is a **fresh interactive Claude session** in that program's Orca worktree — one you can
 read and talk to while it runs. Context clearing is session exit, so nothing accumulates across
 cycles. The cycle decides its own end (context ceiling, thinning capacity, a natural seam, or
 everything blocked) and writes a report, which is the signal that tells drovr it has finished.
@@ -218,21 +218,24 @@ drovr service print       # plist to stdout, writes nothing
 
 ## Where a cycle actually runs
 
-A cycle is **an interactive claude session in that program's own herdr workspace**, not a headless
-background process. drovr starts a `claude` agent named `drovr-<program>` in that program's cycle
-tab and prompts it with `/project-loop <program>`. You can read it, interrupt it, and chat with it
-like any other session — and the loop agent creates its own herdr worktrees from there, which
-project-loop already knows how to do.
+A cycle is **an interactive claude session in a terminal of that program's own Orca worktree**, not
+a headless background process. drovr opens the terminal with `teamclaude run -- --model fable`,
+waits for claude to come up idle, and prompts it with `/project-loop <program>`. You can read it,
+interrupt it, and chat with it like any other session — and the loop agent creates its own
+worktrees from there, which project-loop already knows how to do.
 
-**One cycle tab per program, reused.** Workspaces are long-lived, so a tab per cycle would bury the
-workspace in hundreds of them. drovr creates the tab once (unfocused, so it never steals your
-cursor), remembers its pane, and reuses it: when a cycle ends the agent exits and leaves the pane at
-a shell prompt, which is exactly what the next `agent start` needs. The scrollback carries prior
-cycles with it. If the tab is closed, the next cycle makes a new one.
+**One cycle terminal per program.** Worktrees are long-lived, so a terminal per cycle would bury
+them in hundreds. drovr remembers the terminal it opened (handle, tab and worktree, in
+`cycle-terminal.json`); when a cycle ends the claude is released and the terminal closed, and the
+next cycle opens a fresh one. Orca handles do not survive an Orca restart but the tab does, so a
+stale handle is re-resolved through the tab before it is given up on — that is the case where Orca
+has resumed the claude session into the restored tab, and losing track of it would mean a live
+runner nobody is watching.
 
-The proxy is applied via `teamclaude env`, teamclaude's own documented path for "agent multiplexers
-that spawn claude themselves", so the pane runs a normal interactive `claude` while still rotating
-across accounts.
+The proxy comes from `teamclaude run` itself — the same thing your `claude` alias does — so the
+terminal runs a normal interactive session that still rotates across accounts. drovr never types a
+command into a shell: the launch goes through `orca terminal create --command`, and the only text
+it ever sends to a terminal is a prompt, or `/exit` to a claude it has just read as idle.
 
 **The runner is always Fable.** drovr passes `--model fable` to that session only — claude's
 `--model` is documented as "model for the current session", so your default is untouched and every
@@ -240,63 +243,57 @@ other `claude` you start is unaffected. The coordinator being Fable is the point
 Opus/Sonnet/Haiku subagents itself, which is why the Fable and general quota buckets are tracked
 separately. Override per program with `"model"` if a program should run on something else.
 
-The workspace is matched by label, then by checkout path, and **created if neither matches** —
-drovr knows the program directory, so closing a workspace should not strand a program. Pin it with
-`herdrWorkspace` to override.
+The worktree is Orca's worktree whose checkout is the program's `cwd`. Orca only opens terminals
+in worktrees it knows, and registering one is a decision about your workspace, so a program whose
+`cwd` is not registered is refused with the command that fixes it:
+
+```bash
+orca repo add --path /Users/cadam/code/joinery
+```
 
 Each session is named `<program> program runner` (`sessionName`, via claude `--name`), so it is
 obvious in the prompt box and in `/resume` which program a session belongs to.
 
 **A finished cycle is released, not killed.** An interactive claude session cannot exit itself, so
-once the report file appears drovr waits for the agent to settle, sends it `/exit`, and frees the
-pane for the next cycle. If it will not go, the cycle is still recorded and the next one refuses
-rather than stacking a second agent on the pane.
+once the report file appears drovr waits for the agent to settle, sends it `/exit`, and closes the
+terminal. If it will not go, the cycle is still recorded and the next one refuses rather than
+stacking a second agent on the terminal.
 
 **drovr never kills a cycle.** It watches for the runner's own report file, or for the agent to
 disappear. `x` in the watch view sends an interrupt, not a kill, so the runner still gets to wind
 down and make its work durable. After `maxCycleHours` (default 12) drovr stops watching and records
-the cycle, leaving the tab in place for you to inspect.
+the cycle, leaving the terminal in place for you to inspect.
 
 Set `"runner": "headless"` on a program for the old behaviour — `claude -p` to a log file, with
 nothing to talk to.
 
 ### Tidying up
 
-A cycle whose pane was lost leaves its old tab behind. Cycle starts clean those up
-automatically, and `drovr tidy` does it on demand when nothing is running:
+A cycle whose claude exited without being released leaves a bare shell in its terminal. Cycle
+starts clean that up automatically, and `drovr tidy` does it on demand when nothing is running:
 
 ```bash
 drovr tidy
-# sunnyt: closed w64:t7
-# aice-x: no empty cycle tabs
+# sunnyt: closed term_6eca3f20-bcbb-45a1-a3cb-d4aca40487b6
+# aice-x: no empty cycle terminal
 ```
 
-It only touches tabs drovr itself labelled (`<program> cycles`), only in that program own
-workspace, and only when every pane in them is free of an agent. A program with a cycle in
-flight is skipped entirely — a stray empty tab is untidy, a closed live one is lost work.
+It only touches the terminal drovr itself opened for a program, and only when no claude is in it.
+A program with a cycle in flight is skipped entirely — a stray shell is untidy, a closed live
+session is lost work.
 
-### After a herdr restart
+### After an Orca restart
 
-Snapshot restore brings panes back as **fresh shells** — workspace, tab, pane, cwd, layout and
-focus survive, environment variables do not. Herdr's native agent restore is on by default and
-re-runs `claude --resume <id>`, so a restored cycle pane would otherwise be a raw, un-proxied
-`claude` billing your quota with no rotation.
-
-drovr handles both halves:
-
-- Before starting an agent in a **reused** pane it re-asserts `eval "$(teamclaude env)"` in that
-  shell, so the environment does not depend on having survived.
-- If the pane already has an **occupant** — a cycle herdr resumed on its own — drovr refuses to
-  start and says so, rather than stacking a second agent on top or killing the first.
+Orca restores tabs and resumes the agent sessions in them, but every terminal *handle* drovr
+remembered is invalidated. drovr re-finds its terminal through the tab id, so a resumed runner is
+still watched and its program is not admitted a second time on top of it. If the tab is gone too,
+the program simply has no runner and the next cycle opens a fresh terminal.
 
 For everything outside drovr, install the alias so a bare `claude` can never run un-proxied:
 
 ```bash
 teamclaude alias --install     # alias claude='teamclaude run --'
 ```
-
-That covers what you type interactively. It does not cover herdr's own resume command, which is
-why drovr re-asserts the environment itself.
 
 ## The daily cap
 

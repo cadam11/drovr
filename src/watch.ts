@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { type Allocation, type BucketName } from './allocation.ts';
 import { byPriority, readControl, type Program } from './control.ts';
-import { agentNameFor, interruptAgent } from './herdr.ts';
+import { interruptRunner } from './orca.ts';
 import {
   adjustConcurrency,
   cycleMode,
@@ -558,16 +558,14 @@ const startCycle = (program: Program): Action => {
 };
 
 /**
- * A herdr cycle is a real session Craig can talk to, so this interrupts it rather
+ * An orca cycle is a real session Craig can talk to, so this interrupts it rather
  * than killing it — the runner gets to wind down and write its report. The headless
  * runner has no such affordance, so its process group is signalled instead.
  */
 const stopCycle = async (program: Program): Promise<Action> => {
-  if (program.runner === 'herdr') {
+  if (program.runner === 'orca') {
     try {
-      // agentNameFor matches the truncated, lowercased name herdr actually registered
-      // (herdr.ts:startCycleAgent) — a name built any other way silently misses.
-      await interruptAgent(agentNameFor(program.name));
+      await interruptRunner(program.name);
       return { message: `interrupted ${program.name} — it can still wind down cleanly`, redraw: true };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -652,7 +650,7 @@ const handle = async (
   if (key === ']') return nudgePriority(control, selected.name, 1);
   if (key === 'x') {
     view.confirmStop = true;
-    const verb = selected.runner === 'herdr' ? 'interrupt' : 'stop';
+    const verb = selected.runner === 'orca' ? 'interrupt' : 'stop';
     return { message: `${verb} ${selected.name}? y to confirm, any other key to cancel`, redraw: true };
   }
   if (key === 's') {
@@ -712,7 +710,7 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
    * fills the terminal scrolls the top away one row per redraw. Content is clamped to
    * the terminal height so it can never scroll at all.
    *
-   * readPreview's own failures are returned, not logged (herdr.ts), specifically so
+   * readPreview's own failures are returned, not logged (orca.ts), specifically so
    * nothing here has to intercept a global to keep them off the alternate screen — the
    * warning is threaded straight into view.previewWarning via this call's own callback,
    * which is fine even with several draws' collectState calls genuinely overlapping:

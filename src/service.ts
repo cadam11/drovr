@@ -14,7 +14,7 @@ export const plistPath = (): string => plistPathFor(LABEL);
 /**
  * launchd starts with a bare PATH that does not include tool dirs like
  * ~/Library/pnpm, where teamclaude lives. Baking in the installing shell's PATH
- * is what makes teamclaude, herdr, aice and direnv resolvable from a tick.
+ * is what makes teamclaude, orca, aice and direnv resolvable from a tick.
  */
 export const agentPath = (): string => {
   const standard = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
