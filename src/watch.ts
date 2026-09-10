@@ -122,6 +122,17 @@ const elapsed = (since: string, now: number): string => {
     : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`;
 };
 
+/** Time until a reset, in teamclaude's own dashboard vocabulary: 59m, 4h49m, 2d18h. */
+export const untilLabel = (at: string | null, now: number): string => {
+  if (at === null) return '—';
+  const minutes = Math.round((Date.parse(at) - now) / 60_000);
+  if (minutes <= 0) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h${String(minutes % 60).padStart(2, '0')}m`;
+  return `${Math.floor(hours / 24)}d${String(hours % 24).padStart(2, '0')}h`;
+};
+
 /**
  * `key` is what a mouse click on the label feeds back in as a keystroke. Null for the
  * entries a click cannot disambiguate ('[ ]' is two opposite actions) — and for the
@@ -272,6 +283,63 @@ const allocationLines = (input: {
     '',
     ...rows,
   ];
+};
+
+const ACCOUNT_BUCKETS: { key: 'session' | 'general' | 'fable'; label: string }[] = [
+  { key: 'session', label: '5h' },
+  { key: 'general', label: 'wk' },
+  { key: 'fable', label: 'F7' },
+];
+
+/** A used-fraction bar, coloured by how close the bucket is to its limit. */
+const usedBar = (fraction: number | null, width: number): string => {
+  if (fraction === null) return dim('?'.repeat(width));
+  const clamped = Math.min(1, Math.max(0, fraction));
+  const filled = Math.round(clamped * width);
+  const colour = clamped >= 0.8 ? 31 : clamped >= 0.5 ? 33 : 32;
+  return paint(colour, '█'.repeat(filled)) + paint(90, '░'.repeat(width - filled));
+};
+
+/**
+ * teamclaude's own dashboard, folded in so drovr watch is the one screen: every account,
+ * its three buckets with their own reset countdowns, and the account the fable route will
+ * serve next (►) — the one the runner's next request actually lands on. ✗ marks an account
+ * the route refuses: its headroom shows in the bars above but funds nothing (capacity.ts).
+ */
+const accountLines = (input: {
+  accounts: DrovrState['accounts'];
+  now: number;
+  width: number;
+  narrow: boolean;
+}): string[] => {
+  const { accounts, now, width, narrow } = input;
+  if (accounts.length === 0) return [];
+  const nameWidth = narrow ? 14 : Math.min(28, Math.max(...accounts.map((entry) => entry.name.length)));
+  const statusWidth = narrow ? 0 : 9;
+  // Indent, marker, name, status, and per bucket: label, bar, a six-wide countdown, gaps.
+  const fixed = 4 + nameWidth + 1 + statusWidth + ACCOUNT_BUCKETS.length * 11;
+  const barWidth = Math.max(3, Math.floor((width - fixed) / ACCOUNT_BUCKETS.length));
+
+  const target = accounts.find((entry) => entry.fableTarget);
+  const header =
+    `  ${bold('ACCOUNTS')}  ` +
+    dim(target === undefined ? 'fable route has no target' : `fable route → ${target.name}`);
+
+  const rows = accounts.map((entry) => {
+    const marker = entry.fableTarget ? paint(32, '►') : entry.fableEligible === false ? paint(31, '✗') : ' ';
+    const name = clip(narrow ? entry.name.split('@')[0]! : entry.name, nameWidth).padEnd(nameWidth);
+    const status = narrow
+      ? ''
+      : entry.disabled
+        ? dim('disabled'.padEnd(statusWidth))
+        : paint(entry.status === 'active' ? 32 : 33, (entry.status ?? '?').padEnd(statusWidth));
+    const buckets = ACCOUNT_BUCKETS.map(({ key, label }) => {
+      const bucket = entry.buckets[key];
+      return `${dim(label)} ${usedBar(bucket.usedFraction, barWidth)} ${untilLabel(bucket.resetsAt, now).padEnd(6)}`;
+    }).join(' ');
+    return `  ${marker} ${name} ${status}${buckets}`;
+  });
+  return ['', header, ...rows];
 };
 
 /**
@@ -473,6 +541,7 @@ export const frameWithHits = (
           ...wrapText(state.capacityNote, Math.max(8, width - 4), 3).map(
             (line) => `  ${dim(line)}`,
           ),
+          ...accountLines({ accounts: state.accounts, now, width, narrow }),
         ]
     ).map(plain),
   );

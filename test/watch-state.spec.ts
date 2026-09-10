@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildState } from '../src/state.ts';
-import { frame, frameWithHits, keybarLines, visibleLength } from '../src/watch.ts';
+import { frame, frameWithHits, keybarLines, untilLabel, visibleLength } from '../src/watch.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
 
 const fixture = (overrides: Record<string, unknown> = {}) => buildState({
@@ -306,4 +306,74 @@ test('mouse hits: program rows carry their program, chrome carries nothing', () 
   );
   assert.equal(hits[0], null, 'the header is not clickable');
   assert.deepEqual(hits.at(-1), { keybar: keybarLines(100, false).length - 1 });
+});
+
+/**
+ * The teamclaude dashboard and drovr watch used to be two screens for one question. The
+ * frame now carries teamclaude's per-account view: every account, its three buckets with
+ * their own reset countdowns, and which account the fable route will serve next.
+ */
+const routed = () => buildState({
+  status: status(
+    [
+      account({ name: 'first@example.com', fable: 0.41, general: 0.49, session: 0.98 }),
+      account({ name: 'second@example.com', fable: 0.05, general: 0.05, session: 0.1 }),
+      account({ name: 'fourth@example.com', fable: 0.0, general: 0.0, session: 0.0 }),
+    ],
+    ['first@example.com'],
+    'second@example.com',
+  ),
+  control: control(), cycles: [], now: NOW,
+  service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
+  previews: new Map(), locks: new Map(), asksUrls: new Map(),
+});
+
+/** Account rows are the only lines carrying all three bucket labels; colour codes are stripped so a marker is one character. */
+const accountRows = (text: string): string[] =>
+  text
+    .split('\n')
+    .map((line) => line.replace(/\x1b\[[0-9;]*m/g, ''))
+    .filter((line) => /5h .*wk .*F7 /.test(line));
+
+test('the state knows which account the fable route targets and which it refuses', () => {
+  const state = routed();
+  const by = (name: string) => state.accounts.find((entry) => entry.name === name)!;
+  assert.equal(by('second@example.com').fableTarget, true);
+  assert.equal(by('first@example.com').fableTarget, false);
+  assert.equal(by('first@example.com').fableEligible, false);
+  assert.equal(by('second@example.com').fableEligible, true);
+  // No fable route declared at all is "no restriction known", not "nothing eligible".
+  assert.equal(fixture().accounts[0]!.fableEligible, null);
+});
+
+test('the frame lists every account with its three buckets and their reset countdowns', () => {
+  const state = routed();
+  const rows = accountRows(frame(state, view, 120));
+  assert.equal(rows.length, 3, 'one row per account');
+  for (const entry of state.accounts) {
+    const row = rows.find((line) => line.includes(entry.name))!;
+    assert.ok(row, `no row for ${entry.name}`);
+    assert.match(row, /5h .*wk .*F7 /, 'each row carries the session, weekly and fable buckets');
+    // The fixture puts every session reset 2h out and every weekly reset 84h out.
+    assert.match(row, /2h00m/);
+    assert.match(row, /3d12h/);
+  }
+});
+
+test('the frame marks the fable route target and the account the route refuses, and no others', () => {
+  const rows = accountRows(frame(routed(), view, 120));
+  const marker = (name: string) => rows.find((line) => line.includes(name))!.trimStart()[0];
+  assert.equal(marker('second@example.com'), '►');
+  assert.equal(marker('first@example.com'), '✗');
+  assert.notEqual(marker('fourth@example.com'), '►');
+  assert.notEqual(marker('fourth@example.com'), '✗');
+});
+
+test('untilLabel counts down to a reset the way teamclaude does', () => {
+  const at = (ms: number) => new Date(NOW + ms).toISOString();
+  assert.equal(untilLabel(at(59 * 60_000), NOW), '59m');
+  assert.equal(untilLabel(at(4 * HOUR + 49 * 60_000), NOW), '4h49m');
+  assert.equal(untilLabel(at(66 * HOUR), NOW), '2d18h');
+  assert.equal(untilLabel(at(-HOUR), NOW), 'now');
+  assert.equal(untilLabel(null, NOW), '—');
 });

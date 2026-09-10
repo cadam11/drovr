@@ -44,6 +44,7 @@ export const account = (input: AccountInput) => ({
 export const status = (
   accounts: ReturnType<typeof account>[],
   ineligible?: string[],
+  target: string | null = null,
 ): TeamclaudeStatus => ({
   currentAccount: accounts[0]?.name ?? null,
   accounts,
@@ -57,6 +58,7 @@ export const status = (
               name: entry.name,
               eligible: !ineligible.includes(entry.name),
             })),
+            target,
           },
         ],
 });

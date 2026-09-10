@@ -45,6 +45,8 @@ const accountShape = z.object({
 const routeShape = z.object({
   name: z.string(),
   accounts: z.array(z.object({ name: z.string(), eligible: z.boolean() })).default([]),
+  /** The account the route will serve next — what teamclaude's own dashboard marks with ►. */
+  target: z.string().nullable().default(null),
 });
 
 const statusShape = z.object({

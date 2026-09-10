@@ -11,7 +11,7 @@ import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import type { Preview } from './preview.ts';
 import { serviceState } from './service.ts';
-import { readStatus, type TeamclaudeStatus } from './teamclaude.ts';
+import { fableEligible, readStatus, type TeamclaudeStatus } from './teamclaude.ts';
 
 const BUCKETS: BucketName[] = ['fable', 'general', 'session'];
 const OVERDUE_INTERVALS = 3;
@@ -98,8 +98,12 @@ export type DrovrState = {
   allocation: Record<BucketName, Allocation>;
   programs: ProgramState[];
   accounts: {
-    name: string; org: string | null; status: string | null; sessions: number;
+    name: string; org: string | null; status: string | null; sessions: number; disabled: boolean;
     current: boolean; lastUsedAt: string | null;
+    /** Null when teamclaude declares no fable route: no restriction known, not none eligible. */
+    fableEligible: boolean | null;
+    /** The account the fable route will serve next — the runner's next request lands here. */
+    fableTarget: boolean;
     buckets: Record<'session' | 'general' | 'fable', { usedFraction: number | null; resetsAt: string | null }>;
   }[];
   recentCycles: { startedAt: string; program: string; kind: string; exit: string; asksRaised: number }[];
@@ -125,20 +129,26 @@ const isOverdue = (service: StateInput['service'], now: number): boolean => {
   return now - service.lastTickAt > service.intervalSeconds * 1000 * OVERDUE_INTERVALS;
 };
 
-const accountsOf = (status: TeamclaudeStatus): DrovrState['accounts'] =>
-  status.accounts.map((account) => ({
+const accountsOf = (status: TeamclaudeStatus): DrovrState['accounts'] => {
+  const eligible = fableEligible(status);
+  const target = status.routes.find((route) => route.name === 'fable')?.target ?? null;
+  return status.accounts.map((account) => ({
     name: account.name,
     org: account.orgName,
     status: account.status,
     sessions: account.sessions,
+    disabled: account.disabled,
     current: account.name === status.currentAccount,
     lastUsedAt: account.usage.lastUsed,
+    fableEligible: eligible === null ? null : eligible.has(account.name),
+    fableTarget: account.name === target,
     buckets: {
       session: { usedFraction: account.quota.unified5h, resetsAt: iso(account.quota.unified5hReset) },
       general: { usedFraction: account.quota.unified7d, resetsAt: iso(account.quota.unified7dReset) },
       fable: { usedFraction: account.quota.unified7dFable, resetsAt: iso(account.quota.unified7dFableReset) },
     },
   }));
+};
 
 /**
  * A synthetic in-flight cycle for a program `decide()` just admitted, so the next

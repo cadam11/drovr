@@ -388,6 +388,12 @@ across all usable accounts, and the five segments always sum to the whole pool:
 | `░` free to programs | still spendable before the ceiling |
 | `·` held for you | above the ceiling; drovr never touches it |
 
+Under the bars, **ACCOUNTS** is teamclaude's own dashboard folded in, so you do not need both
+screens open: one row per account with its session, weekly and Fable buckets as used-fraction bars,
+each with its own reset countdown. `►` marks the account the fable route will serve next — where
+the runner's next request actually lands — and `✗` an account the route refuses, whose headroom
+shows in the bars above but funds nothing.
+
 Headroom is taken from the same clamped pool `decide()` uses, so the bar can never disagree
 with the verdict printed under it. One account over its ceiling contributes zero — it cannot
 borrow headroom from another account.

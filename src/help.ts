@@ -94,6 +94,8 @@ export const COMMANDS: Command[] = [
     usage: 'drovr watch [seconds]',
     summary: 'live view with keyboard controls (default 15s refresh)',
     details: [
+      'Shows the pool bars, every teamclaude account with its three buckets and reset countdowns',
+      '(► the account the fable route serves next, ✗ one it refuses), then the programs.',
       'Interactive and TTY-only. Keys: j/k select, space enable, [ ] priority, m mode, p pause,',
       'P extend pause, +/- cap, < > reserve, r refresh, t tick now, o open its asks page,',
       's start selected program now (y to confirm — bypasses admission, like "drovr start"),',
