@@ -17,7 +17,7 @@ import { chargeForRunning,
   type CycleRecord,
 } from './ledger.ts';
 import type { BucketName } from './allocation.ts';
-import { agentNameFor } from './herdr.ts';
+import { cycleTabLabel } from './herdr.ts';
 import type { TeamclaudeStatus } from './teamclaude.ts';
 
 const WEEKLY_WINDOW_HOURS = 168;
@@ -473,9 +473,9 @@ const admissionLimits = (
   // fundable to 0.35.
   if (input.runnerPresent === true) {
     return hold(
-      `its previous runner still holds its pane — agent ${agentNameFor(program)} outlived ` +
-        `its cycle. Run "drovr release ${program}" once it is settled, or open its tab in ` +
-        'herdr and answer whatever it is waiting on',
+      `its previous runner outlived its cycle and still holds its "${cycleTabLabel(program)}" ` +
+        `tab. Run "drovr release ${program}" once it is settled, or open that tab and answer ` +
+        'whatever it is waiting on',
       pool,
       null,
     );

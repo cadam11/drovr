@@ -2,13 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildState } from '../src/state.ts';
 import { frame, frameWithHits, keybarLines, visibleLength } from '../src/watch.ts';
-import { payload } from '../src/panel.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
 
 const fixture = (overrides: Record<string, unknown> = {}) => buildState({
   status: healthy(), control: control(overrides), cycles: [], now: NOW,
   service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
-  previews: new Map(), locks: new Map(), asksUrls: new Map(), queuedIntents: [],
+  previews: new Map(), locks: new Map(), asksUrls: new Map(),
 });
 
 const view = { selected: 0, message: '', confirmStop: false, confirmStart: false, help: false };
@@ -26,7 +25,7 @@ test('frame renders from a DrovrState without touching the filesystem', () => {
  * get), forces the assertion to actually match a verdict against its own program's
  * row rather than finding it loose anywhere in the text.
  */
-test('both renderers agree on the verdict for every program, matched by name', () => {
+test('the frame carries the verdict DrovrState holds for every program, matched by name', () => {
   const state = fixture({
     programs: [
       { name: 'alpha', cwd: '/tmp/alpha' },
@@ -35,9 +34,8 @@ test('both renderers agree on the verdict for every program, matched by name', (
     ],
   });
   const text = frame(state, view);
-  const json = JSON.parse(payload(state));
-  assert.equal(json.programs.length, 3);
-  for (const program of json.programs) {
+  assert.equal(state.programs.length, 3);
+  for (const program of state.programs) {
     const pattern = new RegExp(`${program.name}[^\\n]*${program.verdict}`);
     assert.match(
       text,
@@ -57,9 +55,6 @@ test('both renderers agree on the verdict for every program, matched by name', (
  */
 test('the TUI marks which bucket binds capacity, and only that one', () => {
   const state = fixture();
-  const json = JSON.parse(payload(state));
-  assert.equal(json.bindingBucket, state.bindingBucket);
-
   const text = frame(state, view);
   const allocationRows = text.split('\n').filter((line) => /you\s*\d+%/.test(line));
   assert.equal(allocationRows.length, 3, 'expected exactly one allocation row per bucket');
@@ -99,7 +94,7 @@ const coupledState = () => buildState({
   }),
   cycles: [], now: NOW,
   service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
-  previews: new Map(), locks: new Map(), asksUrls: new Map(), queuedIntents: [],
+  previews: new Map(), locks: new Map(), asksUrls: new Map(),
 });
 
 // 60 and 72 are the two narrow paths (narrow is width < 72), where the abbreviated
@@ -182,7 +177,6 @@ const craigsConfiguration = () => buildState({
     ['joinery', 'https://joinery.aicex.app/craig/loop-asks.html'],
     ['drovr', 'https://drovr.aicex.app/craig/loop-asks.html'],
   ]),
-  queuedIntents: [],
 });
 
 const ROWS = 24;
@@ -268,7 +262,7 @@ test('the pool context is printed once, however many programs share it', () => {
     }),
     cycles: [], now: NOW,
     service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
-    previews: new Map(), locks: new Map(), asksUrls: new Map(), queuedIntents: [],
+    previews: new Map(), locks: new Map(), asksUrls: new Map(),
   });
   const flat = frame(state, view, 120)
     .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
@@ -298,7 +292,6 @@ test('mouse hits: program rows carry their program, chrome carries nothing', () 
     service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
     previews: new Map(), locks: new Map(),
     asksUrls: new Map([['alpha', 'https://drovr.example/asks.html']]),
-    queuedIntents: [],
   });
   const { text, hits } = frameWithHits(state, view, 100);
   const lines = text.split('\n');

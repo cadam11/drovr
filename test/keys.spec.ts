@@ -17,7 +17,6 @@ import {
   toggleEnabled,
 } from '../src/keys.ts';
 import { orderCeilings, parseControl } from '../src/control.ts';
-import { parseIntent } from '../src/intents.ts';
 
 const scratch = (): string => {
   const dir = mkdtempSync(join(tmpdir(), 'drovr-'));
@@ -191,51 +190,36 @@ test('nudgeReserve is refused while the mode is off, rather than writing a dead 
 });
 
 /**
- * The parser refuses out-of-range values with a human-readable message, and these
- * setters are the only appliers of what it lets through. Checked in both
- * directions: a setter wider than the parser leaves a gap for a later caller, and
- * one narrower silently refuses input the parser promised was valid.
+ * These setters are the only writers of these fields, so their bounds are the only
+ * bounds there are. Checked in both directions: the widest accepted value and the
+ * first refused one.
  */
-const parserTakes = (body: string): boolean => {
-  const now = Date.now();
-  const stamp = new Date(now + 60_000).toISOString();
-  return !('rejected' in parseIntent(`drovr-intent v1 ${body} expires=${stamp}`, 'n-1', now));
-};
-
-test('pause: the setter accepts exactly the 1h-72h the parser promises', () => {
+test('pause: the setter accepts 1h-72h and refuses either side', () => {
   const path = scratch();
-  assert.ok(parserTakes('pause 1h') && parserTakes('pause 72h'));
-  assert.ok(!parserTakes('pause 0h') && !parserTakes('pause 73h'));
   assert.doesNotThrow(() => pauseForHours(path, 1));
   assert.doesNotThrow(() => pauseForHours(path, 72));
   assert.throws(() => pauseForHours(path, 0), /out of range/);
   assert.throws(() => pauseForHours(path, 73), /out of range/);
 });
 
-test('reserve: the setter accepts exactly the +/-0.95 the parser promises', () => {
+test('reserve: the setter accepts +/-0.95 and refuses either side', () => {
   const path = scratch();
-  assert.ok(parserTakes('reserve 0.95') && parserTakes('reserve -0.95'));
-  assert.ok(!parserTakes('reserve 0.96') && !parserTakes('reserve -0.96'));
   assert.doesNotThrow(() => nudgeReserve(path, 0.95));
   assert.doesNotThrow(() => nudgeReserve(path, -0.95));
   assert.throws(() => nudgeReserve(path, 0.96), /out of range/);
   assert.throws(() => nudgeReserve(path, -0.96), /out of range/);
 });
 
-test('mode: the setter accepts exactly the names the parser promises', () => {
+test('mode: the setter accepts every known mode and refuses the rest', () => {
   const path = scratch();
   for (const mode of ['off', 'low', 'normal', 'away']) {
-    assert.ok(parserTakes(`mode ${mode}`), `parser refused ${mode}`);
     assert.doesNotThrow(() => setMode(path, mode));
   }
-  assert.ok(!parserTakes('mode turbo'));
   assert.throws(() => setMode(path, 'turbo'), /unknown mode/);
 });
 
-test('concurrency and priority: the widest delta the parser passes still lands in range', () => {
+test('concurrency and priority: the widest delta still lands in range', () => {
   const path = scratch();
-  assert.ok(parserTakes('concurrency 7') && !parserTakes('concurrency 8'));
-  assert.ok(parserTakes('priority sunnyt 9') && !parserTakes('priority sunnyt 10'));
   adjustConcurrency(path, 7);
   assert.equal(read(path).maxConcurrentCycles, 8);
   adjustConcurrency(path, -7);

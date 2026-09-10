@@ -6,7 +6,7 @@ import {
   chargeForRunning, estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles,
   snapshot, spentSince, type CycleRecord,
 } from './ledger.ts';
-import { agentNameFor, agentState, aiceBaseUrl, readPreview } from './herdr.ts';
+import { agentState, aiceBaseUrl, cycleAgentTarget, readPreview } from './herdr.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import type { Preview } from './preview.ts';
@@ -103,14 +103,6 @@ export type DrovrState = {
     buckets: Record<'session' | 'general' | 'fable', { usedFraction: number | null; resetsAt: string | null }>;
   }[];
   recentCycles: { startedAt: string; program: string; kind: string; exit: string; asksRaised: number }[];
-  /**
-   * Reserved, and always empty today: nothing produces it. Both real callers of
-   * collectState take the `[]` default, because tick.ts drains an intent and applies it
-   * within the same tick (resolve → apply → reply) rather than parking it in a queue for
-   * a later one. Kept so the panel's queued-intent surface and this shape stay ready for
-   * a deferred-application design; do not go looking for the writer, there is none.
-   */
-  queuedIntents: { id: string; action: string; requestedAt: string; expiresAt: string }[];
 };
 
 export type StateInput = {
@@ -124,7 +116,6 @@ export type StateInput = {
   runners?: Map<string, boolean>;
   locks: Map<string, number>;
   asksUrls: Map<string, string>;
-  queuedIntents: DrovrState['queuedIntents'];
 };
 
 const iso = (at: number | null): string | null => (at === null ? null : new Date(at).toISOString());
@@ -283,7 +274,6 @@ export const buildState = (input: StateInput): DrovrState => {
         startedAt: cycle.startedAt, program: cycle.program,
         kind: cycle.kind, exit: cycle.exit, asksRaised: cycle.asksRaised,
       })),
-    queuedIntents: input.queuedIntents,
   };
 };
 
@@ -293,13 +283,12 @@ export const buildState = (input: StateInput): DrovrState => {
  * `onWarning` exists because readPreview's own failures are surfaced, not logged
  * (see herdr.ts:readPreview), and the two real callers need it to land differently.
  * The terminal UI (watch.ts) can never print mid-frame, so it folds the warning into
- * the view instead. The panel publisher (publish-snapshot.ts) has no frame to fold
- * it into and runs unattended from launchd, so it passes console.error, and that is
- * exactly the case this diagnostic exists for. Passing nothing drops the warning —
- * only correct for a caller with neither a frame nor a log to put it in.
+ * the view instead. A caller with no frame to fold it into — anything running
+ * unattended from launchd — passes console.error, and that is exactly the case this
+ * diagnostic exists for. Passing nothing drops the warning — only correct for a
+ * caller with neither a frame nor a log to put it in.
  */
 export const collectState = async (
-  queuedIntents: DrovrState['queuedIntents'] = [],
   onWarning?: (message: string) => void,
 ): Promise<DrovrState> => {
   const p = paths();
@@ -331,14 +320,14 @@ export const collectState = async (
     if (program.runner === 'herdr') {
       // Left unset on an error, not false: "no agent" and "no answer" are different facts
       // and only the first may refuse a cycle.
-      const state = await agentState(agentNameFor(program.name)).catch((error: unknown) => {
+      const state = await agentState(cycleAgentTarget(program.name)).catch((error: unknown) => {
         onWarning?.(`could not read ${program.name}'s runner state: ${error instanceof Error ? error.message : String(error)}`);
         return null;
       });
       if (state !== null) runners.set(program.name, state !== 'gone');
     }
     if (!running.some((cycle) => cycle.program === program.name)) return;
-    const { preview, warning } = await readPreview(agentNameFor(program.name));
+    const { preview, warning } = await readPreview(cycleAgentTarget(program.name));
     if (preview !== null) previews.set(program.name, preview);
     if (warning !== null) onWarning?.(warning);
   }));
@@ -354,6 +343,6 @@ export const collectState = async (
       // an install that predates the heartbeat from reading as never having run.
       lastTickAt: readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions),
     },
-    previews, locks, asksUrls, queuedIntents, runners,
+    previews, locks, asksUrls, runners,
   });
 };

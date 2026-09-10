@@ -61,7 +61,7 @@ export const holder = (path: string): number | null => heldBy(path)?.pid ?? null
  *
  * This exists so a wedge is *visible*. A lock whose holder is alive but stuck is the one
  * state `acquire` cannot resolve — reclaiming it would run two ticks at once, which
- * double-applies panel intents and races the ledger, so drovr reports the age instead of
+ * races the ledger and double-launches cycles, so drovr reports the age instead of
  * stealing the lock. The holder killing itself is what actually clears it (see tick.ts's
  * watchdog); this is how anyone else finds out.
  */

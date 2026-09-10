@@ -4,9 +4,6 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 export const LABEL = 'tech.propra.drovr';
-/** A second, independent launchd agent: same file, different label, so a bootout of
- * one never touches the other and each fails or reloads on its own. */
-export const SNAPSHOT_LABEL = 'tech.propra.drovr.snapshot';
 
 export const plistPathFor = (label: string): string =>
   join(homedir(), 'Library', 'LaunchAgents', `${label}.plist`);
@@ -56,15 +53,6 @@ export const plist = (input: {
 </plist>
 `;
 
-/** The two agents drovr installs. Only the tick interval is operator-configurable
- * (`drovr service install [seconds]`); the snapshot cadence is fixed — it is not a
- * decision loop, just a cheap poll-and-publish, and CADENCE in panel.ts already
- * backs it off to 5m on its own once no cycle is in flight. */
-export const AGENTS: { label: string; command: string; intervalSeconds: number }[] = [
-  { label: LABEL, command: 'tick', intervalSeconds: 600 },
-  { label: SNAPSHOT_LABEL, command: 'snapshot', intervalSeconds: 20 },
-];
-
 export type ServiceState = {
   /** The plist exists on disk. */
   installed: boolean;
@@ -111,8 +99,6 @@ export const serviceStateFor = (label: string): ServiceState => {
 /** Kept for every existing caller that means "the tick agent's state" by default. */
 export const serviceState = (): ServiceState => serviceStateFor(LABEL);
 
-export const snapshotServiceState = (): ServiceState => serviceStateFor(SNAPSHOT_LABEL);
-
 /**
  * launchd being loaded only proves it is scheduled. Ticks are short-lived, so the
  * honest liveness signal is when one last actually ran.
@@ -148,32 +134,27 @@ export const reloadAgent = (label: string): 'reloaded' | 'loaded' | 'failed' => 
   return wasLoaded ? 'reloaded' : 'loaded';
 };
 
-/**
- * Writes and reloads both agents' plists in one call, so `service install` can
- * never end up with one agent updated and the other left on a stale definition.
- * The tick interval is the only operator-configurable one; see AGENTS' comment.
- */
-export const installAgents = (input: {
+/** Writes the tick plist and reloads it — launchd holds the plist it loaded, not the
+ * file on disk, so a rewrite alone changes nothing (see reloadAgent). */
+export const installAgent = (input: {
   tickIntervalSeconds: number;
   nodeBin: string;
   cliPath: string;
   logDir: string;
   path: string;
-}): { label: string; outcome: 'reloaded' | 'loaded' | 'failed' }[] =>
-  AGENTS.map((agent) => {
-    const intervalSeconds = agent.label === LABEL ? input.tickIntervalSeconds : agent.intervalSeconds;
-    const target = plistPathFor(agent.label);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(
-      target,
-      plist({
-        label: agent.label, command: agent.command, intervalSeconds,
-        nodeBin: input.nodeBin, cliPath: input.cliPath, logDir: input.logDir, path: input.path,
-      }),
-      'utf8',
-    );
-    return { label: agent.label, outcome: reloadAgent(agent.label) };
-  });
+}): 'reloaded' | 'loaded' | 'failed' => {
+  const target = plistPathFor(LABEL);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(
+    target,
+    plist({
+      label: LABEL, command: 'tick', intervalSeconds: input.tickIntervalSeconds,
+      nodeBin: input.nodeBin, cliPath: input.cliPath, logDir: input.logDir, path: input.path,
+    }),
+    'utf8',
+  );
+  return reloadAgent(LABEL);
+};
 
 /**
  * Every branch says what is wrong and the exact command that fixes it. Referring to
@@ -229,51 +210,6 @@ export const describeService = (
         `so ticks are being skipped rather than not firing. Fix: kill ${lockedBy.pid}`
       : '';
   return `loaded${every}. Last tick completed ${ago}${stalled}${wedged}${failed}`;
-};
-
-/**
- * describeService's counterpart for the snapshot agent. Not shared with it: the
- * vocabulary (tick/decision vs run) differs enough on every branch that a shared
- * helper would need as many parameters as this function has lines.
- *
- * Takes `lastRunAt` (every invocation, including a skip), never `lastPublishedAt`
- * (only an actual publish). shouldPublish (panel.ts) deliberately skips most
- * invocations — up to 5 minutes' worth when idle — so a threshold built on
- * publish time reads a perfectly healthy agent as stalled.
- */
-export const describeSnapshotAgent = (
-  state: ServiceState,
-  lastRunAt: number | null,
-  now: number,
-): string => {
-  if (!state.installed) {
-    return 'no launchd agent has been written, so nothing publishes on a schedule. Fix: drovr service install';
-  }
-  if (!state.loaded) {
-    return `the launchd agent file exists but launchd has not loaded it, so it will never publish. Fix: ${bootstrapCommand(SNAPSHOT_LABEL)}`;
-  }
-
-  const every = state.intervalSeconds === null ? '' : ` and fires every ${state.intervalSeconds}s`;
-  const exitCode =
-    state.lastExitStatus === null || state.lastExitStatus < 256
-      ? state.lastExitStatus
-      : state.lastExitStatus >> 8;
-  const failed =
-    exitCode !== null && exitCode !== 0
-      ? `. Warning: the last run failed (exit ${exitCode}) — check ${join(homedir(), '.drovr/logs/snapshot.err')}`
-      : '';
-
-  if (lastRunAt === null) {
-    return `loaded${every}, but it has not run yet${failed}`;
-  }
-
-  const minutes = Math.round((now - lastRunAt) / 60_000);
-  const ago = minutes < 60 ? `${minutes} minutes ago` : `${Math.floor(minutes / 60)}h${minutes % 60}m ago`;
-  const stalled =
-    state.intervalSeconds !== null && now - lastRunAt > state.intervalSeconds * 3000
-      ? ` — that is overdue for a ${state.intervalSeconds}s interval, so the agent may be stalled`
-      : '';
-  return `loaded${every}. Last ran ${ago}${stalled}${failed}`;
 };
 
 /** The same facts as a discriminated value, for a caller that needs to branch rather than read. */

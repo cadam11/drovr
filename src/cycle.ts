@@ -5,9 +5,10 @@ import { z } from 'zod';
 import { MAX_REST_DAYS, parseDuration, type Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { textCraig } from './nudge.ts';
-import { wrap } from './publish.ts';
 import {
   agentState,
+  openLine,
+  paneAddress,
   promptAgent,
   resolveWorkspace,
   releaseAgent,
@@ -291,6 +292,19 @@ const STALL_PROMPT =
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Each program's repo already declares its own environment (aice install, config dir, API
+ * tokens) in .envrc. Running through direnv keeps that the single source of truth instead
+ * of duplicating it into control.json, where it would drift.
+ *
+ * The last of its two callers: drovr no longer publishes anything, so the only thing it
+ * still wraps is the cycle command itself.
+ */
+const wrap = (program: Program, argv: string[]): { file: string; args: string[] } =>
+  program.useDirenv
+    ? { file: 'direnv', args: ['exec', program.cwd, ...argv] }
+    : { file: argv[0]!, args: argv.slice(1) };
+
 /** Headless fallback: claude -p to a log file. Nothing to talk to; used only when asked for. */
 const runHeadless = async (program: Program, startedAt: string): Promise<CycleOutcome> => {
   const logPath = join(paths().logs, `${program.name}-${startedAt.replaceAll(':', '-')}.log`);
@@ -312,20 +326,21 @@ const runHeadless = async (program: Program, startedAt: string): Promise<CycleOu
 };
 
 /** The report exists, so the cycle has declared itself done and the pane is cleanup. */
-const releaseFinished = async (started: StartedCycle): Promise<CycleOutcome> => {
-  const released = await releaseAgent(started.agentName, started.paneId).catch(() => false);
+const releaseFinished = async (started: StartedCycle, program: string): Promise<CycleOutcome> => {
+  const released = await releaseAgent(started.paneId).catch(() => false);
+  if (released) return { finished: true, detail: 'runner reported in and its pane was released for the next cycle' };
+  const address = await paneAddress(started.paneId);
   return {
     finished: true,
-    detail: released
-      ? 'runner reported in and its pane was released for the next cycle'
-      : `runner reported in but agent ${started.agentName} is still holding pane ` +
-        `${started.paneId} — the next cycle will refuse until it is closed`,
+    detail:
+      `runner reported in but its session still holds ${address.where} — the next cycle will ` +
+      `refuse until it is freed with \`drovr release ${program}\`.${openLine(address)}`,
   };
 };
 
 /** Out of nudges. Free the pane so the next tick starts clean rather than deferring. */
 const abandonStalled = async (started: StartedCycle, nudges: number): Promise<CycleOutcome> => {
-  const released = await releaseAgent(started.agentName, started.paneId).catch(() => false);
+  const released = await releaseAgent(started.paneId).catch(() => false);
   return {
     finished: true,
     stalled: true,
@@ -333,7 +348,10 @@ const abandonStalled = async (started: StartedCycle, nudges: number): Promise<Cy
       `runner sat idle through ${nudges} nudges without writing a report` +
       (released
         ? ' — its pane was released for a fresh cycle'
-        : ` — agent ${started.agentName} still holds pane ${started.paneId}`),
+        : await (async (): Promise<string> => {
+            const address = await paneAddress(started.paneId);
+            return ` — its session still holds ${address.where}${openLine(address)}`;
+          })()),
   };
 };
 
@@ -382,11 +400,11 @@ const watchCycle = async (
 
   while (Date.now() < deadline) {
     await sleep(POLL_MS);
-    if (pollReport(program) !== null) return releaseFinished(started);
+    if (pollReport(program) !== null) return releaseFinished(started, program);
 
-    const state = await agentState(started.agentName);
+    const state = await agentState(started.paneId);
     if (state === 'gone') {
-      return { finished: true, detail: `agent ${started.agentName} is no longer present` };
+      return { finished: true, detail: `the runner is no longer present in ${(await paneAddress(started.paneId)).where}` };
     }
 
     idleSince = state === 'idle' ? (idleSince ?? Date.now()) : null;
@@ -421,7 +439,7 @@ const watchCycle = async (
     // refusing prompts cannot turn the nudge budget into a 30-second retry loop.
     nudges += 1;
     idleSince = null;
-    await promptAgent(started.agentName, STALL_PROMPT).catch((error: unknown) => {
+    await promptAgent(started.paneId, STALL_PROMPT).catch((error: unknown) => {
       const detail = error instanceof Error ? error.message : String(error);
       console.error(`could not nudge ${started.agentName}: ${detail}`);
     });

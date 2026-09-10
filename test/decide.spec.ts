@@ -908,8 +908,12 @@ test('a weekly-bound pool still has to cover the reserve', () => {
 test('a program whose runner still holds its pane is not admitted', () => {
   const decision = run({ runnerPresent: true });
   assert.equal(decision.verdict, 'WAIT');
-  assert.match(decision.reason, /still holds its pane/);
-  assert.match(decision.reason, /drovr-demo/, 'names the agent so it can be found');
+  assert.match(decision.reason, /still holds its "demo cycles" tab/);
+  // It used to name the agent id, on the theory that this was how a reader would find
+  // it. `drovr-demo` names no place a human can open — and after the pane-addressing
+  // fix it is not even the identity drovr uses. The tab label and the command are.
+  assert.doesNotMatch(decision.reason, /drovr-demo/);
+  assert.match(decision.reason, /drovr release demo/, 'names the fix, not a reference to it');
 });
 
 test('a leftover runner is refused before the pool is charged for it', () => {

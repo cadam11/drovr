@@ -1,4 +1,4 @@
-import { MAX_INTENTS_PER_TICK } from './intents.ts';
+
 
 export type Command = {
   name: string;
@@ -59,8 +59,8 @@ export const AGENT_NOTES = {
     'Pool headroom is summed per bucket and is a display figure: it can look free while no ' +
       'single account has room in all three at once. Read capacity.cyclesFundable, never pool \u00f7 cost.',
     'run-cycle blocks for hours. Use tick, which detaches, or read cycles.jsonl to follow progress.',
-    'control.json can change under you between ticks: a tick applies any intent left on the panel ' +
-      'before it decides anything. Re-read it rather than caching a copy.',
+    'control.json can change under you between ticks — the TUI and the CLI both write it. ' +
+      'Re-read it rather than caching a copy.',
   ],
 };
 
@@ -108,30 +108,13 @@ export const COMMANDS: Command[] = [
     summary: 'evaluate once and launch cycles where capacity allows',
     details: [
       'What launchd runs. Admission itself returns in seconds: each admitted program is handed to',
-      'a detached run-cycle worker rather than awaited. Draining intents first can add up to a',
-      'minute when several are waiting, since each is a round trip to the notes API; the drain',
-      'gives up at 60s and leaves the rest for the next tick.',
+      'a detached run-cycle worker rather than awaited.',
       'A launched cycle opens as an interactive claude tab in that program’s own herdr workspace,',
       'so a human can read it and talk to it while it runs. drovr watches it but never kills it.',
-      'Before deciding anything it drains the intents left as shared notes on',
-      'craig/intents.html — an intent changes the very inputs admission reads. At most ' +
-        `${MAX_INTENTS_PER_TICK} a tick and 60s of`,
-      'wall clock, whichever comes first; either way the remainder is logged and waits.',
-      'Each one is resolved, then applied, then answered in its own thread, refusals included. In',
-      'that order deliberately: a failure after the resolve loses an instruction, where a failure',
-      'after the apply would repeat one. A note that is not an intent is left untouched and',
-      'unresolved, and only the page owner\'s own notes are applied.',
-      'An intent reads "drovr-intent v1 <action> expires=<ISO 8601>". The stamp is required, must',
-      'be in the future, and must be no more than 24h out. Actions: mode <off|low|normal|away>,',
-      'pause <1-72>h, reserve <-0.95..0.95>, concurrency <-7..7>, enable <program>, disable',
-      '<program>, priority <program> <-9..9>.',
-      'The page is craig/intents.html on the drovr aice install, and its owner must enable shared',
-      'notes on it from the notes widget there — it cannot be done from the CLI. While they are',
-      'off the read succeeds and returns nothing, so the tick reports the page as unreadable',
-      'rather than empty.',
+      'It publishes nothing: a tick writes only local state. Read it with drovr status,',
+      'drovr watch, or decisions.jsonl.',
     ],
-    writes:
-      'control.json (any intent drained from the intents page), decisions.jsonl, cycles.jsonl, and launches cycle processes',
+    writes: 'decisions.jsonl, cycles.jsonl, and launches cycle processes',
   },
   {
     name: 'run-cycle',
@@ -143,24 +126,7 @@ export const COMMANDS: Command[] = [
       'It opens the cycle in herdr and then only watches — for the runner’s report file, or for the',
       'agent to disappear. Killing the runner is never drovr’s decision.',
     ],
-    writes: 'cycles.jsonl, the program status page',
-  },
-  {
-    name: 'snapshot',
-    usage: 'drovr snapshot',
-    summary: 'Publish current state to the drovr aice panel.',
-    details: [
-      'Assembles one DrovrState and publishes it as assets/snapshot.json on the drovr aice',
-      'install, where the panel page reads it same-origin behind aice\'s own sign-in.',
-      'Skips the publish only when nothing changed AND the last publish is under the 40s',
-      'heartbeat; past that it republishes even an unchanged payload, so the panel\'s own',
-      '2-minute staleness banner never fires against a healthy agent. A genuine change',
-      'republishes after a 20s rate limit. Requires aice >= 0.16.0 for --ttl.',
-      'Exits 1 with an actionable message on stderr if the publish itself could not run',
-      '(aice/direnv missing or below the version floor, or the publish call failing) — a',
-      'launchd-driven caller may treat that outcome as best-effort and carry on regardless.',
-    ],
-    writes: '~/.drovr/snapshot.json, ~/.drovr/snapshot-state.json, and assets/snapshot.json on the aice install',
+    writes: 'cycles.jsonl',
   },
   {
     name: 'add',
@@ -170,7 +136,6 @@ export const COMMANDS: Command[] = [
       { flag: '--priority <n>', describes: 'lower keeps running deeper into a draining pool (default 0)' },
       { flag: '--deadline <YYYY-MM-DD>', describes: 'promotes one priority step inside the horizon' },
       { flag: '--asks <page>', describes: 'aice asks page; omit and onboarding creates one' },
-      { flag: '--status-page <page>', describes: 'where drovr publishes status.html' },
       { flag: '--no-aice', describes: 'the program has no aice install' },
       { flag: '--no-direnv', describes: 'do not run the cycle through direnv exec' },
       { flag: '--model <alias>', describes: 'runner model for this program (default fable)' },
@@ -382,18 +347,14 @@ export const COMMANDS: Command[] = [
   {
     name: 'service',
     usage: 'drovr service <status|install|uninstall|print> [seconds]',
-    summary: 'manage the two launchd agents: tick, and the panel snapshot publisher',
+    summary: 'manage the launchd agent that runs tick',
     details: [
-      'drovr installs two independent launchd agents: tech.propra.drovr runs tick on [seconds]',
-      '(default 600); tech.propra.drovr.snapshot runs snapshot on a fixed 20s and feeds the web',
-      'panel. Each is loaded, reloaded and reported on separately — a bootout of one never',
-      'touches the other.',
-      'status reports both: whether launchd has each loaded, and when it last actually ran —',
-      'a tick recording a decision, or a snapshot publishing — since loaded only proves it is',
-      'scheduled.',
-      'install writes both plists and reloads both agents; launchd holds the plist it loaded, not',
+      'tech.propra.drovr runs tick on [seconds] (default 600).',
+      'status reports whether launchd has it loaded, and when a tick last actually recorded a',
+      'decision — loaded only proves it is scheduled.',
+      'install writes the plist and reloads the agent; launchd holds the plist it loaded, not',
       'the file on disk, so install always bootouts and bootstraps rather than only rewriting.',
-      'print emits the tick plist without writing anything.',
+      'print emits the plist without writing anything.',
     ],
     flags: [
       {

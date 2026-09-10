@@ -25,26 +25,21 @@ import { readAsks } from './asks.ts';
 import { parseReportArgs, writeReport } from './cycle.ts';
 import { textCraig } from './nudge.ts';
 import { unverified, verifyDelivery } from './delivery.ts';
-import { agentNameFor, agentPane, agentState, isSettled, releaseAgent, resolveWorkspace, tidyCycleTabs } from './herdr.ts';
+import { agentPane, agentState, cycleAgentTarget, isSettled, paneAddress, releaseAgent, resolveWorkspace, tidyCycleTabs } from './herdr.ts';
 import { setReserve } from './keys.ts';
 import { heldBy, holder } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
-import { publishSnapshot, readMarker, readRunMarker } from './publish-snapshot.ts';
 import {
   bootoutCommand,
   bootstrapCommand,
-  installAgents,
+  installAgent,
   agentPath,
   describeService,
-  describeSnapshotAgent,
   LABEL,
   plist,
   plistPath,
-  plistPathFor,
-  SNAPSHOT_LABEL,
   serviceHealth,
   serviceState,
-  snapshotServiceState,
 } from './service.ts';
 import { readStatus } from './teamclaude.ts';
 import { inFlightCycles, launchDetached, runProgramCycle, tick } from './tick.ts';
@@ -104,7 +99,7 @@ const evaluateAll = async (input: {
     await Promise.all(
       ordered.map(async (program) => {
         if (program.runner !== 'herdr') return [program.name, undefined] as const;
-        const state = await agentState(agentNameFor(program.name)).catch(() => null);
+        const state = await agentState(cycleAgentTarget(program.name)).catch(() => null);
         return [program.name, state === null ? undefined : state !== 'gone'] as const;
       }),
     ),
@@ -348,31 +343,36 @@ const releaseRunner = async (name: string | undefined): Promise<void> => {
     throw new Error(`no program named "${name}" in ${p.control}`);
   }
 
-  const agentName = agentNameFor(name);
-  const state = await agentState(agentName);
+  // By pane, not by name: a restored session comes back unnamed, and looking it up by
+  // name answered `gone` — so this reported an occupied pane as already free.
+  const target = cycleAgentTarget(name);
+  const state = await agentState(target);
   if (state === 'gone') {
     console.log(`${name}: no runner to release — its pane is already free`);
     return;
   }
 
-  const pane = await agentPane(agentName);
-  if (pane === null) throw new Error(`${agentName} reports no pane, so there is nothing to release`);
+  const pane = await agentPane(target);
+  if (pane === null) throw new Error(`${name}'s runner reports no pane, so there is nothing to release`);
+  const address = await paneAddress(pane);
 
   if (!isSettled(state)) {
     console.error(
-      `${name}: ${agentName} is ${state}, so it was left alone — /exit typed into a live ` +
-        `turn is swallowed and the pane stays held. Open its tab in herdr (pane ${pane}) and ` +
-        'answer what it is waiting on, then run this again.',
+      `${name}: its runner is ${state}, so it was left alone — /exit typed into a live ` +
+        `turn is swallowed and the pane stays held. Open ${address.where} and answer what it ` +
+        `is waiting on, then run this again.` +
+        (address.open === null ? '' : `\n  open it:  ${address.open}`),
     );
     process.exitCode = 1;
     return;
   }
 
-  const released = await releaseAgent(agentName, pane);
+  const released = await releaseAgent(pane);
   console.log(
     released
-      ? `${name}: released ${agentName} — the next tick can start a cycle`
-      : `${name}: ${agentName} did not exit; it still holds pane ${pane}. Try again, or close its tab in herdr`,
+      ? `${name}: released its runner — the next tick can start a cycle`
+      : `${name}: the runner did not exit; it still holds ${address.where}. Run this again, or ` +
+        `close the tab` + (address.open === null ? '' : `:  ${address.open}`),
   );
   if (!released) process.exitCode = 1;
 };
@@ -487,23 +487,19 @@ const showUsage = (json: boolean): void => {
   );
 };
 
-/** Installs and reloads both the tick and snapshot launchd agents in one call —
- * see service.ts:installAgents for why they must never be split into two steps. */
 const installService = (intervalSeconds: number): void => {
   ensureDirs();
   const cliPath = resolve(fileURLToPath(new URL('./cli.ts', import.meta.url)));
-  const results = installAgents({
+  const outcome = installAgent({
     tickIntervalSeconds: intervalSeconds,
     nodeBin: process.execPath, cliPath, logDir: p.logs, path: agentPath(),
   });
-  for (const { label, outcome } of results) {
-    console.log(`wrote ${plistPathFor(label)}`);
-    if (outcome === 'reloaded') console.log(`  ${label}: reloaded so it picks up this plist`);
-    if (outcome === 'loaded') console.log(`  ${label}: loaded — starts on its next interval`);
-    if (outcome === 'failed') {
-      console.error(`  ${label}: could not load automatically. Run: ${bootstrapCommand(label)}`);
-      process.exitCode = 1;
-    }
+  console.log(`wrote ${plistPath()}`);
+  if (outcome === 'reloaded') console.log(`  ${LABEL}: reloaded so it picks up this plist`);
+  if (outcome === 'loaded') console.log(`  ${LABEL}: loaded — starts on its next interval`);
+  if (outcome === 'failed') {
+    console.error(`  ${LABEL}: could not load automatically. Run: ${bootstrapCommand(LABEL)}`);
+    process.exitCode = 1;
   }
 };
 
@@ -521,7 +517,6 @@ const addProgram = (rest: string[]): void => {
   const absolute = resolve(cwd.replace(/^~(?=$|\/)/, homedir()));
   if (!existsSync(absolute)) throw new Error(`${absolute} does not exist`);
 
-  const statusPage = flag(rest, 'status-page') ?? `craig/drovr-status.html`;
   const asksPage = flag(rest, 'asks') ?? null;
 
   mutate((control) => {
@@ -536,12 +531,12 @@ const addProgram = (rest: string[]): void => {
       deadline: flag(rest, 'deadline') ?? null,
       ...(flag(rest, 'model') === undefined ? {} : { model: flag(rest, 'model') }),
       ...(rest.includes('--no-direnv') ? { useDirenv: false } : {}),
-      ...(rest.includes('--no-aice') ? { aice: null } : { aice: { asksPage, statusPage } }),
+      ...(rest.includes('--no-aice') ? { aice: null } : { aice: { asksPage } }),
     });
     control.programs = programs;
   });
   console.log(`added ${name} → ${absolute}`);
-  console.log('first tick will onboard it: reconstruct state, publish, raise one ask, then stop');
+  console.log('first tick will onboard it: reconstruct state, raise one ask, then stop');
 };
 
 /**
@@ -616,19 +611,11 @@ const removeProgram = (name: string | undefined): void => {
   console.log(`removed ${name} (its ledger history and ~/.drovr/programs/${name} are left alone)`);
 };
 
-/** Both agents are independent launchd entries — see CLAUDE.md's service.ts trap —
- * so status is reported for each rather than folded into one combined shape. */
 const showService = (json: boolean): void => {
   const tick = serviceState();
-  const snapshot = snapshotServiceState();
   // The heartbeat is the liveness signal; the decision log is the fallback for an
   // install that predates it, so an upgrade does not read as 'no tick has ever run'.
   const lastTick = readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions);
-  // lastRunAt (every invocation) drives health/description, not lastPublishedAt
-  // (only an actual publish) — shouldPublish deliberately skips most invocations,
-  // so publishedAt alone reads a healthy agent as stalled (CLAUDE.md I1).
-  const lastRunAt = readRunMarker(p.snapshotRun)?.lastRunAt ?? null;
-  const lastPublishedAt = readMarker(p.snapshotState)?.publishedAt ?? null;
   const now = Date.now();
   if (json) {
     console.log(JSON.stringify({
@@ -639,36 +626,23 @@ const showService = (json: boolean): void => {
         ...tick, plistPath: plistPath(),
         loadCommand: bootstrapCommand(LABEL), unloadCommand: bootoutCommand(LABEL),
       },
-      snapshot: {
-        health: serviceHealth(snapshot, lastRunAt, now),
-        explanation: describeSnapshotAgent(snapshot, lastRunAt, now),
-        lastRunAt: lastRunAt === null ? null : new Date(lastRunAt).toISOString(),
-        lastPublishedAt: lastPublishedAt === null ? null : new Date(lastPublishedAt).toISOString(),
-        ...snapshot, plistPath: plistPathFor(SNAPSHOT_LABEL),
-        loadCommand: bootstrapCommand(SNAPSHOT_LABEL), unloadCommand: bootoutCommand(SNAPSHOT_LABEL),
-      },
     }, null, 2));
     return;
   }
   console.log(`tick: ${describeService(tick, lastTick, now, tickLockHolder())}`);
   if (tick.pid !== null) console.log(`  a tick is executing right now (pid ${tick.pid})`);
-  console.log(`snapshot: ${describeSnapshotAgent(snapshot, lastRunAt, now)}`);
-  if (snapshot.pid !== null) console.log(`  a snapshot publish is executing right now (pid ${snapshot.pid})`);
-  console.log(`plists: ${plistPath()}`);
-  console.log(`        ${plistPathFor(SNAPSHOT_LABEL)}`);
-  console.log(`logs:   ${p.logs}`);
+  console.log(`plist: ${plistPath()}`);
+  console.log(`logs:  ${p.logs}`);
 };
 
 const uninstallService = (): void => {
-  for (const label of [LABEL, SNAPSHOT_LABEL]) {
-    const target = plistPathFor(label);
-    if (!existsSync(target)) {
-      console.log(`${label}: not installed`);
-      continue;
-    }
-    console.log(`${label}: unload it with:  ${bootoutCommand(label)}`);
-    console.log(`${label}: then remove:     rm ${target}`);
+  const target = plistPath();
+  if (!existsSync(target)) {
+    console.log(`${LABEL}: not installed`);
+    return;
   }
+  console.log(`${LABEL}: unload it with:  ${bootoutCommand(LABEL)}`);
+  console.log(`${LABEL}: then remove:     rm ${target}`);
 };
 
 const showHelp = (topic: string | undefined, json: boolean): void => {
@@ -704,16 +678,6 @@ const main = async (argv: string[]): Promise<void> => {
 
   if (command === 'init') return init();
   if (command === 'tick') return tick();
-  if (command === 'snapshot') {
-    const outcome = await publishSnapshot();
-    if (outcome === 'failed') {
-      console.error('snapshot publish failed — see the reason logged above');
-      process.exitCode = 1;
-      return;
-    }
-    console.log(outcome === 'published' ? 'snapshot published' : 'snapshot unchanged — not published');
-    return;
-  }
   if (command === 'run-cycle') {
     const name = rest[0];
     if (name === undefined) throw new Error('run-cycle needs a program name');

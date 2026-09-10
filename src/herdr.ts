@@ -1,6 +1,9 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { z } from 'zod';
 import type { Program } from './control.ts';
 import { ExecTimedOut, explainSpawn, runBounded } from './exec.ts';
+import { paths } from './paths.ts';
 import { parsePreview, type Preview } from './preview.ts';
 
 
@@ -19,6 +22,10 @@ const tabCreateShape = z.object({
     tab: z.object({ tab_id: z.string() }),
     root_pane: z.object({ pane_id: z.string() }),
   }),
+});
+
+const tabLabelShape = z.object({
+  result: z.object({ tab: z.object({ label: z.string() }).passthrough() }),
 });
 
 const workspaceCreateShape = z.object({
@@ -207,6 +214,12 @@ export type StartedCycle = { agentName: string; tabId: string | null; paneId: st
  */
 export class PaneBusy extends Error {}
 
+const paneInfoShape = z.object({
+  result: z.object({
+    pane: z.object({ tab_id: z.string().optional() }).passthrough(),
+  }),
+});
+
 const paneExists = async (paneId: string): Promise<boolean> => {
   try {
     await herdr(['pane', 'get', paneId]);
@@ -215,6 +228,35 @@ const paneExists = async (paneId: string): Promise<boolean> => {
     return false;
   }
 };
+
+/**
+ * A pane id is drovr's handle on a pane, not an address a human can follow: `w3W:pT`
+ * told a reader nothing and named no way to go and look. Every message about a held
+ * pane resolves it to the tab drovr labelled and the command that opens it. Best
+ * effort by construction — herdr being unreachable must cost the message its address,
+ * never the message.
+ */
+export type PaneAddress = { where: string; open: string | null };
+
+export const paneAddress = async (paneId: string): Promise<PaneAddress> => {
+  const pane = paneInfoShape.safeParse(await herdr(['pane', 'get', paneId]).catch(() => null));
+  const tabId = pane.success ? pane.data.result.pane.tab_id : undefined;
+  if (tabId === undefined) return { where: `pane ${paneId}`, open: null };
+
+  const label = tabLabelShape.safeParse(await herdr(['tab', 'get', tabId]).catch(() => null));
+  return {
+    where: label.success ? `its "${label.data.result.tab.label}" tab` : `tab ${tabId}`,
+    open: `herdr tab focus ${tabId}`,
+  };
+};
+
+/**
+ * The follow-me command on its own line, so it survives being read at the end of a
+ * sentence and can be copied. Empty when herdr could not name a tab — the message
+ * still says where, it just cannot say how to get there.
+ */
+export const openLine = (address: PaneAddress): string =>
+  address.open === null ? '' : `\n  look:  ${address.open}`;
 
 /**
  * A herdr server restart brings panes back as fresh shells in their saved cwd —
@@ -307,6 +349,38 @@ export const agentPane = async (agentName: string): Promise<string | null> => {
 
 export const agentNameFor = (programName: string): string => `drovr-${programName}`.slice(0, 32).toLowerCase();
 
+const rememberedPaneShape = z.object({ paneId: z.string() });
+
+/**
+ * How every caller must address a program's runner. The name drovr gave the agent is
+ * not durable: `resume_agents_on_restore` brings a restored session back unnamed, so
+ * `agent get drovr-<program>` answers agent_not_found for a pane that is plainly
+ * occupied — and `agentState` reads that as `gone`. Six lookups believed it, each in
+ * the direction that reads as *no runner*: the watch loop declared a live cycle
+ * vanished, the stall nudge went nowhere, and `runnerPresent` told `decide()` the pane
+ * was free, which is the readiness gate that exists to stop exactly this. The pane id
+ * is the identity a restore cannot lose, so it is preferred wherever one is remembered.
+ * The name remains the fallback, and is still correct before the first cycle writes a
+ * pane file.
+ */
+export const cycleAgentTarget = (programName: string): string => {
+  const path = join(paths().programState(programName), 'cycle-pane.json');
+  if (!existsSync(path)) return agentNameFor(programName);
+  // Reached from inside the tick, so an unreadable pane file costs the durable
+  // identity and falls back to the name — never the pass.
+  const parsed = rememberedPaneShape.safeParse(
+    ((): unknown => {
+      try {
+        return JSON.parse(readFileSync(path, 'utf8'));
+      } catch (error: unknown) {
+        console.error(`could not read ${path}, addressing ${programName} by agent name: ${String(error)}`);
+        return null;
+      }
+    })(),
+  );
+  return parsed.success ? parsed.data.paneId : agentNameFor(programName);
+};
+
 export const startCycleAgent = async (input: {
   program: Program;
   workspaceId: string;
@@ -327,12 +401,14 @@ export const startCycleAgent = async (input: {
     if (occupant !== null) {
       const freed =
         occupant === 'idle' || occupant === 'done'
-          ? await releaseAgent(agentName, pane.paneId).catch(() => false)
+          ? await releaseAgent(pane.paneId).catch(() => false)
           : false;
       if (!freed) {
+        const address = await paneAddress(pane.paneId);
         throw new PaneBusy(
-          `${program.name} already has a live session in pane ${pane.paneId} (${occupant}). ` +
-            'Leaving it alone — it is either still working or being used. The next tick tries again.',
+          `${program.name} already has a live session in ${address.where} (${occupant}). ` +
+            'Leaving it alone — it is either still working or being used. ' +
+            `The next tick tries again.${openLine(address)}`,
         );
       }
     }
@@ -359,8 +435,21 @@ export const startCycleAgent = async (input: {
     program.model,
     '--name',
     input.sessionName,
-  ], AGENT_START_TIMEOUT_MS).catch((error: unknown) => {
+  ], AGENT_START_TIMEOUT_MS).catch(async (error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
+    // The pane holds a session herdr would not let us start over. That is the exact
+    // meaning of PaneBusy — nothing went wrong and the cycle simply did not start —
+    // and recording it as a crash instead put eight 0.2s failures into aice-x's
+    // ledger on 2026-09-01, each one feeding the failure latch and the zero-yield
+    // streak for a program that was healthy.
+    if (detail.includes('agent_pane_busy')) {
+      const address = await paneAddress(pane.paneId);
+      throw new PaneBusy(
+        `${program.name} could not start: ${address.where} is not a free shell. Answer whatever ` +
+          `its session is waiting on, or free it with \`drovr release ${program.name}\`. ` +
+          `The next tick tries again.${openLine(address)}`,
+      );
+    }
     if (!detail.includes('agent_not_ready')) throw error;
     return { notReady: true };
   });
@@ -368,9 +457,10 @@ export const startCycleAgent = async (input: {
   if (typeof started === 'object' && started !== null && 'notReady' in started) {
     const ready = await waitForIdle(agentName);
     if (!ready) {
+      const address = await paneAddress(pane.paneId);
       throw new PaneBusy(
-        `${program.name} started but is waiting on a dialog in pane ${pane.paneId} — ` +
-          'answer it there and the next tick will prompt it.',
+        `${program.name} started but is waiting on a dialog in ${address.where} — answer it ` +
+          `there and the next tick will prompt it.${openLine(address)}`,
       );
     }
   }
@@ -445,12 +535,22 @@ export const isSettled = (state: AgentState): boolean => SETTLED.includes(state)
  * at the prompt forever. Once the runner has written its report the cycle has
  * declared itself done, so releasing the pane is cleanup, not a kill. Without this
  * the pane stays occupied and the next cycle for that program is refused.
+ *
+ * Addressed by **pane**, never by drovr's agent name. A herdr restart restores the
+ * session through `resume_agents_on_restore`, which brings it back without the
+ * `--name` drovr gave it: `agent get drovr-aice-x` then answers agent_not_found while
+ * the pane is plainly occupied. Read as `gone` that made this return true having
+ * released nothing, so the caller went on to type the proxy line into a live claude
+ * prompt — measured 2026-09-01, eight times, each one landing in Craig's aice-x
+ * session as a question it could not answer and then recorded as a crash. The pane id
+ * is the one identity a restore cannot lose, and it is what `paneOccupant` already
+ * uses, so the two lookups now agree by construction rather than by luck.
  */
-export const releaseAgent = async (agentName: string, paneId: string): Promise<boolean> => {
-  let state = await agentState(agentName);
+export const releaseAgent = async (paneId: string): Promise<boolean> => {
+  let state = await agentState(paneId);
   for (let attempt = 0; attempt < 10 && !isSettled(state); attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 3_000));
-    state = await agentState(agentName);
+    state = await agentState(paneId);
   }
   if (state === 'gone') return true;
 
@@ -462,7 +562,7 @@ export const releaseAgent = async (agentName: string, paneId: string): Promise<b
   await herdr(['pane', 'send-text', paneId, '/exit\r']).catch(() => ({}));
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 2_000));
-    if ((await agentState(agentName)) === 'gone') return true;
+    if ((await agentState(paneId)) === 'gone') return true;
   }
   return false;
 };

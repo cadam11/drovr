@@ -142,12 +142,11 @@ export const adjustConcurrency = (path: string, delta: number): Action => {
 };
 
 /**
- * Panel intents name a target where the TUI's keys cycle, so they need setters
+ * These name a target where the TUI's keys cycle, so they need setters
  * rather than steppers — but the same `mutate`, so control.json keeps one writer.
  *
- * The bounds below restate the parser's own (src/intents.ts) at the point of the
- * write. A setter wider than the parser leaves a gap for any later caller; one
- * narrower silently refuses input the parser promised was valid.
+ * The bounds are checked at the point of the write rather than at each call site,
+ * so every caller — the TUI keys and the CLI both — is held to the same range.
  */
 export const setMode = (path: string, mode: string): Action => {
   if (!MODES.includes(mode as (typeof MODES)[number])) {

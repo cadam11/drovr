@@ -12,7 +12,6 @@ const input = () => ({
   previews: new Map(),
   locks: new Map(),
   asksUrls: new Map(),
-  queuedIntents: [],
 });
 
 test('buildState stamps a versioned, ISO-timestamped envelope', () => {
@@ -97,7 +96,6 @@ test('buildState stops counting a cycle as running once it is older than control
     previews: new Map(),
     locks: new Map(),
     asksUrls: new Map(),
-    queuedIntents: [],
   });
 
   const demo = state.programs.find((program) => program.name === 'demo');
@@ -161,7 +159,6 @@ const scarceInput = (programs: { name: string; cwd: string; priority: number }[]
   previews: new Map(),
   locks: new Map(),
   asksUrls: new Map(),
-  queuedIntents: [],
 });
 
 test('buildState admits only as many programs as the pool can fund, in priority order', () => {

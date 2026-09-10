@@ -10,10 +10,6 @@ export const paths = () => {
     base,
     control: join(base, 'control.json'),
     cycles: join(base, 'cycles.jsonl'),
-    snapshotState: join(base, 'snapshot-state.json'),
-    /** Every invocation, including a skip or a failure — distinct from snapshotState's
-     * `publishedAt`, which only advances on an actual publish (see publish-snapshot.ts). */
-    snapshotRun: join(base, 'snapshot-run.json'),
     decisions: join(base, 'decisions.jsonl'),
     /** Sampled per tick: the only record of how much of the pool Craig himself takes. */
     usage: join(base, 'usage.jsonl'),
@@ -24,7 +20,6 @@ export const paths = () => {
     programState: (program: string) => join(base, 'programs', program),
     lastCycle: (program: string) => join(base, 'programs', program, 'last-cycle.json'),
     stateFile: (program: string) => join(base, 'programs', program, 'state.json'),
-    statusPage: (program: string) => join(base, 'programs', program, 'status.html'),
   };
 };
 

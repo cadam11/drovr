@@ -57,12 +57,16 @@ export const orderCeilings = (
   return out;
 };
 
-/** The install itself comes from the repo's .envrc via direnv, not from here. */
+/**
+ * The install itself comes from the repo's .envrc via direnv, not from here.
+ *
+ * Asks only. drovr's status page is one page for every program on drovr's own install
+ * (publish.ts), so it is not per-program config; `statusPage` and `publishArgs` were
+ * dropped when the per-program pages went, and Zod strips them from an older file.
+ */
 const aiceShape = z.object({
   /** Null until the program has an asks page; the loop creates one on onboarding. */
   asksPage: z.string().nullable().default(null),
-  statusPage: z.string(),
-  publishArgs: z.array(z.string()).default(['--agent', 'claude']),
 });
 
 const programShape = z.object({

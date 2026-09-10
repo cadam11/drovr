@@ -723,7 +723,7 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
     const rows = Math.max(6, process.stdout.rows ?? 40);
     const columns = process.stdout.columns ?? 100;
     view.previewWarning = null;
-    const state = await collectState(undefined, (warning) => {
+    const state = await collectState((warning) => {
       view.previewWarning = warning;
     });
     lastState = state;
