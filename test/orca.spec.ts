@@ -79,10 +79,38 @@ test('an older host that never looked for a wait still answers idle or working',
   assert.equal(agentStateFrom(noWaitField, idleTimedOut), 'working');
 });
 
-test('a show payload without agentIdentity throws rather than answering gone', () => {
-  // Reading a missing field as "no agent" is the herdr agent_status bug again, in the
-  // direction that frees a pane a runner is sitting in.
-  assert.throws(() => agentStateFrom(shown({}), idleSatisfied), /agentIdentity/);
+test('a show payload without agentIdentity is the bare shell orca means by it', () => {
+  // `terminal show` omits the field for an agentless terminal where `terminal list` sends an
+  // explicit null. Throwing on it refused every cycle: a terminal is a bare shell for the
+  // seconds `teamclaude run` takes, which is exactly where `waitForClaude` looks.
+  assert.equal(agentStateFrom(shown({}), idleSatisfied), 'gone');
+});
+
+test('a show payload with a non-string agentIdentity still throws', () => {
+  assert.throws(() => agentStateFrom(shown({ agentIdentity: 7 }), idleSatisfied), /expected shape/);
+});
+
+// Recorded verbatim from `orca terminal show --json` on 2026-09-12 for sunnyt's remembered
+// terminal after an Orca restart: no agent, `title: null`, nothing ever written to the pty.
+const restoredShell = shown({
+  ptyId: '9435b4e7-fed1-4676-8ca1-310a924e26ea::/Users/cadam/code/sunnyt@@623210ca',
+  orphaned: false,
+  tabId: 'c4c69d5f-607e-4da8-ade2-f85aa2e981c4',
+  title: null,
+  lastOutputAt: null,
+  preview: '',
+  agentWait: null,
+});
+
+test('a show payload with a null title is a terminal with no title, not a shape error', () => {
+  // Rejecting it crashed nine sunnyt cycles in one day before any terminal was created —
+  // each recorded as a crash for a program nothing was wrong with.
+  assert.equal(agentStateFrom(restoredShell, idleSatisfied), 'gone');
+});
+
+test('a shape error names the field that failed, not a prefix of the payload', () => {
+  // The payload prefix hid `title: null` past its 300-character cut for a whole day.
+  assert.throws(() => agentStateFrom(shown({ agentIdentity: 7 }), idleSatisfied), /terminal\.agentIdentity/);
 });
 
 test('an idle probe refused for any reason but timeout throws', () => {
@@ -135,6 +163,10 @@ test('terminalAddress names the tab and the command that opens it', () => {
     where: 'its "✳ Claude Code" tab in sunnyt',
     open: 'orca terminal switch --terminal term_844e8720-ac95-453c-bb73-7e2fd567479a',
   });
+});
+
+test('terminalAddress does not print a null title as a tab name', () => {
+  assert.deepEqual(terminalAddress(restoredShell, 'term_4298d453'), { where: 'terminal term_4298d453', open: null });
 });
 
 test('terminalAddress falls back to the bare handle when orca cannot describe it', () => {

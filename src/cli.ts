@@ -655,6 +655,20 @@ const showHelp = (topic: string | undefined, json: boolean): void => {
   console.log(renderCommand(command));
 };
 
+/**
+ * `tick` and `run-cycle` are the only two commands that never run in front of a human: their
+ * output goes straight to a launchd redirect or a `<program>-worker.log`, where an undated line
+ * cannot be lined up with the ledger record that explains it. UTC ISO so it lines up with
+ * cycles.jsonl exactly. Every other command prints to a terminal or to an agent parsing it,
+ * where a prefix is noise at best and broken JSON at worst — so this is opt-in, not global.
+ */
+const stampConsole = (): void => {
+  for (const level of ['log', 'error'] as const) {
+    const write = console[level].bind(console);
+    console[level] = (...args: unknown[]): void => write(new Date().toISOString(), ...args);
+  }
+};
+
 const main = async (argv: string[]): Promise<void> => {
   const [command, ...rest] = argv;
   const json = rest.includes('--json');
@@ -671,10 +685,14 @@ const main = async (argv: string[]): Promise<void> => {
   }
 
   if (command === 'init') return init();
-  if (command === 'tick') return tick();
+  if (command === 'tick') {
+    stampConsole();
+    return tick();
+  }
   if (command === 'run-cycle') {
     const name = rest[0];
     if (name === undefined) throw new Error('run-cycle needs a program name');
+    stampConsole();
     return runProgramCycle(name);
   }
   if (command === 'status') {

@@ -127,6 +127,8 @@ export const COMMANDS: Command[] = [
       'so a second invocation for the same program is refused.',
       'It opens the cycle in Orca and then only watches — for the runner’s report file, or for the',
       'agent to disappear. Killing the runner is never drovr’s decision.',
+      'If the program already has a cycle in flight whose watcher died, it re-attaches to that cycle',
+      'instead of starting one: same ledger record, no new terminal, no prompt sent.',
     ],
     writes: 'cycles.jsonl',
   },
@@ -232,6 +234,8 @@ export const COMMANDS: Command[] = [
     details: [
       'Detached, so it returns immediately — unlike run-cycle, which blocks for the whole cycle.',
       'Use it to clear a crash latch once the cause is fixed, or to run something out of turn.',
+      'A cycle already in flight with a dead watcher is re-watched rather than restarted; tick',
+      'does the same on its own, so this is only faster.',
     ],
     writes: 'cycles.jsonl, and launches a cycle',
   },

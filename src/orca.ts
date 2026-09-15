@@ -117,9 +117,16 @@ const terminalShape = z.object({
   terminal: z
     .object({
       handle: z.string(),
-      agentIdentity: z.string().nullable(),
+      // `show` omits the field entirely for a terminal with no agent, where `list` sends an
+      // explicit null (measured 2026-09-11 on three live terminals of the same runtime). Absent
+      // is orca saying "no agent" here, not "never looked" — normalise so both readers see null.
+      agentIdentity: z
+        .string()
+        .nullish()
+        .transform((identity) => identity ?? null),
       agentWait: z.unknown().optional(),
-      title: z.string().optional(),
+      // Null for a restored terminal nothing has written to yet (measured 2026-09-12).
+      title: z.string().nullish(),
       worktreePath: z.string().optional(),
     })
     .passthrough(),
@@ -135,9 +142,8 @@ const shownTerminal = (show: unknown): z.infer<typeof terminalShape>['terminal']
   }
   const parsed = terminalShape.safeParse(result);
   if (!parsed.success) {
-    throw new Error(
-      `orca terminal show did not report agentIdentity: ${JSON.stringify(result).slice(0, 300)}`,
-    );
+    const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`);
+    throw new Error(`orca terminal show did not match the expected shape — ${issues.join('; ')}`);
   }
   return parsed.data.terminal;
 };
@@ -145,7 +151,8 @@ const shownTerminal = (show: unknown): z.infer<typeof terminalShape>['terminal']
 /**
  * What `terminal show` alone can decide. `agentWait` is orca's word for a claude parked on a
  * prompt only a human can answer — drovr's `blocked`. Null means orca looked and found none;
- * an absent field means an older host never looked, which is not evidence of anything.
+ * an absent field means an older host never looked, which is not evidence of anything. That
+ * asymmetry is `agentWait`'s alone: `agentIdentity` is absent precisely when there is no agent.
  */
 const occupancyFrom = (show: unknown): 'gone' | 'blocked' | 'occupied' => {
   const terminal = shownTerminal(show);
@@ -210,7 +217,7 @@ export const terminalAddress = (show: unknown, handle: string): PaneAddress => {
   } catch {
     terminal = null;
   }
-  if (terminal === null || terminal.title === undefined || terminal.worktreePath === undefined) {
+  if (terminal === null || typeof terminal.title !== 'string' || terminal.worktreePath === undefined) {
     return { where: `terminal ${handle}`, open: null };
   }
   return {

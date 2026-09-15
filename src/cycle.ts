@@ -464,6 +464,13 @@ const runInOrca = async (
   return watchCycle(program.name, limits);
 };
 
+/**
+ * Picks the watch back up for a cycle whose worker died with its runner still there. No
+ * clearReport: a report the runner has written since is this cycle's outcome, not a leftover.
+ */
+export const resumeCycle = (program: Program, limits: CycleLimits): Promise<CycleOutcome> =>
+  watchCycle(program.name, limits);
+
 /** Resolves once the cycle finishes or the watch window expires; cycles run for hours. */
 export const runCycle = async (
   program: Program,

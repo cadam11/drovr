@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, fullReason, type Decision } from './decide.ts';
-import { isOnboarding, readReport, runCycle, type CycleReport } from './cycle.ts';
+import { isOnboarding, readReport, resumeCycle, runCycle, type CycleReport } from './cycle.ts';
 import { PaneBusy, runnerState } from './orca.ts';
 import { readAsks } from './asks.ts';
 import { nudgeIfNeglected, textCraig } from './nudge.ts';
@@ -14,7 +14,7 @@ import { poolFrom } from './capacity.ts';
 import { byPriority, ceilingsFor, readControl, type Control, type Program } from './control.ts';
 import { acquire, heldBy, holder, release } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
-import { readStatus } from './teamclaude.ts';
+import { readStatus, type TeamclaudeStatus } from './teamclaude.ts';
 import { appendSample, sampleUsage } from './usage.ts';
 
 const explain = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -68,34 +68,58 @@ export const launchDetached = (name: string): void => {
 const launch = (program: Program): void => launchDetached(program.name);
 
 /**
- * A worker takes its program lock before writing its start record, so an in-flight
- * cycle whose lock no longer has a live holder is definitively over — its worker was
- * killed before it could write an end record. Closing those out here means a crash
- * never leaves a program blocked behind a phantom cycle.
+ * What to do about an in-flight cycle whose worker is dead. The runner is an interactive
+ * session that outlives its watcher, so a dead lock says nothing about the cycle: while the
+ * runner is there a new watcher is attached to it; once it is gone the record is closed as
+ * `abandoned` — drovr stopped looking, which is not a claim that nothing was delivered —
+ * and a report it left behind is reconciled right after. Unknown is left alone: a watcher
+ * re-attached while orca is unreachable could not see the runner either.
+ */
+export const orphanAction = (runnerPresent: boolean | undefined): 'reattach' | 'close' | 'skip' => {
+  if (runnerPresent === undefined) return 'skip';
+  return runnerPresent ? 'reattach' : 'close';
+};
+
+/**
+ * A worker takes its program lock before writing its start record, so an in-flight cycle
+ * whose lock has no live holder has lost its worker. Measured 2026-09-12: a `run-cycle`
+ * killed 37 minutes into a healthy cycle left its runner working for hours with nothing
+ * watching, and closing that as `crash` would have latched the program and thrown away the
+ * report. The worker it launches here resumes the open record rather than opening another.
  *
  * `maxCycleHours` is passed rather than left to inFlight's own 24h default: with the
  * default at 24 and the setting at 12 this closes out more cycles than decide() still
  * counts, which is harmless — but it inverts the moment maxCycleHours goes above 24,
- * and then an abandoned cycle is never closed and blocks its program permanently.
+ * and then an orphaned cycle is never closed and blocks its program permanently.
  */
-const reconcileAbandoned = (now: number, maxCycleHours: number): number => {
+const reconcileAbandoned = async (now: number, control: Control, status: TeamclaudeStatus): Promise<void> => {
   const p = paths();
-  const abandoned = inFlight(readCycles(p.cycles), now, maxCycleHours).filter(
+  const orphaned = inFlight(readCycles(p.cycles), now, control.maxCycleHours).filter(
     (cycle) => holder(p.programLock(cycle.program)) === null,
   );
+  const ceilings = ceilingsFor(control);
+  const poolNow = ceilings === null ? null : snapshot(poolFrom(status, ceilings, now));
 
-  for (const cycle of abandoned) {
+  for (const cycle of orphaned) {
+    const action = orphanAction(await runnerStillThere(cycle.program));
+    const opened = `${cycle.program}: cycle started ${cycle.startedAt} has no watcher`;
+    if (action === 'skip') {
+      console.error(`${opened} and orca cannot say whether its runner is alive — left open until it can`);
+      continue;
+    }
+    if (action === 'reattach') {
+      console.log(`${opened} but its runner is still there — attaching a new one`);
+      launchDetached(cycle.program);
+      continue;
+    }
     appendRecord(p.cycles, {
       ...cycle,
       endedAt: new Date(now).toISOString(),
-      exit: 'crash',
-      poolAfter: cycle.poolBefore,
+      exit: 'abandoned',
+      poolAfter: poolNow ?? cycle.poolBefore,
     });
-    console.error(
-      `${cycle.program}: cycle started ${cycle.startedAt} had no running worker — closed as crashed`,
-    );
+    console.error(`${opened} and no runner — closed as abandoned; a report it left is reconciled next`);
   }
-  return abandoned.length;
 };
 
 /**
@@ -292,7 +316,7 @@ export const tick = async (): Promise<void> => {
     const now = Date.now();
     const control = readControl(p.control);
     const status = await readStatus();
-    reconcileAbandoned(now, control.maxCycleHours);
+    await reconcileAbandoned(now, control, status);
     // Before admission: the next cycle's clearReport() would delete the very report this
     // reads, so a late outcome has exactly one tick in which to be recovered.
     reconcileLateReports(now);
@@ -416,9 +440,14 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     const ceilings = ceilingsFor(control);
     if (ceilings === null) throw new Error('mode is off');
 
-    const startedAt = new Date().toISOString();
-    const kind = isOnboarding(name) ? 'onboarding' : 'delivery';
-    const before = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
+    // An open record with nobody holding the lock is a cycle that lost its watcher, not its
+    // runner: pick its record back up rather than opening a second one on top of it.
+    const resumed = inFlight(readCycles(p.cycles), Date.now(), control.maxCycleHours).find(
+      (cycle) => cycle.program === name,
+    );
+    const startedAt = resumed?.startedAt ?? new Date().toISOString();
+    const kind = resumed?.kind ?? (isOnboarding(name) ? 'onboarding' : 'delivery');
+    const before = resumed?.poolBefore ?? snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 
     const record = (extra: Partial<CycleRecord>): void => {
       appendRecord(p.cycles, {
@@ -438,7 +467,8 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       });
     };
 
-    record({});
+    if (resumed === undefined) record({});
+    else console.log(`${name}: re-attaching to the cycle started ${startedAt} — its watcher died with the runner still there`);
 
     // Anything between the start record and the end record can throw — a missing
     // binary, an orca error, a lost worktree. Without an end record the cycle stays
@@ -451,7 +481,8 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       phoneNumber: control.phoneNumber,
       originationNumber: control.originationNumber,
     };
-    const outcome = await runCycle(program, startedAt, limits).catch(
+    const watch = resumed === undefined ? runCycle(program, startedAt, limits) : resumeCycle(program, limits);
+    const outcome = await watch.catch(
       (error: unknown) => {
         const detail = explain(error);
         // A busy pane is not a failure: the cycle never started and nothing is wrong.
