@@ -388,8 +388,10 @@ const tickLockHolder = (): { pid: number; heldMs: number | null } | null => {
   return { pid: held.pid, heldMs: held.at === null ? null : Math.max(0, Date.now() - held.at) };
 };
 
-const showLedger = (limit: number, json: boolean, closing: boolean): void => {
-  const recent = readCycles(p.cycles).slice(-limit);
+const showLedger = (limit: number, json: boolean, closing: boolean, program: string | null): void => {
+  const recent = readCycles(p.cycles)
+    .filter((cycle) => program === null || cycle.program === program)
+    .slice(-limit);
   if (json) {
     console.log(JSON.stringify({ exitReasons: AGENT_NOTES.exitReasons, cycles: recent }, null, 2));
     return;
@@ -714,8 +716,10 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'report') return reportCycle(rest);
   if (command === 'watch') return watch(Number.parseInt(rest[0] ?? '15', 10));
   if (command === 'ledger') {
-    const limit = Number.parseInt(rest.find((a) => !a.startsWith('-')) ?? '20', 10);
-    return showLedger(limit, json, rest.includes('--closing'));
+    const words = rest.filter((a) => !a.startsWith('-'));
+    const program = words.find((a) => !/^\d+$/.test(a)) ?? null;
+    const limit = Number.parseInt(words.find((a) => /^\d+$/.test(a)) ?? '20', 10);
+    return showLedger(limit, json, rest.includes('--closing'), program);
   }
 
   if (command === 'usage') return showUsage(json);
