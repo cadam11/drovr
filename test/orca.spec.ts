@@ -7,6 +7,7 @@ import {
   previewText,
   shellCommand,
   terminalAddress,
+  terminalExited,
   unwrap,
 } from '../src/orca.ts';
 
@@ -40,6 +41,18 @@ const idleSatisfied = {
   result: { wait: { handle: 'term_844e8720', condition: 'tui-idle', satisfied: true, status: 'running', exitCode: null } },
 };
 const idleTimedOut = { id: '175e9e24', ok: false, error: { code: 'timeout', message: 'timeout' } };
+/**
+ * `wait --for exit` on a terminal whose pty has ended (recorded 2026-09-15). `show` for the
+ * same terminal still carried `agentIdentity: "claude"`, so this probe is the only honest
+ * answer to "is anything there at all".
+ */
+const exited = {
+  id: '43d5e42a',
+  ok: true,
+  result: {
+    wait: { handle: 'term_2c1446bd', condition: 'exit', satisfied: true, status: 'exited', exitCode: 0, exitCause: { kind: 'unknown' } },
+  },
+};
 
 test('unwrap returns the result of an ok envelope', () => {
   assert.deepEqual(unwrap(idleSatisfied, 'orca terminal wait'), idleSatisfied.result);
@@ -64,6 +77,16 @@ test('a terminal holding a plain shell is gone — claude has exited and the she
 test('a claude parked on a human-only prompt is blocked, whatever the idle probe says', () => {
   const blocked = shown({ agentIdentity: 'claude', agentWait: { kind: 'permission', evidence: 'prompt-text' } });
   assert.equal(agentStateFrom(blocked, idleSatisfied), 'blocked');
+});
+
+test('an exited pty is gone even when show still names a claude in it — the idle probe would call it working', () => {
+  assert.equal(terminalExited(exited), true);
+  assert.equal(terminalExited(idleTimedOut), false);
+  assert.equal(agentStateFrom(claudeShown, idleTimedOut, exited), 'gone');
+});
+
+test('an exit probe refused for any reason but timeout throws', () => {
+  assert.throws(() => terminalExited(stale), /terminal_handle_stale/);
 });
 
 test('a claude whose TUI settled within the probe is idle', () => {

@@ -176,10 +176,34 @@ const idleSatisfied = (wait: unknown): boolean => {
   }
 };
 
-/** `show` is the `terminal show` envelope; `idle` the `terminal wait --for tui-idle` envelope. */
-export const agentStateFrom = (show: unknown, idle: unknown): AgentState => {
+/** What a live pty answers to an exit probe; the default when a caller has not asked. */
+const LIVE_EXIT_PROBE = { ok: false, error: { code: 'timeout' } };
+
+/**
+ * `wait --for exit` is satisfied the instant the pty has ended. It is asked because `show`
+ * keeps naming the claude that *was* there after its shell has exited (measured 2026-09-15:
+ * `agentIdentity: "claude"` on a terminal `read` reported as `exited`), and a tui-idle probe
+ * on a dead pty simply times out — which read as `working`, so the runner could never be
+ * released and its program was refused every tick.
+ */
+export const terminalExited = (wait: unknown): boolean => {
+  try {
+    const result = unwrap(wait, 'orca terminal wait');
+    return waitShape.parse(result).wait.satisfied;
+  } catch (error) {
+    if (error instanceof OrcaRefused && error.code === 'timeout') return false;
+    throw error;
+  }
+};
+
+/**
+ * `show` is the `terminal show` envelope; `idle` the `terminal wait --for tui-idle` envelope;
+ * `exit` the `terminal wait --for exit` envelope, consulted only when show says occupied.
+ */
+export const agentStateFrom = (show: unknown, idle: unknown, exit: unknown = LIVE_EXIT_PROBE): AgentState => {
   const occupancy = occupancyFrom(show);
   if (occupancy !== 'occupied') return occupancy;
+  if (terminalExited(exit)) return 'gone';
   return idleSatisfied(idle) ? 'idle' : 'working';
 };
 
@@ -291,11 +315,17 @@ const probeIdle = (handle: string): Promise<unknown> =>
     IDLE_PROBE_MS + ORCA_TIMEOUT_MS,
   );
 
-/** State of the claude in one terminal. Two calls at most; the idle probe only when it can matter. */
+/** Answers at once either way: satisfied for a dead pty, `timeout` for a live one. */
+const probeExit = (handle: string): Promise<unknown> =>
+  orcaRaw(['terminal', 'wait', '--terminal', handle, '--for', 'exit', '--timeout-ms', '1']);
+
+/** State of the claude in one terminal. Three calls at most; the probes only when they can matter. */
 export const agentState = async (handle: string): Promise<AgentState> => {
   const show = await showTerminal(handle);
   if (occupancyFrom(show) !== 'occupied') return agentStateFrom(show, null);
-  return agentStateFrom(show, await probeIdle(handle));
+  const exit = await probeExit(handle);
+  if (terminalExited(exit)) return 'gone';
+  return agentStateFrom(show, await probeIdle(handle), exit);
 };
 
 /**

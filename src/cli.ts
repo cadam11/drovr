@@ -345,7 +345,9 @@ const releaseRunner = async (name: string | undefined): Promise<void> => {
 
   const state = await runnerState(name);
   if (state === 'gone') {
-    console.log(`${name}: no runner to release — its terminal is already free`);
+    // No claude to ask out, but the tab it left (or the pty it died in) may still be remembered.
+    await freeRunner(name);
+    console.log(`${name}: no runner to release — its terminal is free`);
     return;
   }
   const address = await runnerAddress(name);
