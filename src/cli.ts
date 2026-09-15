@@ -14,6 +14,7 @@ import {
   estimateCycleCost,
   inFlight,
   lastDecisionAt,
+  latestEnds,
   readTickStamp,
   readCycles,
   snapshot,
@@ -388,10 +389,18 @@ const tickLockHolder = (): { pid: number; heldMs: number | null } | null => {
   return { pid: held.pid, heldMs: held.at === null ? null : Math.max(0, Date.now() - held.at) };
 };
 
-const showLedger = (limit: number, json: boolean, closing: boolean, program: string | null): void => {
-  const recent = readCycles(p.cycles)
-    .filter((cycle) => program === null || cycle.program === program)
-    .slice(-limit);
+type LedgerView = { limit: number; json: boolean; closing: boolean; program: string | null; last: boolean };
+
+/** The most recent ended cycle of each program, in the order those cycles started. */
+const lastPerProgram = (cycles: CycleRecord[]): CycleRecord[] => {
+  const byProgram = new Map<string, CycleRecord>();
+  for (const cycle of latestEnds(cycles)) byProgram.set(cycle.program, cycle);
+  return [...byProgram.values()].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+};
+
+const showLedger = ({ limit, json, closing, program, last }: LedgerView): void => {
+  const mine = readCycles(p.cycles).filter((cycle) => program === null || cycle.program === program);
+  const recent = last ? lastPerProgram(mine) : mine.slice(-limit);
   if (json) {
     console.log(JSON.stringify({ exitReasons: AGENT_NOTES.exitReasons, cycles: recent }, null, 2));
     return;
@@ -717,9 +726,13 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'watch') return watch(Number.parseInt(rest[0] ?? '15', 10));
   if (command === 'ledger') {
     const words = rest.filter((a) => !a.startsWith('-'));
-    const program = words.find((a) => !/^\d+$/.test(a)) ?? null;
-    const limit = Number.parseInt(words.find((a) => /^\d+$/.test(a)) ?? '20', 10);
-    return showLedger(limit, json, rest.includes('--closing'), program);
+    return showLedger({
+      program: words.find((a) => !/^\d+$/.test(a)) ?? null,
+      limit: Number.parseInt(words.find((a) => /^\d+$/.test(a)) ?? '20', 10),
+      json,
+      closing: rest.includes('--closing'),
+      last: rest.includes('--last'),
+    });
   }
 
   if (command === 'usage') return showUsage(json);

@@ -301,7 +301,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'ledger',
-    usage: 'drovr ledger [program] [n] [--json] [--closing]',
+    usage: 'drovr ledger [program] [n] [--json] [--closing] [--last]',
     summary: 'recent cycles with their exit reason, yield and closing message',
     details: [
       'Exit reasons: context (hit the context ceiling), capacity (quota thinned), seam (milestone',
@@ -314,6 +314,10 @@ export const COMMANDS: Command[] = [
       {
         flag: '--json',
         describes: 'structured cycle records, with the meaning of each exit reason included',
+      },
+      {
+        flag: '--last',
+        describes: 'one row per program: its most recent ended cycle. n is ignored',
       },
       {
         flag: '--closing',
