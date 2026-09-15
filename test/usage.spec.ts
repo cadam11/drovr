@@ -29,6 +29,8 @@ const cycle = (overrides: Partial<CycleRecord> = {}): CycleRecord => ({
   yield: { ticketsMoved: 1, prsOpened: 0, commits: 2 },
   asksRaised: 0,
   pauseUntil: null,
+  sessionId: null,
+  closing: null,
   ...overrides,
 });
 

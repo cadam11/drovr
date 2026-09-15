@@ -115,6 +115,8 @@ test('a 5h window that reset mid-cycle is discarded, not recorded as zero cost',
     yield: null,
     asksRaised: 0,
     pauseUntil: null,
+    sessionId: null,
+    closing: null,
   }));
   const seed = { fable: 0.1, general: 0.08, session: 0.25 };
   const cost = estimateCycleCost(spanning, seed);
@@ -136,6 +138,8 @@ test('a bucket with enough clean samples still learns while another falls back',
     yield: null,
     asksRaised: 0,
     pauseUntil: null,
+    sessionId: null,
+    closing: null,
   }));
   const cost = estimateCycleCost(clean, { fable: 0.1, general: 0.08, session: 0.25 });
   assert.equal(cost.session.toFixed(3), '0.400');

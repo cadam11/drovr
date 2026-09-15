@@ -153,6 +153,8 @@ const finished = (program: string, hoursAgo: number) => ({
   yield: null,
   asksRaised: 1,
   pauseUntil: null,
+  sessionId: null,
+  closing: null,
 });
 
 const craigsConfiguration = () => buildState({

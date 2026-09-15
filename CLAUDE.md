@@ -192,6 +192,11 @@ Written and type-checked, never seen to fire. Unproven, not done:
   yet refused a low-priority program over room a higher one then used.
 - **A drovr cycle delivering an improvement that was merged back to main.** The program is
   registered and its worktree exists; no cycle has run against it yet.
+- **A closing message captured through `--session-id`.** `closingMessage` reads a recorded
+  transcript correctly, and 180 historical records were backfilled on 2026-09-15 by matching
+  each cycle's `startedAt` to the transcript that began within 10s of it (backup:
+  `~/.drovr/cycles.jsonl.bak-20260915`) — but every cycle in flight when the flag landed predates
+  it, so no record has yet been filled in by the live path. `drovr ledger --closing` shows them.
 - **The same-directory gate holding a program.** Landed 2026-08-30 as future-proofing; no two
   registered programs share a cwd today, so by construction it has never fired outside the suite.
 - **The shadow re-forming when a rest lapses.** The un-shadowing half fired live within a

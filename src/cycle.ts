@@ -445,14 +445,18 @@ const watchCycle = async (program: string, limits: CycleLimits): Promise<CycleOu
 const runInOrca = async (
   program: Program,
   startedAt: string,
+  sessionId: string,
   limits: CycleLimits,
 ): Promise<CycleOutcome> => {
   const worktreeId = await resolveWorktree(program);
   const prompt = substitute(program.cyclePrompt, program, isOnboarding(program.name));
   const sessionName = substitute(program.sessionName, program, isOnboarding(program.name));
   // --model per session, so the runner is always Fable without touching Craig's default;
-  // --name makes it obvious in the prompt box and /resume which program a session belongs to.
-  const { file, args } = wrap(program, ['teamclaude', 'run', '--', '--model', program.model, '--name', sessionName]);
+  // --name makes it obvious in the prompt box and /resume which program a session belongs to;
+  // --session-id is what lets the ledger find this cycle's transcript afterwards.
+  const { file, args } = wrap(program, [
+    'teamclaude', 'run', '--', '--model', program.model, '--name', sessionName, '--session-id', sessionId,
+  ]);
   const started: StartedCycle = await startCycleAgent({ program, worktreeId, command: [file, ...args], prompt });
 
   writeFileSync(
@@ -475,11 +479,12 @@ export const resumeCycle = (program: Program, limits: CycleLimits): Promise<Cycl
 export const runCycle = async (
   program: Program,
   startedAt: string,
+  sessionId: string,
   limits: CycleLimits,
 ): Promise<CycleOutcome> => {
   ensureDirs(program.name);
   clearReport(program.name);
   return program.runner === 'headless'
     ? runHeadless(program, startedAt)
-    : runInOrca(program, startedAt, limits);
+    : runInOrca(program, startedAt, sessionId, limits);
 };

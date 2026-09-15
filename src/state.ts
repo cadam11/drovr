@@ -169,6 +169,8 @@ const RUNNING_PLACEHOLDER: CycleRecord = {
   yield: null,
   asksRaised: 0,
   pauseUntil: null,
+  sessionId: null,
+  closing: null,
 };
 
 const programsOf = (input: StateInput): ProgramState[] => {

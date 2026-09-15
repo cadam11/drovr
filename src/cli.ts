@@ -50,6 +50,8 @@ const p = paths();
 const defaultControl = {
   mode: 'normal',
   pauseUntil: null,
+  sessionId: null,
+  closing: null,
   programs: [],
 };
 
@@ -131,6 +133,8 @@ const evaluateAll = async (input: {
         yield: null,
         asksRaised: 0,
         pauseUntil: null,
+        sessionId: null,
+        closing: null,
       });
     }
     return { program, decision, pid: holder(p.programLock(program.name)) };
@@ -384,7 +388,7 @@ const tickLockHolder = (): { pid: number; heldMs: number | null } | null => {
   return { pid: held.pid, heldMs: held.at === null ? null : Math.max(0, Date.now() - held.at) };
 };
 
-const showLedger = (limit: number, json: boolean): void => {
+const showLedger = (limit: number, json: boolean, closing: boolean): void => {
   const recent = readCycles(p.cycles).slice(-limit);
   if (json) {
     console.log(JSON.stringify({ exitReasons: AGENT_NOTES.exitReasons, cycles: recent }, null, 2));
@@ -396,6 +400,7 @@ const showLedger = (limit: number, json: boolean): void => {
     console.log(
       `${cycle.startedAt.slice(0, 16)}  ${cycle.program.padEnd(16)} ${cycle.kind.padEnd(10)} ${cycle.exit.padEnd(9)} yield=${total} asks=${cycle.asksRaised}`,
     );
+    if (closing && cycle.closing !== null) console.log(cycle.closing.replace(/^/gm, '    ') + '\n');
   }
 };
 
@@ -710,7 +715,7 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'watch') return watch(Number.parseInt(rest[0] ?? '15', 10));
   if (command === 'ledger') {
     const limit = Number.parseInt(rest.find((a) => !a.startsWith('-')) ?? '20', 10);
-    return showLedger(limit, json);
+    return showLedger(limit, json, rest.includes('--closing'));
   }
 
   if (command === 'usage') return showUsage(json);

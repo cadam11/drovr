@@ -85,6 +85,8 @@ test('buildState stops counting a cycle as running once it is older than control
     yield: null,
     asksRaised: 0,
     pauseUntil: null,
+    sessionId: null,
+    closing: null,
   };
 
   const state = buildState({
@@ -129,6 +131,8 @@ test('buildState honours the passed now rather than the real wall clock for a re
     yield: null,
     asksRaised: 0,
     pauseUntil: null,
+    sessionId: null,
+    closing: null,
   };
 
   const state = buildState({

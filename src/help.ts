@@ -301,8 +301,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'ledger',
-    usage: 'drovr ledger [n] [--json]',
-    summary: 'recent cycles with their exit reason and yield',
+    usage: 'drovr ledger [n] [--json] [--closing]',
+    summary: 'recent cycles with their exit reason, yield and closing message',
     details: [
       'Exit reasons: context (hit the context ceiling), capacity (quota thinned), seam (milestone',
       'complete), blocked (everything waiting on an ask), crash (exited without a report),',
@@ -313,6 +313,10 @@ export const COMMANDS: Command[] = [
       {
         flag: '--json',
         describes: 'structured cycle records, with the meaning of each exit reason included',
+      },
+      {
+        flag: '--closing',
+        describes: 'print each runner’s last message under its row, lifted from its claude transcript',
       },
     ],
   },

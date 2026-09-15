@@ -16,6 +16,8 @@ import { acquire, heldBy, holder, release } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { readStatus, type TeamclaudeStatus } from './teamclaude.ts';
 import { appendSample, sampleUsage } from './usage.ts';
+import { closingMessage } from './transcript.ts';
+import { randomUUID } from 'node:crypto';
 
 const explain = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -167,6 +169,7 @@ const reconcileLateReports = (now: number): number => {
       yield: report.yield,
       asksRaised: report.asksRaised,
       pauseUntil: report.pauseUntil,
+      closing: last.sessionId === null ? null : closingMessage(last.sessionId),
     });
     superseded += 1;
     console.log(
@@ -383,6 +386,8 @@ export const tick = async (): Promise<void> => {
         yield: null,
         asksRaised: 0,
         pauseUntil: null,
+        sessionId: null,
+        closing: null,
       });
     }
     // Craig's own consumption is the pool's largest draw and nothing reconstructs it
@@ -446,6 +451,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       (cycle) => cycle.program === name,
     );
     const startedAt = resumed?.startedAt ?? new Date().toISOString();
+    const sessionId = resumed?.sessionId ?? randomUUID();
     const kind = resumed?.kind ?? (isOnboarding(name) ? 'onboarding' : 'delivery');
     const before = resumed?.poolBefore ?? snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 
@@ -463,6 +469,8 @@ export const runProgramCycle = async (name: string): Promise<void> => {
         yield: null,
         asksRaised: 0,
         pauseUntil: null,
+        sessionId,
+        closing: null,
         ...extra,
       });
     };
@@ -481,7 +489,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       phoneNumber: control.phoneNumber,
       originationNumber: control.originationNumber,
     };
-    const watch = resumed === undefined ? runCycle(program, startedAt, limits) : resumeCycle(program, limits);
+    const watch = resumed === undefined ? runCycle(program, startedAt, sessionId, limits) : resumeCycle(program, limits);
     const outcome = await watch.catch(
       (error: unknown) => {
         const detail = explain(error);
@@ -513,6 +521,8 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       yield: report?.yield ?? null,
       asksRaised: report?.asksRaised ?? 0,
       pauseUntil: report?.pauseUntil ?? null,
+      // Only a cycle drovr saw end has a closing; an abandoned runner is still talking.
+      closing: outcome.finished ? closingMessage(sessionId) : null,
     });
 
     // A stalled runner was nudged and stayed silent, so Craig is the only one left

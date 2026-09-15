@@ -30,6 +30,10 @@ export const cycleShape = z.object({
   asksRaised: z.number().default(0),
   /** The cycle asked to rest until then — its zero yield was declared, not a symptom. */
   pauseUntil: z.string().nullable().default(null),
+  /** The claude session id drovr minted for the runner; how its transcript is found. */
+  sessionId: z.string().nullable().default(null),
+  /** The runner's last message, lifted from its transcript once the cycle ended. */
+  closing: z.string().nullable().default(null),
 });
 
 export const decisionShape = z.object({
