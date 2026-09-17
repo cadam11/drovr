@@ -12,16 +12,49 @@ import { runBounded } from './exec.ts';
 const STATUS_TIMEOUT_MS = 20_000;
 
 /**
+ * An epoch-ms instant as teamclaude reports it. The version on disk assigns numbers
+ * (`Date.now() + retryAfterSeconds * 1000`), but on 2026-09-14 five consecutive ticks —
+ * 17:38 to 18:18, a one-hour hole in decisions.jsonl — died refusing a *string* at
+ * `accounts[2].pausedUntil`, and admission stopped for all of it with nothing but a line
+ * in tick.err to say so.
+ *
+ * `rateLimitedUntil` and `pausedUntil` are the only fields in this shape that stay null
+ * until an account is actually throttled, so the schema met its first real value at the
+ * one moment drovr's judgement was worth most. The resets take the same treatment: they
+ * are proven as numbers, and a rule with an exception is a rule someone re-derives later.
+ *
+ * Coerced, never merely widened. capacity.ts compares these against `now`, and a string
+ * left as a string compares false — quietly marking a throttled account usable, which is
+ * the one direction that reads as free capacity. An unparseable value reads as null,
+ * already this field's word for "no limit known" and already handled downstream, because
+ * one surprise field in one account must not cost a whole pass.
+ */
+const epochMs = z
+  .union([z.number(), z.string()])
+  .nullable()
+  .transform((value) => {
+    if (value === null) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    // Both string forms are plausible out of a JSON round-trip — the epoch itself, and an
+    // ISO instant — and tick.err recorded the offending *type*, never the value, so which
+    // one arrived on 2026-09-14 is not knowable from here. Date.parse reads the ISO form
+    // and answers NaN for a bare epoch, so the digits case is tested for first.
+    const text = value.trim();
+    const at = /^\d+$/.test(text) ? Number(text) : Date.parse(text);
+    return Number.isFinite(at) ? at : null;
+  });
+
+/**
  * teamclaude reports each quota bucket as a used-fraction (0..1) plus an epoch-ms
  * reset. A null bucket means no window is currently open, i.e. nothing used yet.
  */
 const bucketFields = z.object({
   unified5h: z.number().nullable(),
-  unified5hReset: z.number().nullable(),
+  unified5hReset: epochMs,
   unified7d: z.number().nullable(),
-  unified7dReset: z.number().nullable(),
+  unified7dReset: epochMs,
   unified7dFable: z.number().nullable(),
-  unified7dFableReset: z.number().nullable(),
+  unified7dFableReset: epochMs,
   unifiedStatus: z.string().nullable().default(null),
 });
 
@@ -34,8 +67,8 @@ const accountShape = z.object({
   disabled: z.boolean(),
   quota: bucketFields,
   usage: z.object({ lastUsed: z.string().nullable().default(null) }).default({ lastUsed: null }),
-  rateLimitedUntil: z.number().nullable(),
-  pausedUntil: z.number().nullable(),
+  rateLimitedUntil: epochMs,
+  pausedUntil: epochMs,
 });
 
 /**
