@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, fullReason, type Decision } from './decide.ts';
 import { isOnboarding, readReport, resumeCycle, runCycle, type CycleReport } from './cycle.ts';
-import { PaneBusy, runnerState } from './orca.ts';
+import { PaneBusy, runnerIsPresent } from './orca.ts';
 import { readAsks } from './asks.ts';
 import { nudgeIfNeglected, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
@@ -187,7 +187,7 @@ const reconcileLateReports = (now: number): number => {
  */
 const runnerStillThere = async (program: string): Promise<boolean | undefined> => {
   try {
-    return (await runnerState(program)) !== 'gone';
+    return await runnerIsPresent(program);
   } catch (error) {
     console.error(
       `${program}: could not read its runner's state (${explain(error)}) — ` +

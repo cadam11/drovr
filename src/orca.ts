@@ -207,6 +207,23 @@ export const agentStateFrom = (show: unknown, idle: unknown, exit: unknown = LIV
   return idleSatisfied(idle) ? 'idle' : 'working';
 };
 
+/**
+ * Whether a terminal still holds a runner at all — `agentStateFrom` without the idle
+ * probe. Both callers that ask only this (`decide()`'s leftover gate via state.ts, and
+ * the tick) compare against `gone` and throw the idle/working distinction away, so on a
+ * working claude they were paying `IDLE_PROBE_MS` for an answer neither reads. That is
+ * every `drovr watch` frame, and a frame is redrawn on every keystroke.
+ *
+ * `blocked` is present: a runner waiting on Craig is a held pane, not an empty one.
+ * The exit probe stays — `show` keeps naming a claude whose pty has ended, and treating
+ * that as present is what refused a program every tick.
+ */
+export const presentFrom = (show: unknown, exit: unknown = LIVE_EXIT_PROBE): boolean => {
+  const occupancy = occupancyFrom(show);
+  if (occupancy !== 'occupied') return occupancy !== 'gone';
+  return !terminalExited(exit);
+};
+
 const SETTLED: AgentState[] = ['idle', 'gone'];
 
 /**
@@ -348,6 +365,15 @@ export const runnerTerminal = async (program: string): Promise<string | null> =>
 export const runnerState = async (program: string): Promise<AgentState> => {
   const handle = await runnerTerminal(program);
   return handle === null ? 'gone' : agentState(handle);
+};
+
+/** `runnerState(program) !== 'gone'`, for the callers that only ever asked that. See `presentFrom`. */
+export const runnerIsPresent = async (program: string): Promise<boolean> => {
+  const handle = await runnerTerminal(program);
+  if (handle === null) return false;
+  const show = await showTerminal(handle);
+  if (occupancyFrom(show) !== 'occupied') return presentFrom(show);
+  return presentFrom(show, await probeExit(handle));
 };
 
 export const runnerAddress = async (program: string): Promise<PaneAddress> => {

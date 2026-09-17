@@ -6,7 +6,7 @@ import {
   chargeForRunning, estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles,
   snapshot, spentSince, type CycleRecord,
 } from './ledger.ts';
-import { aiceBaseUrl, readPreview, runnerState } from './orca.ts';
+import { aiceBaseUrl, readPreview, runnerIsPresent } from './orca.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import type { Preview } from './preview.ts';
@@ -290,6 +290,24 @@ export const buildState = (input: StateInput): DrovrState => {
 };
 
 /**
+ * The subprocess half of a frame: one teamclaude read plus orca per program, ~600ms at
+ * Craig's configuration and the whole of what made `drovr watch` sluggish — a frame is
+ * redrawn on every keystroke, and each one re-probed. Held for as long as its caller
+ * says it may be (`probeMaxAgeMs`), on the same reasoning as orca.ts's `baseUrlCache`
+ * one layer down. The default of 0 means every existing caller — the tick, `drovr
+ * status` — probes fresh and is unaffected.
+ */
+type Probes = {
+  at: number;
+  status: TeamclaudeStatus;
+  previews: Map<string, Preview>;
+  runners: Map<string, boolean>;
+  warnings: string[];
+};
+
+let lastProbes: Probes | null = null;
+
+/**
  * The only I/O. Previews are read concurrently and never allowed to reject.
  *
  * `onWarning` exists because readPreview's own failures are surfaced, not logged
@@ -302,22 +320,35 @@ export const buildState = (input: StateInput): DrovrState => {
  */
 export const collectState = async (
   onWarning?: (message: string) => void,
+  probeMaxAgeMs = 0,
 ): Promise<DrovrState> => {
   const p = paths();
   const now = Date.now();
-  const status = await readStatus();
   const control = readControl(p.control);
   const cycles = readCycles(p.cycles);
   const running = inFlight(cycles, now, control.maxCycleHours);
 
-  const previews = new Map<string, Preview>();
+  // Everything below this line is read fresh every call; only the subprocess half is
+  // ever reused. So a keystroke redraw still sees the control file it just wrote.
+  const reused = lastProbes !== null && now - lastProbes.at < probeMaxAgeMs ? lastProbes : null;
+  for (const warning of reused?.warnings ?? []) onWarning?.(warning);
+
+  const status = reused?.status ?? (await readStatus());
+  const previews = new Map<string, Preview>(reused?.previews);
+  // Kept as well as reported, so a reused probe replays the same diagnostics rather than
+  // letting a live preview warning blink out of the frame between probes.
+  const warnings: string[] = [];
+  const warn = (message: string): void => {
+    warnings.push(message);
+    onWarning?.(message);
+  };
   const asksUrls = new Map<string, string>();
   const locks = new Map<string, number>();
   // Whether each program's runner is still present, which decide() needs to see a
   // leftover pane. Gathered here rather than left to tick because every renderer runs
   // decide() itself: a guard only the tick passes shows GO on four surfaces for a
   // program the tick will refuse, which is exactly the drift CLAUDE.md warns about.
-  const runners = new Map<string, boolean>();
+  const runners = new Map<string, boolean>(reused?.runners);
 
   for (const program of control.programs) {
     const pid = holder(p.programLock(program.name));
@@ -329,20 +360,25 @@ export const collectState = async (
       const base = await aiceBaseUrl(program);
       if (base !== null) asksUrls.set(program.name, `${base}/${program.aice.asksPage}`);
     }
+    // aiceBaseUrl above keeps its own cache and is a map lookup after the first frame,
+    // so the asks links stay fresh for a program added mid-session either way.
+    if (reused !== null) return;
     if (program.runner === 'orca') {
       // Left unset on an error, not false: "no agent" and "no answer" are different facts
       // and only the first may refuse a cycle.
-      const state = await runnerState(program.name).catch((error: unknown) => {
-        onWarning?.(`could not read ${program.name}'s runner state: ${error instanceof Error ? error.message : String(error)}`);
+      const present = await runnerIsPresent(program.name).catch((error: unknown) => {
+        warn(`could not read ${program.name}'s runner state: ${error instanceof Error ? error.message : String(error)}`);
         return null;
       });
-      if (state !== null) runners.set(program.name, state !== 'gone');
+      if (present !== null) runners.set(program.name, present);
     }
     if (!running.some((cycle) => cycle.program === program.name)) return;
     const { preview, warning } = await readPreview(program.name);
     if (preview !== null) previews.set(program.name, preview);
-    if (warning !== null) onWarning?.(warning);
+    if (warning !== null) warn(warning);
   }));
+
+  if (reused === null) lastProbes = { at: now, status, previews, runners, warnings };
 
   const service = serviceState();
   return buildState({

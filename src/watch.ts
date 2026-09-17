@@ -691,7 +691,10 @@ const handle = async (
     return { message: '', redraw: true };
   }
   if (view.help) return { message: '', redraw: false };
-  if (key === 'r') return { message: 'refreshed', redraw: true };
+  // The one key that bypasses the probe window, because it is the only one whose whole
+  // purpose is "go and look again" — every other redraw is happy with probes up to an
+  // interval old, which is what makes a keystroke cost nothing.
+  if (key === 'r') return { message: 'refreshed', redraw: true, fresh: true };
   if (key === 'm') return cycleMode(control, settings.mode);
   if (key === 'p') return cyclePause(control, settings.pauseUntil);
   if (key === 'P') return extendPause(control, settings.pauseUntil);
@@ -786,13 +789,18 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
    * each call closes over its own `view` write, there is no shared collector to leak
    * into or clobber. Reset before the call so a since-fixed preview stops complaining.
    */
-  const runDraw = async (): Promise<void> => {
+  const runDraw = async (fresh: boolean): Promise<void> => {
     const rows = Math.max(6, process.stdout.rows ?? 40);
     const columns = process.stdout.columns ?? 100;
     view.previewWarning = null;
+    // The probes may be as old as one interval: a keystroke redraw then costs no
+    // subprocess at all, while the interval's own draw always falls outside the window
+    // (it fires an interval after the probe *started*) and refreshes. Everything the
+    // frame reads from disk — mode, pause, priorities — is re-read regardless, so a key
+    // that writes control.json still shows its effect in the very next frame.
     const state = await collectState((warning) => {
       view.previewWarning = warning;
-    });
+    }, fresh ? 0 : Math.max(2, intervalSeconds) * 1000);
     lastState = state;
     // frame() owns the clamp now, and clamps to the same rows - 1 this used to slice
     // to. Slicing here again would be a second budget to keep in step with the first,
@@ -811,8 +819,11 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
   // wait its turn, so two draws can never paint over each other and a stale one can never
   // land after a fresher one just because its I/O happened to finish later.
   let pending: Promise<void> = Promise.resolve();
-  const draw = (): Promise<void> => {
-    const next = pending.then(runDraw, runDraw);
+  // `fresh` is wrapped rather than passed as `.then(runDraw, runDraw)`: that hands the
+  // settled value through, so a rejected predecessor would arrive as a truthy Error and
+  // silently force a probe on every draw after the first failure.
+  const draw = (fresh = false): Promise<void> => {
+    const next = pending.then(() => runDraw(fresh), () => runDraw(fresh));
     pending = next;
     return next;
   };
@@ -835,7 +846,7 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
       handle(key, view, programs, lastState)
         .then((action) => {
           view.message = action.message;
-          if (action.redraw) draw().catch(die);
+          if (action.redraw) draw(action.fresh === true).catch(die);
         })
         .catch(die);
     } catch (error) {

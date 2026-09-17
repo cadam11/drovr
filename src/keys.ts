@@ -8,7 +8,13 @@ const PAUSES = [
   { label: '24h', ms: 86_400_000 },
 ];
 
-export type Action = { message: string; redraw: boolean; quit?: boolean };
+export type Action = {
+  message: string;
+  redraw: boolean;
+  quit?: boolean;
+  /** Redraw past state.ts's probe window rather than reusing it — `r` alone. */
+  fresh?: boolean;
+};
 
 /**
  * Every edit goes through the control file rather than in-memory state: launchd

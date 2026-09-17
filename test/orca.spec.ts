@@ -4,6 +4,7 @@ import {
   adoptHandle,
   agentStateFrom,
   isSettled,
+  presentFrom,
   previewText,
   shellCommand,
   terminalAddress,
@@ -211,4 +212,37 @@ test('adoptHandle finds the restored terminal by tab id, because handles do not 
   };
   assert.equal(adoptHandle(list, 'tab-drovr'), 'term_5b2e');
   assert.equal(adoptHandle(list, 'tab-gone'), null);
+});
+
+/**
+ * `presentFrom` is what state.ts and tick.ts actually needed all along, and the only
+ * reason it exists separately is that the idle probe it skips costs its full 1500ms
+ * ceiling on a working claude — paid on every watch frame for a distinction neither
+ * caller reads. It must agree with `agentStateFrom` on every input about presence, or
+ * decide()'s leftover gate and the frame beside it disagree about the same pane.
+ */
+test('presentFrom agrees with agentStateFrom about presence, without the idle probe', () => {
+  const cases: [string, unknown, unknown][] = [
+    ['a live claude, working or idle', claudeShown, undefined],
+    ['a claude whose pty has exited', claudeShown, exited],
+    ['a bare shell', shellShown, undefined],
+    ['a stale handle', stale, undefined],
+    ['a claude blocked on a human-only prompt', shown({ agentIdentity: 'claude', agentWait: { kind: 'permission' } }), undefined],
+  ];
+  for (const [what, show, exit] of cases) {
+    // The idle probe is the input presentFrom does not take; agentStateFrom is asked
+    // both ways precisely to show the answer never turned on it.
+    for (const idle of [idleSatisfied, idleTimedOut]) {
+      const expected = agentStateFrom(show, idle, exit ?? { ok: false, error: { code: 'timeout' } }) !== 'gone';
+      assert.equal(presentFrom(show, exit), expected, what);
+    }
+  }
+});
+
+test('presentFrom counts a blocked runner as present — a held pane, not an empty one', () => {
+  assert.equal(presentFrom(shown({ agentIdentity: 'claude', agentWait: { kind: 'permission' } })), true);
+});
+
+test('presentFrom still throws on a refusal that is not a timeout, rather than reading it as absent', () => {
+  assert.throws(() => presentFrom(claudeShown, stale), /terminal_handle_stale/);
 });
