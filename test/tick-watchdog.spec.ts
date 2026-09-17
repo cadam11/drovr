@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { releaseOverrunningTick } from '../src/tick.ts';
+import { clearTickFailure, failedTickText, recordTickFailure, releaseOverrunningTick } from '../src/tick.ts';
 import { acquire, holder } from '../src/lock.ts';
 
 const home = (control: unknown): { lock: string; control: string } => {
@@ -72,4 +72,61 @@ test('releasing an already-free lock is quiet', async () => {
   const paths = home({ mode: 'normal', phoneNumber: null, programs: [] });
   await releaseOverrunningTick(paths.lock, paths.control, 8 * 60_000);
   assert.equal(holder(paths.lock), null);
+});
+
+/**
+ * The failure alert's whole job is to be sent once. Measured 2026-09-14: five consecutive
+ * passes died and drovr decided nothing for an hour — but launchd fires every ten minutes,
+ * so alerting per tick would have been six texts an hour for as long as it lasted.
+ */
+const marker = (): string => join(mkdtempSync(join(tmpdir(), 'drovr-fail-')), 'tick-failure.json');
+
+test('only the failure that begins an episode alerts; the rest are silent', () => {
+  const path = marker();
+  const boom = new Error('teamclaude status did not match expected shape: [');
+  assert.equal(recordTickFailure(path, Date.parse('2026-09-14T17:38:50Z'), boom), true);
+  assert.equal(recordTickFailure(path, Date.parse('2026-09-14T17:48:50Z'), boom), false);
+  assert.equal(recordTickFailure(path, Date.parse('2026-09-14T17:58:50Z'), boom), false);
+});
+
+test('a completed pass ends the episode, so the next outage alerts again', () => {
+  const path = marker();
+  assert.equal(recordTickFailure(path, Date.now(), new Error('first outage')), true);
+  clearTickFailure(path);
+  assert.equal(existsSync(path), false);
+  assert.equal(recordTickFailure(path, Date.now(), new Error('second outage')), true);
+});
+
+test('clearing an episode that never started is not an error — most passes clear nothing', () => {
+  assert.doesNotThrow(() => clearTickFailure(marker()));
+});
+
+test('the marker records when the episode began and why, for the pass that finds it', () => {
+  const path = marker();
+  recordTickFailure(path, Date.parse('2026-09-14T17:38:50Z'), new Error('teamclaude status did not match'));
+  const noted = JSON.parse(readFileSync(path, 'utf8'));
+  assert.equal(noted.at, '2026-09-14T17:38:50.000Z');
+  assert.match(noted.reason, /teamclaude status did not match/);
+});
+
+/**
+ * A lock screen shows one line. The status-shape failure that caused the outage carries a
+ * multi-line JSON body, which would bury the one command that shows the rest.
+ */
+test('the text is one line and names the command that shows the rest', () => {
+  const shapeError = new Error(
+    'teamclaude status did not match expected shape: [\n  {\n    "code": "invalid_type",\n' +
+      '    "path": [ "accounts", 2, "pausedUntil" ]\n  }\n]',
+  );
+  const text = failedTickText(shapeError);
+  assert.equal(text.includes('\n'), false);
+  assert.match(text, /no program can start/);
+  assert.match(text, /teamclaude status did not match expected shape/);
+  assert.match(text, /tail -40 ~\/\.drovr\/logs\/tick\.err/);
+  assert.equal(text.includes('"code"'), false);
+});
+
+test('the text survives an error whose message is enormous, or not an Error at all', () => {
+  assert.ok(failedTickText(new Error('x'.repeat(5_000))).length < 260);
+  assert.match(failedTickText('teamclaude is not on PATH'), /teamclaude is not on PATH/);
 });

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { existsSync, openSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
@@ -278,6 +278,72 @@ export const releaseOverrunningTick = async (
   return message;
 };
 
+/**
+ * What a failed pass says on a lock screen. One line, because that is all a lock screen
+ * gives: what stopped, what it costs, and the literal command that shows the rest. A
+ * status-shape failure's own message is multi-line JSON, so only its first line survives.
+ */
+export const failedTickText = (error: unknown): string => {
+  const [first = ''] = explain(error).split('\n');
+  return (
+    `drovr: a tick failed, so no program can start until one completes — ${first.slice(0, 140)} ` +
+    'See it: tail -40 ~/.drovr/logs/tick.err'
+  );
+};
+
+/**
+ * Writes the episode marker, and answers whether this failure *began* the episode.
+ *
+ * Once per episode, never once per tick: launchd fires every ten minutes, so an outage
+ * lasting an afternoon would otherwise be an afternoon of texts. The marker is removed by
+ * the next pass that completes — the same event that stamps last-tick.json — so the next
+ * outage alerts again.
+ */
+export const recordTickFailure = (markerPath: string, at: number, error: unknown): boolean => {
+  if (existsSync(markerPath)) return false;
+  const noted = { at: new Date(at).toISOString(), reason: explain(error) };
+  writeFileSync(markerPath, `${JSON.stringify(noted)}\n`, 'utf8');
+  return true;
+};
+
+export const clearTickFailure = (markerPath: string): void => rmSync(markerPath, { force: true });
+
+/**
+ * `tick()` plus the alert a failed pass owes Craig. Measured 2026-09-14: five consecutive
+ * passes died on a teamclaude payload and drovr decided nothing for an hour, the only
+ * trace a line in tick.err that nobody reads until they already suspect a problem. The
+ * watchdog covers a pass that runs too *long*; nothing covered one that does not run.
+ *
+ * Wrapped around `tick()` rather than caught inside it so the tick lock is already
+ * released before the send: textCraig is bounded at 30s, and holding the lock across it
+ * would make every alert delay the next firing. Rethrown, so the exit code still fails
+ * and tick.err still gets the stack — this reports the failure, it does not absorb it.
+ */
+export const runTick = async (): Promise<void> => {
+  const p = paths();
+  try {
+    await tick();
+  } catch (error) {
+    if (recordTickFailure(p.tickFailure, Date.now(), error)) {
+      try {
+        const control = readControl(p.control);
+        const sent = await textCraig(control.phoneNumber, failedTickText(error), control.originationNumber);
+        // "accepted", never "delivered": SNS returns a MessageId for texts that fail a
+        // minute later. The point of the line is that tick.err records drovr having tried
+        // to speak — the failure this exists for is the one nothing said anything about.
+        console.error(
+          sent.sent
+            ? `alerted the failed tick: accepted via ${sent.via}.`
+            : 'could not alert the failed tick: no phoneNumber in control.json.',
+        );
+      } catch (alertError) {
+        console.error(`could not alert the failed tick: ${explain(alertError)}`);
+      }
+    }
+    throw error;
+  }
+};
+
 export const tick = async (): Promise<void> => {
   const p = paths();
   ensureDirs();
@@ -402,8 +468,11 @@ export const tick = async (): Promise<void> => {
       console.error(`usage sample not recorded: ${explain(error)}. Admission is unaffected.`);
     }
 
-    // A completed pass, whether or not any program was enabled to decide about.
+    // A completed pass, whether or not any program was enabled to decide about. Clearing
+    // the failure marker here and nowhere else is what makes "once per episode" mean an
+    // episode: a tick that returns early because the lock is busy has completed nothing.
     stampTick(p.lastTick, Date.now());
+    clearTickFailure(p.tickFailure);
   } finally {
     clearTimeout(watchdog);
     release(p.tickLock);

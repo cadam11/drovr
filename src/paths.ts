@@ -14,6 +14,8 @@ export const paths = () => {
     /** Sampled per tick: the only record of how much of the pool Craig himself takes. */
     usage: join(base, 'usage.jsonl'),
     lastTick: join(base, 'last-tick.json'),
+    /** Present only while ticks are failing: the episode marker that keeps the alert to one text. */
+    tickFailure: join(base, 'tick-failure.json'),
     tickLock: join(base, 'tick.lock'),
     programLock: (program: string) => join(base, 'programs', program, 'cycle.lock'),
     logs: join(base, 'logs'),

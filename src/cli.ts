@@ -43,7 +43,7 @@ import {
   serviceState,
 } from './service.ts';
 import { readStatus } from './teamclaude.ts';
-import { inFlightCycles, launchDetached, runProgramCycle, tick } from './tick.ts';
+import { inFlightCycles, launchDetached, runProgramCycle, runTick } from './tick.ts';
 import { watch } from './watch.ts';
 
 const p = paths();
@@ -705,7 +705,7 @@ const main = async (argv: string[]): Promise<void> => {
   if (command === 'init') return init();
   if (command === 'tick') {
     stampConsole();
-    return tick();
+    return runTick();
   }
   if (command === 'run-cycle') {
     const name = rest[0];
