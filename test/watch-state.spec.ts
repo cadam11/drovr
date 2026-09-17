@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildState } from '../src/state.ts';
-import { frame, frameWithHits, keybarLines, untilLabel, visibleLength } from '../src/watch.ts';
+import {
+  childReason,
+  frame,
+  frameWithHits,
+  keybarLines,
+  untilLabel,
+  visibleLength,
+} from '../src/watch.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
 
 const fixture = (overrides: Record<string, unknown> = {}) => buildState({
@@ -378,4 +385,26 @@ test('untilLabel counts down to a reset the way teamclaude does', () => {
   assert.equal(untilLabel(at(66 * HOUR), NOW), '2d18h');
   assert.equal(untilLabel(at(-HOUR), NOW), 'now');
   assert.equal(untilLabel(null, NOW), '—');
+});
+
+/**
+ * The message line is one row, so which line of a multi-line subprocess failure it shows
+ * is the whole of what the reader gets. execFile's own preamble only restates the call.
+ */
+test('childReason names what the child said, not the call that hit it', () => {
+  const execFileError = new Error(
+    'Command failed: teamclaude status --json\n' +
+      'Proxy at localhost:3456 did not answer status within 5000ms.\n' +
+      'The process may be overloaded or its event loop may be stalled.\n',
+  );
+  assert.equal(childReason(execFileError), 'Proxy at localhost:3456 did not answer status within 5000ms.');
+});
+
+test('childReason falls back to the preamble when the child said nothing else', () => {
+  assert.equal(childReason(new Error('Command failed: orca terminal show')), 'Command failed: orca terminal show');
+});
+
+test('childReason survives a thrown non-Error and an empty message', () => {
+  assert.equal(childReason('orca is not on PATH'), 'orca is not on PATH');
+  assert.equal(childReason(new Error('')), 'unknown error');
 });

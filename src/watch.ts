@@ -749,6 +749,18 @@ const MOUSE_EVENTS = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
 /** Wheel bursts arrive as one chunk of many reports; more than this many is a flick. */
 const MOUSE_EVENTS_PER_CHUNK = 8;
 
+/**
+ * The one line of a failed subprocess worth a single row of the frame. execFile leads with
+ * its own `Command failed: <argv>` — which only restates the call — while the child's next
+ * line is the one that says what went wrong and is worth reading ("Proxy at localhost:3456
+ * did not answer status within 5000ms"). Name the problem, not the call that hit it.
+ */
+export const childReason = (error: unknown): string => {
+  const text = error instanceof Error ? error.message : String(error);
+  const lines = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+  return lines.find((line) => !line.startsWith('Command failed:')) ?? lines[0] ?? 'unknown error';
+};
+
 /** Runs until interrupted; the terminal is restored on every exit path. */
 export const watch = async (intervalSeconds: number): Promise<void> => {
   const view: ViewState = { selected: 0, message: '', confirmStop: false, confirmStart: false, help: false, previewWarning: null };
@@ -782,25 +794,12 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
    * fills the terminal scrolls the top away one row per redraw. Content is clamped to
    * the terminal height so it can never scroll at all.
    *
-   * readPreview's own failures are returned, not logged (orca.ts), specifically so
-   * nothing here has to intercept a global to keep them off the alternate screen — the
-   * warning is threaded straight into view.previewWarning via this call's own callback,
-   * which is fine even with several draws' collectState calls genuinely overlapping:
-   * each call closes over its own `view` write, there is no shared collector to leak
-   * into or clobber. Reset before the call so a since-fixed preview stops complaining.
+   * Takes the state rather than fetching it, so the one path that has no fresh state to
+   * draw — a refresh that threw — can still repaint the last good one with its message.
    */
-  const runDraw = async (fresh: boolean): Promise<void> => {
+  const paint = (state: DrovrState): void => {
     const rows = Math.max(6, process.stdout.rows ?? 40);
     const columns = process.stdout.columns ?? 100;
-    view.previewWarning = null;
-    // The probes may be as old as one interval: a keystroke redraw then costs no
-    // subprocess at all, while the interval's own draw always falls outside the window
-    // (it fires an interval after the probe *started*) and refreshes. Everything the
-    // frame reads from disk — mode, pause, priorities — is re-read regardless, so a key
-    // that writes control.json still shows its effect in the very next frame.
-    const state = await collectState((warning) => {
-      view.previewWarning = warning;
-    }, fresh ? 0 : Math.max(2, intervalSeconds) * 1000);
     lastState = state;
     // frame() owns the clamp now, and clamps to the same rows - 1 this used to slice
     // to. Slicing here again would be a second budget to keep in step with the first,
@@ -811,6 +810,42 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
     lastNarrow = lastWidth < 72;
     const painted = text.split('\n').map((line) => `${line}${ESC}K`).join('\r\n');
     process.stdout.write(`${ESC}H${painted}${ESC}0J`);
+  };
+
+  /**
+   * readPreview's own failures are returned, not logged (orca.ts), specifically so
+   * nothing here has to intercept a global to keep them off the alternate screen — the
+   * warning is threaded straight into view.previewWarning via this call's own callback,
+   * which is fine even with several draws' collectState calls genuinely overlapping:
+   * each call closes over its own `view` write, there is no shared collector to leak
+   * into or clobber. Reset before the call so a since-fixed preview stops complaining.
+   */
+  const runDraw = async (fresh: boolean): Promise<void> => {
+    view.previewWarning = null;
+    // The probes may be as old as one interval: a keystroke redraw then costs no
+    // subprocess at all, while the interval's own draw always falls outside the window
+    // (it fires an interval after the probe *started*) and refreshes. Everything the
+    // frame reads from disk — mode, pause, priorities — is re-read regardless, so a key
+    // that writes control.json still shows its effect in the very next frame.
+    paint(await collectState((warning) => {
+      view.previewWarning = warning;
+    }, fresh ? 0 : Math.max(2, intervalSeconds) * 1000));
+  };
+
+  /**
+   * A failed refresh must not end the session. collectState shells out to teamclaude and
+   * orca, and both fail transiently — measured 2026-09-17, teamclaude's proxy missing its
+   * own 5s status budget threw out of `readStatus` and took a live watch down with it,
+   * which is a supervisor losing its display over someone else's hiccup. Keep the last
+   * good frame, say what happened on the message line, and let the next draw recover.
+   *
+   * Before the first frame there is nothing to keep, so that one is still fatal: a watch
+   * that cannot draw at all has nothing to say and no way to say it.
+   */
+  const drawFailed = (error: unknown): void => {
+    if (lastState === null) return die(error);
+    view.message = `could not refresh: ${childReason(error)}`;
+    paint(lastState);
   };
 
   // draw() is called fire-and-forget from three independent places (the interval, the
@@ -835,7 +870,7 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
   process.on('SIGINT', leave);
   process.on('uncaughtException', die);
   process.stdout.on('resize', () => {
-    draw().catch(die);
+    draw().catch(drawFailed);
   });
 
   const onKey = (key: string): void => {
@@ -846,12 +881,12 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
       handle(key, view, programs, lastState)
         .then((action) => {
           view.message = action.message;
-          if (action.redraw) draw(action.fresh === true).catch(die);
+          if (action.redraw) draw(action.fresh === true).catch(drawFailed);
         })
         .catch(die);
     } catch (error) {
       view.message = error instanceof Error ? error.message : String(error);
-      draw().catch(die);
+      draw().catch(drawFailed);
     }
   };
 
@@ -870,7 +905,7 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
       view.selected = Math.max(0, Math.min(last, index));
       view.message = '';
     }
-    draw().catch(die);
+    draw().catch(drawFailed);
   };
 
   const onMouse = (button: number, column: number, row: number): void => {
@@ -925,9 +960,9 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
 
   // Unhandled here would propagate to main()'s own .catch in cli.ts, which never
   // calls restore() — the cursor would stay hidden and the alt screen never left.
-  await draw().catch(die);
+  await draw().catch(drawFailed);
   // The interval itself keeps the event loop alive; unref-ing it would exit at once.
   setInterval(() => {
-    draw().catch(die);
+    draw().catch(drawFailed);
   }, Math.max(2, intervalSeconds) * 1000);
 };
