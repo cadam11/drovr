@@ -541,9 +541,9 @@ export const startCycleAgent = async (input: {
  * sends while the session is not settled, which is what makes it retryable: the next
  * tick finds the agent idle and releases it then.
  */
-export const releaseAgent = async (handle: string): Promise<boolean> => {
+export const releaseAgent = async (handle: string, settleAttempts = 10): Promise<boolean> => {
   let state = await agentState(handle);
-  for (let attempt = 0; attempt < 10 && !isSettled(state); attempt += 1) {
+  for (let attempt = 0; attempt < settleAttempts && !isSettled(state); attempt += 1) {
     await sleep(3_000);
     state = await agentState(handle);
   }
@@ -564,11 +564,15 @@ export const releaseAgent = async (handle: string): Promise<boolean> => {
   return false;
 };
 
-/** Release by program: true when nothing is left holding a terminal for it. */
-export const releaseRunner = async (program: string): Promise<boolean> => {
+/**
+ * Release by program: true when nothing is left holding a terminal for it. A caller that
+ * must return in seconds (the tick, a keystroke) passes `settleAttempts = 0` to refuse a
+ * busy runner at once instead of waiting half a minute for it to settle.
+ */
+export const releaseRunner = async (program: string, settleAttempts = 10): Promise<boolean> => {
   const handle = await runnerTerminal(program);
   if (handle === null) return true;
-  const released = await releaseAgent(handle);
+  const released = await releaseAgent(handle, settleAttempts);
   if (released) forgetTerminal(program);
   return released;
 };

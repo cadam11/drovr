@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { type Allocation, type BucketName } from './allocation.ts';
 import { byPriority, readControl, type Program } from './control.ts';
-import { interruptRunner } from './orca.ts';
+import { interruptRunner, releaseRunner } from './orca.ts';
 import {
   adjustConcurrency,
   cycleMode,
@@ -151,6 +151,7 @@ const KEYS: { label: string; key: string | null }[] = [
   { label: 'o asks', key: 'o' },
   { label: 's start', key: 's' },
   { label: 'x interrupt', key: 'x' },
+  { label: 'l release', key: 'l' },
   { label: '? help', key: '?' },
   { label: 'q quit', key: 'q' },
 ];
@@ -239,7 +240,8 @@ const helpLines = (): string[] => [
   '    m      mode              < >    your reserve',
   '    p P    pause / extend    + -    concurrency cap',
   '    t      tick now          r      redraw',
-  '    x      interrupt cycle   q      quit',
+  '    x      interrupt cycle   l      release leftover runner',
+  '    q      quit',
   `  ${dim('Mouse: click a program to select it, its asks link to open it, a key below to run it.')}`,
   '',
   // A documented floor, because the frame degrades quietly below it rather than
@@ -653,6 +655,31 @@ const stopCycle = async (program: Program): Promise<Action> => {
   }
 };
 
+/**
+ * The TUI twin of `drovr release`, with the same refusal: only a settled runner is sent
+ * `/exit`, so one still working or on a dialog is reported and left alone. No y-confirm
+ * for that reason. Refused outright while a cycle is in flight — that runner is the
+ * cycle's, and releasing it would end the cycle.
+ */
+const releaseLeftover = async (program: Program): Promise<Action> => {
+  if (program.runner !== 'orca') return { message: `${program.name} runs headless — no runner to release`, redraw: false };
+  if (holder(paths().programLock(program.name)) !== null) {
+    return { message: `${program.name} has a cycle running — its runner is released when it reports`, redraw: false };
+  }
+  try {
+    if (await releaseRunner(program.name, 0)) {
+      return { message: `released ${program.name}'s runner — the next tick can start a cycle`, redraw: true, fresh: true };
+    }
+    return {
+      message: `${program.name}'s runner is busy, so it was left alone — answer what it is waiting on, then press l again`,
+      redraw: false,
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { message: `could not release ${program.name}: ${detail}`, redraw: false };
+  }
+};
+
 const handle = async (
   key: string,
   view: ViewState,
@@ -725,6 +752,7 @@ const handle = async (
     const verb = selected.runner === 'orca' ? 'interrupt' : 'stop';
     return { message: `${verb} ${selected.name}? y to confirm, any other key to cancel`, redraw: true };
   }
+  if (key === 'l') return releaseLeftover(selected);
   if (key === 's') {
     const pid = holder(paths().programLock(selected.name));
     if (pid !== null) {
