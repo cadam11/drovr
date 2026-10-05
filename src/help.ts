@@ -185,7 +185,7 @@ export const COMMANDS: Command[] = [
   {
     name: 'notify',
     usage: 'drovr notify [message] [--json]',
-    summary: 'alert Craig now (Slack DM, SMS fallback), or send a test to prove the alert path works',
+    summary: 'alert Craig now (Slack, SMS fallback), or send a test to prove the alert path works',
     details: [
       'With no message, sends a canned test naming the host and time. With one, sends that text.',
       'Posts from the Drovr Slack app to slackChannel in control.json (a channel id, or a member',
