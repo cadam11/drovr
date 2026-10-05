@@ -473,8 +473,7 @@ const admissionLimits = (
   if (input.runnerPresent === true) {
     return hold(
       `its previous runner outlived its cycle and still holds its cycle terminal in Orca. ` +
-        `Run "drovr release ${program}" (or l in drovr watch) once it is settled, or open that ` +
-        'terminal and answer whatever it is waiting on',
+        `Once its tab shows a report and nothing running in the background, "drovr release ${program}"`,
       pool,
       null,
     );

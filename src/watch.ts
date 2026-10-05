@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { type Allocation, type BucketName } from './allocation.ts';
 import { byPriority, readControl, type Program } from './control.ts';
-import { interruptRunner, releaseRunner } from './orca.ts';
+import { interruptRunner, releaseLeftover as releaseIfSafe } from './orca.ts';
+import { lastCycleReported, readCycles } from './ledger.ts';
 import {
   adjustConcurrency,
   cycleMode,
@@ -240,7 +241,7 @@ const helpLines = (): string[] => [
   '    m      mode              < >    your reserve',
   '    p P    pause / extend    + -    concurrency cap',
   '    t      tick now          r      redraw',
-  '    x      interrupt cycle   l      release leftover runner',
+  '    x      interrupt cycle   l      release a finished runner',
   '    q      quit',
   `  ${dim('Mouse: click a program to select it, its asks link to open it, a key below to run it.')}`,
   '',
@@ -656,10 +657,11 @@ const stopCycle = async (program: Program): Promise<Action> => {
 };
 
 /**
- * The TUI twin of `drovr release`, with the same refusal: only a settled runner is sent
- * `/exit`, so one still working or on a dialog is reported and left alone. No y-confirm
- * for that reason. Refused outright while a cycle is in flight — that runner is the
- * cycle's, and releasing it would end the cycle.
+ * The tick's release on demand, by `leftoverAction`: an exited runner is closed, an idle
+ * one sent `/exit` only once its cycle reported. No y-confirm for that reason. A runner
+ * idle with no report may be mid-cycle over background work — relliq was, 2026-10-05 — so
+ * a keystroke never ends it; `drovr release` is the typed override. Refused outright while
+ * a cycle is in flight, since that runner is the cycle's.
  */
 const releaseLeftover = async (program: Program): Promise<Action> => {
   if (program.runner !== 'orca') return { message: `${program.name} runs headless — no runner to release`, redraw: false };
@@ -667,11 +669,14 @@ const releaseLeftover = async (program: Program): Promise<Action> => {
     return { message: `${program.name} has a cycle running — its runner is released when it reports`, redraw: false };
   }
   try {
-    if (await releaseRunner(program.name, 0)) {
+    const mine = readCycles(paths().cycles).filter((cycle) => cycle.program === program.name);
+    if (await releaseIfSafe(program.name, lastCycleReported(mine))) {
       return { message: `released ${program.name}'s runner — the next tick can start a cycle`, redraw: true, fresh: true };
     }
     return {
-      message: `${program.name}'s runner is busy, so it was left alone — answer what it is waiting on, then press l again`,
+      message:
+        `left ${program.name}'s runner alone — it is busy, its cycle never reported, or it already ` +
+        `ignored one /exit. Check its tab; "drovr release ${program.name}" overrides`,
       redraw: false,
     };
   } catch (error) {
