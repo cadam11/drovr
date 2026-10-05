@@ -263,7 +263,7 @@ const durationText = (ms: number): string =>
 const notifyOverrun = async (controlPath: string, message: string): Promise<void> => {
   try {
     const control = readControl(controlPath);
-    await textCraig(control.phoneNumber, message, control.originationNumber);
+    await textCraig(control, message);
   } catch (error) {
     console.error(`could not text the overrun: ${explain(error)}`);
   }
@@ -350,14 +350,14 @@ export const runTick = async (): Promise<void> => {
     if (recordTickFailure(p.tickFailure, Date.now(), error)) {
       try {
         const control = readControl(p.control);
-        const sent = await textCraig(control.phoneNumber, failedTickText(error), control.originationNumber);
+        const sent = await textCraig(control, failedTickText(error));
         // "accepted", never "delivered": SNS returns a MessageId for texts that fail a
         // minute later. The point of the line is that tick.err records drovr having tried
         // to speak — the failure this exists for is the one nothing said anything about.
         console.error(
           sent.sent
             ? `alerted the failed tick: accepted via ${sent.via}.`
-            : 'could not alert the failed tick: no phoneNumber in control.json.',
+            : 'could not alert the failed tick: neither slack nor SMS took it (see above).',
         );
       } catch (alertError) {
         console.error(`could not alert the failed tick: ${explain(alertError)}`);
@@ -435,8 +435,7 @@ export const tick = async (): Promise<void> => {
           askedAt: owed.at,
           now,
           afterMinutes: control.nudgeAfterMinutes,
-          phoneNumber: control.phoneNumber,
-          originationNumber: control.originationNumber,
+          to: control,
           asksUrl: null,
         });
       }
@@ -579,6 +578,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       stallNudgeMs: control.stallNudgeMinutes * 60_000,
       maxStallNudges: control.maxStallNudges,
       blockedAlertMs: control.blockedAlertMinutes * 60_000,
+      slackChannel: control.slackChannel,
       phoneNumber: control.phoneNumber,
       originationNumber: control.originationNumber,
     };
@@ -623,10 +623,9 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     if (stalled) {
       console.error(`cycle for ${name} stalled — recorded as stalled. ${outcome.detail}`);
       await textCraig(
-        control.phoneNumber,
+        control,
         `drovr: ${name} stalled — its runner idled through ${control.maxStallNudges} nudges ` +
           `without writing a report. Its pane is free and the next tick starts a fresh cycle.`,
-        control.originationNumber,
       );
     }
 

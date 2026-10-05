@@ -13,10 +13,27 @@ import { ensureDirs, paths } from './paths.ts';
  */
 const SEND_TIMEOUT_MS = 30_000;
 
+/** Reading the token is a local keychain lookup; anything slower than this is wedged. */
+const KEYCHAIN_TIMEOUT_MS = 5_000;
+
+/** The bot token lives in the login keychain, never in control.json, which the TUI rewrites. */
+const SLACK_KEYCHAIN_SERVICE = 'drovr-slack';
+
 export type SendResult = {
   sent: boolean;
+  /** Slack's message `ts`, or the SMS MessageId the delivery logs are searched by. */
   messageId: string | null;
-  via: 'sns' | 'end-user-messaging';
+  via: 'slack' | 'sns' | 'end-user-messaging';
+};
+
+/**
+ * Every field is required, never defaulted — see `textCraig` for why. A `Control`
+ * satisfies it, so callers pass the control object rather than picking fields.
+ */
+export type Recipient = {
+  slackChannel: string | null;
+  phoneNumber: string | null;
+  originationNumber: string | null;
 };
 
 /**
@@ -64,25 +81,44 @@ export const messageIdOf = (stdout: string): string | null => {
   }
 };
 
+const slackReplyShape = z.object({ ok: z.boolean(), error: z.string().optional(), ts: z.string().optional() });
+
+const slackToken = async (): Promise<string> => {
+  const { stdout } = await runBounded('security', ['find-generic-password', '-s', SLACK_KEYCHAIN_SERVICE, '-w'], {
+    timeoutMs: KEYCHAIN_TIMEOUT_MS,
+  });
+  const token = stdout.trim();
+  if (!token.startsWith('xoxb-')) throw new Error(`keychain item ${SLACK_KEYCHAIN_SERVICE} does not hold a bot token`);
+  return token;
+};
+
 /**
- * The one place drovr sends SMS. Deliberately on the *default* AWS profile: the
+ * A channel id posts there (the app must be a member); a user id lands in the app's DM.
+ * Unlike SMS, `ok` here is the real verdict: Slack has stored the message.
+ */
+const postToSlack = async (userId: string, message: string): Promise<string | null> => {
+  const response = await fetch('https://slack.com/api/chat.postMessage', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await slackToken()}`, 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({ channel: userId, text: message }),
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+  });
+  const reply = slackReplyShape.parse(await response.json());
+  if (!reply.ok) throw new Error(`slack refused the message: ${reply.error ?? 'no reason given'}`);
+  return reply.ts ?? null;
+};
+
+/**
+ * The fallback transport. Deliberately on the *default* AWS profile: the
  * named profiles here are SSO-backed and their sessions expire, which is precisely
  * the state an unattended overnight supervisor finds them in. The default profile
  * is a static IAM user, so it still works at 4am. Do not add --profile.
  *
- * `originationNumber` is required, not defaulted, for the same reason runBounded's
- * timeout is: it defaulted to null once, four of five call sites forgot it, and null
- * means "let SNS pick a number" — SNS picks one of sunnyt's, so drovr's alerts arrived
- * from the product's number and a reply would land in inbound topics sunnyt's cycles
- * poll. Measured 2026-08-27 on the blocked-asks nudge. Every caller passes
- * `control.originationNumber`; only a caller with no control file in reach may pass
- * a literal null, and must say why.
- *
- * Best-effort by design: a phone that cannot be reached must never take down a tick
- * or a cycle, so failure is logged and reported rather than thrown. `sent` means the
- * API accepted the message — never that a handset received it.
+ * A null `originationNumber` lets SNS pick a number, and it picks one of sunnyt's —
+ * measured 2026-08-27 — so replies land in inbound topics sunnyt's cycles poll.
+ * `sent` means the API accepted the message — never that a handset received it.
  */
-export const textCraig = async (
+const sendSms = async (
   phoneNumber: string | null,
   message: string,
   originationNumber: string | null,
@@ -102,6 +138,27 @@ export const textCraig = async (
     console.error(`could not text: ${detail}${hint}`);
     return { sent: false, messageId: null, via };
   }
+};
+
+/**
+ * The one place drovr alerts Craig: a Slack DM from the Drovr app, falling back to SMS
+ * when Slack is unconfigured or refuses. Every field of `to` is required for the same
+ * reason runBounded's timeout is: `originationNumber` defaulted to null once, four of
+ * five call sites forgot it, and SNS then sent from one of sunnyt's numbers.
+ *
+ * Best-effort by design: a phone that cannot be reached must never take down a tick or
+ * a cycle, so failure is logged and reported rather than thrown.
+ */
+export const textCraig = async (to: Recipient, message: string): Promise<SendResult> => {
+  if (to.slackChannel !== null) {
+    try {
+      return { sent: true, messageId: await postToSlack(to.slackChannel, message), via: 'slack' };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`could not reach slack, falling back to SMS: ${detail}`);
+    }
+  }
+  return sendSms(to.phoneNumber, message, to.originationNumber);
 };
 
 const sentShape = z.object({ askedAt: z.number(), sentAt: z.number() });
@@ -127,12 +184,11 @@ export const nudgeIfNeglected = async (input: {
   askedAt: number;
   now: number;
   afterMinutes: number;
-  phoneNumber: string | null;
-  originationNumber: string | null;
+  to: Recipient;
   asksUrl: string | null;
 }): Promise<boolean> => {
-  const { program, asks, askedAt, now, afterMinutes, phoneNumber, originationNumber, asksUrl } = input;
-  if (phoneNumber === null) return false;
+  const { program, asks, askedAt, now, afterMinutes, to, asksUrl } = input;
+  if (to.slackChannel === null && to.phoneNumber === null) return false;
   if (now - askedAt < afterMinutes * 60_000) return false;
   if (alreadyNudged(program, askedAt)) return false;
 
@@ -141,7 +197,7 @@ export const nudgeIfNeglected = async (input: {
     `drovr: ${program} has been blocked ${hours}h on ${asks} unanswered ask(s).` +
     (asksUrl === null ? '' : ` ${asksUrl}`);
 
-  if (!(await textCraig(phoneNumber, message, originationNumber)).sent) return false;
+  if (!(await textCraig(to, message)).sent) return false;
 
   ensureDirs(program);
   writeFileSync(sentPath(program), `${JSON.stringify({ askedAt, sentAt: now })}\n`, 'utf8');

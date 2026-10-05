@@ -88,6 +88,7 @@ export const verifyDelivery = async (
   now = Date.now(),
 ): Promise<DeliveryVerdict> => {
   if (!result.sent) return unverified('nothing was sent');
+  if (result.via === 'slack') return { state: 'delivered', reason: 'slack stored it in the channel' };
   if (result.messageId === null) return unverified('the send returned no MessageId to look up');
   if (result.via === 'end-user-messaging') {
     // Its events go to a configuration set's own destination, and drovr has no

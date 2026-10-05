@@ -835,14 +835,16 @@ const main = async (argv: string[]): Promise<void> => {
         ? wanted.join(' ')
         : `drovr: notification test from ${hostname()} at ${new Date().toISOString()}`;
 
-    if (control.phoneNumber === null) {
-      console.error('no phoneNumber in ~/.drovr/control.json, so drovr cannot text anyone.');
+    if (control.slackChannel === null && control.phoneNumber === null) {
+      console.error('neither slackChannel nor phoneNumber is set in ~/.drovr/control.json, so drovr cannot reach anyone.');
       process.exitCode = 1;
       return;
     }
 
-    const result = await textCraig(control.phoneNumber, message, control.originationNumber);
-    const from = control.originationNumber ?? 'whichever number SNS picks';
+    const result = await textCraig(control, message);
+    const slack = result.via === 'slack';
+    const to = slack ? `slack ${control.slackChannel}` : control.phoneNumber;
+    const from = slack ? 'the Drovr app' : (control.originationNumber ?? 'whichever number SNS picks');
 
     // Accepting a message and delivering it are different events, minutes apart. The
     // only place the difference shows up is the delivery log, so look rather than guess.
@@ -857,7 +859,7 @@ const main = async (argv: string[]): Promise<void> => {
             accepted: result.sent,
             delivery: verdict.state,
             reason: verdict.reason,
-            to: control.phoneNumber,
+            to,
             from,
             via: result.via,
             messageId: result.messageId,
@@ -877,7 +879,7 @@ const main = async (argv: string[]): Promise<void> => {
       process.exitCode = 1;
       return;
     }
-    console.log(`sent to ${control.phoneNumber} from ${from} via ${result.via}`);
+    console.log(`sent to ${to} from ${from} via ${result.via}`);
     console.log(`delivery: ${verdict.state} — ${verdict.reason}`);
     if (verdict.state === 'failed') process.exitCode = 1;
     return;

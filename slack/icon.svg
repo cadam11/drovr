@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#1d2433"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- base -->
+    <rect x="210" y="820" width="300" height="70" rx="18" fill="#f28c28"/>
+    <path d="M270 820 L300 730 L420 730 L450 820 Z" fill="#d9761a"/>
+    <!-- lower arm: shoulder (360,700) to elbow (470,380) -->
+    <line x1="360" y1="700" x2="470" y2="380" stroke="#f28c28" stroke-width="96"/>
+    <!-- upper arm: elbow (470,380) to wrist (760,300) -->
+    <line x1="470" y1="380" x2="760" y2="300" stroke="#f28c28" stroke-width="76"/>
+    <!-- hydraulic piston -->
+    <line x1="300" y1="760" x2="430" y2="470" stroke="#c9d1dc" stroke-width="22"/>
+    <!-- joints -->
+    <circle cx="360" cy="700" r="70" fill="#2e3a50" stroke="#f28c28" stroke-width="18"/>
+    <circle cx="360" cy="700" r="22" fill="#c9d1dc"/>
+    <circle cx="470" cy="380" r="62" fill="#2e3a50" stroke="#f28c28" stroke-width="18"/>
+    <circle cx="470" cy="380" r="20" fill="#c9d1dc"/>
+    <circle cx="760" cy="300" r="46" fill="#2e3a50" stroke="#f28c28" stroke-width="16"/>
+    <!-- gripper -->
+    <path d="M790 270 L860 220 L880 250 L830 300" fill="none" stroke="#c9d1dc" stroke-width="30"/>
+    <path d="M800 340 L870 380 L850 410 L790 380" fill="none" stroke="#c9d1dc" stroke-width="30"/>
+  </g>
+</svg>

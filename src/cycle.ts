@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { MAX_REST_DAYS, parseDuration, type Program } from './control.ts';
 import { ensureDirs, paths } from './paths.ts';
-import { textCraig } from './nudge.ts';
+import { textCraig, type Recipient } from './nudge.ts';
 import {
   openLine,
   PaneBusy,
@@ -210,7 +210,8 @@ export type CycleLimits = {
   maxStallNudges: number;
   /** How long a runner may sit on a dialog before Craig is asked to come and clear it. */
   blockedAlertMs: number;
-  /** Null disables the text; the log line is written either way. */
+  /** Null on both disables the alert; the log line is written either way. */
+  slackChannel: string | null;
   phoneNumber: string | null;
   /** drovr's own long code — without it SNS picks one of sunnyt's numbers (nudge.ts). */
   originationNumber: string | null;
@@ -359,7 +360,7 @@ const abandonStalled = async (program: string, nudges: number): Promise<CycleOut
 const askForHuman = async (
   program: string,
   blockedForMs: number,
-  limits: Pick<CycleLimits, 'phoneNumber' | 'originationNumber'>,
+  limits: Recipient,
 ): Promise<void> => {
   const minutes = Math.round(blockedForMs / 60_000);
   const address = await runnerAddress(program);
@@ -368,7 +369,7 @@ const askForHuman = async (
     `prompt or a trust question. Only you can clear it. Open ${address.where} in orca ` +
     `and answer it; the cycle carries on from there. It holds its terminal until you do.${openLine(address)}`;
   console.error(`${program}: blocked ${minutes}m on a dialog — asked Craig to clear it`);
-  await textCraig(limits.phoneNumber, message, limits.originationNumber).catch((error: unknown) => {
+  await textCraig(limits, message).catch((error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(`could not text about ${program} being blocked: ${detail}`);
   });

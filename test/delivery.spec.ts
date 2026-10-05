@@ -52,3 +52,14 @@ test('a send with no MessageId cannot be verified and says so', async () => {
   assert.equal(verdict.state, 'unknown');
   assert.match(verdict.reason, /no MessageId/);
 });
+
+test('a Slack send is delivered on the spot, with or without a ts', async () => {
+  // Slack's ok means the message is stored in the DM; there is no later event to wait for.
+  const verdict = await verifyDelivery({ sent: true, messageId: null, via: 'slack' }, 1_000);
+  assert.equal(verdict.state, 'delivered');
+});
+
+test('a Slack send that fell back and failed is not reported as delivered', async () => {
+  const verdict = await verifyDelivery({ sent: false, messageId: null, via: 'slack' }, 1_000);
+  assert.equal(verdict.state, 'unknown');
+});

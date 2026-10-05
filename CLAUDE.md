@@ -225,6 +225,14 @@ Written and type-checked, never seen to fire. Unproven, not done:
 
 ## Notifications
 
+**Slack first, SMS fallback.** `textCraig` posts to Craig's private channel from the **Drovr**
+Slack app (workspace getalonggang, manifest and icon in `slack/`) when `control.slackChannel` is
+set, reading the bot
+token from the login keychain (`security find-generic-password -s drovr-slack -w`), never from
+`control.json`. Slack answering `ok` is real delivery. Any Slack failure — no token, a refusal,
+a timeout — is logged and the alert goes out by SMS as below. The app is notify-only: no Socket
+Mode, no app-level token, nothing listening; Craig decided against an agent app on 2026-10-05.
+
 `drovr notify` texts Craig. It waits for the delivery status rather than reporting the exit
 code, because acceptance and delivery are different events a minute or so apart — `aws sns
 publish` returns a MessageId and exit 0 for messages that never leave.

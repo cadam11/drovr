@@ -169,6 +169,12 @@ const controlShape = z.object({
    * dedicated long code so they are recognisable and replies land somewhere sane.
    */
   originationNumber: z.string().nullable().default(null),
+  /**
+   * Where the Drovr Slack app posts alerts: a channel id (the private #drovr, with the
+   * app invited) or a member id for a DM. Slack first; SMS is the fallback. The bot token is in the login keychain
+   * (service `drovr-slack`), never here.
+   */
+  slackChannel: z.string().nullable().default(null),
   nudgeAfterMinutes: z.number().default(240),
   /** How long to leave a blocked program alone before trying again. */
   blockedBackoffMinutes: z.number().default(60),
