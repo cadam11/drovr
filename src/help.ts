@@ -331,9 +331,10 @@ export const COMMANDS: Command[] = [
     summary: "free a program's terminal when its runner outlived the cycle that started it",
     details: [
       'A runner that outlives its watch keeps its terminal, and every later cycle for that',
-      'program is refused because the terminal is occupied. Nothing releases it automatically:',
-      'an idle runner may still be mid-cycle with background shells running, and ending it is',
-      'a decision drovr will not make for you. `l` in drovr watch does the same as this, without',
+      'program is refused because the terminal is occupied. The tick closes one whose claude has',
+      'exited, and sends /exit once to one sitting idle after its cycle reported. Anything else',
+      'is yours: an idle runner whose cycle never reported may still be mid-cycle with background',
+      'shells running. `l` in drovr watch does the same as this, without',
       "waiting for a busy runner to settle. `drovr tidy` cannot do this — it only closes",
       'tabs that have no agent at all.',
       '',

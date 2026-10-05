@@ -2,10 +2,10 @@ import { spawn } from 'node:child_process';
 import { existsSync, openSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appendRecord, inFlight, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
+import { appendRecord, inFlight, lastCycleReported, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, fullReason, type Decision } from './decide.ts';
 import { isOnboarding, readReport, resumeCycle, runCycle, type CycleReport } from './cycle.ts';
-import { PaneBusy, runnerIsPresent } from './orca.ts';
+import { PaneBusy, releaseLeftover, runnerIsPresent } from './orca.ts';
 import { readAsks } from './asks.ts';
 import { nudgeIfNeglected, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
@@ -178,6 +178,29 @@ const reconcileLateReports = (now: number): number => {
     );
   }
   return superseded;
+};
+
+/**
+ * Presence for decide(), after releasing whatever `leftoverAction` says is safe: a runner
+ * of a cycle in flight is that cycle's, and anything else is left for Craig. Holding a
+ * program on a leftover that reported made `drovr release` a daily chore — 100 to 250
+ * held ticks a day from 2026-09-23.
+ */
+const runnerAfterLeftover = async (
+  program: string,
+  mine: CycleRecord[],
+  cycleInFlight: boolean,
+): Promise<boolean | undefined> => {
+  const present = await runnerStillThere(program);
+  if (present !== true || cycleInFlight) return present;
+  try {
+    if (!(await releaseLeftover(program, lastCycleReported(mine)))) return true;
+  } catch (error) {
+    console.error(`${program}: could not release its leftover runner (${explain(error)})`);
+    return true;
+  }
+  console.log(`${program}: released the runner its last cycle left behind`);
+  return false;
 };
 
 /**
@@ -418,11 +441,12 @@ export const tick = async (): Promise<void> => {
         });
       }
 
-      // One bounded orca call per enabled program. Only for the orca runner: a headless
+      // Bounded orca calls per enabled program, releasing a safe leftover on the way. Only for the orca runner: a headless
       // cycle has no agent, so reporting one absent would be true but meaningless. Left
       // undefined when orca cannot answer — unknown must not refuse a cycle.
+      const cycleInFlight = inFlight(mine, now, control.maxCycleHours).length > 0;
       const runnerPresent =
-        program.runner === 'orca' ? await runnerStillThere(program.name) : undefined;
+        program.runner === 'orca' ? await runnerAfterLeftover(program.name, mine, cycleInFlight) : undefined;
 
       const decision = decide({
         status,

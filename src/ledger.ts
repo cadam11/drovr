@@ -86,6 +86,17 @@ export const latestEnds = (cycles: CycleRecord[]): CycleRecord[] => {
   return [...byIdentity.values()];
 };
 
+const REPORTED: CycleRecord['exit'][] = ['context', 'capacity', 'seam', 'blocked'];
+
+/**
+ * Whether one program's latest cycle wrote a report — the only evidence that it declared
+ * itself done. An idle runner proves nothing: it idles while its background shells run.
+ */
+export const lastCycleReported = (cycles: CycleRecord[]): boolean => {
+  const last = latestEnds(cycles).at(-1);
+  return last !== undefined && REPORTED.includes(last.exit);
+};
+
 export const snapshot = (pool: Pool): CycleCost => ({
   fable: pool.fable,
   general: pool.general,

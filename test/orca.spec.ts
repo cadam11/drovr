@@ -4,6 +4,7 @@ import {
   adoptHandle,
   agentStateFrom,
   isSettled,
+  leftoverAction,
   presentFrom,
   previewText,
   shellCommand,
@@ -245,4 +246,26 @@ test('presentFrom counts a blocked runner as present — a held pane, not an emp
 
 test('presentFrom still throws on a refusal that is not a timeout, rather than reading it as absent', () => {
   assert.throws(() => presentFrom(claudeShown, stale), /terminal_handle_stale/);
+});
+
+test('leftoverAction closes an exited runner whatever its cycle said', () => {
+  for (const reported of [true, false]) {
+    for (const exitSent of [true, false]) {
+      assert.equal(leftoverAction({ state: 'gone', reported, exitSent }), 'close');
+    }
+  }
+});
+
+test('leftoverAction asks an idle runner to exit only when its cycle reported, and only once', () => {
+  assert.equal(leftoverAction({ state: 'idle', reported: true, exitSent: false }), 'exit');
+  // Idle is not done: a runner idles at its prompt while its background shells run.
+  assert.equal(leftoverAction({ state: 'idle', reported: false, exitSent: false }), 'hold');
+  // A second /exit would be typed into claude's "stop background tasks?" dialog.
+  assert.equal(leftoverAction({ state: 'idle', reported: true, exitSent: true }), 'hold');
+});
+
+test('leftoverAction never touches a runner that is working or on a dialog', () => {
+  for (const state of ['working', 'blocked'] as const) {
+    assert.equal(leftoverAction({ state, reported: true, exitSent: false }), 'hold');
+  }
 });

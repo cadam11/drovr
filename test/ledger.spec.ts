@@ -4,6 +4,7 @@ import {
   consecutiveFailures,
   cyclesStartedSince,
   estimateCycleCost,
+  lastCycleReported,
   latestEnds,
   spentSince,
   type CycleCost,
@@ -137,5 +138,33 @@ test('a reconciled cycle reads as its real outcome everywhere at once', () => {
     Number(spentSince(identity, NOW - 20 * HOUR).fable.toFixed(2)),
     0.58,
     'costed once, at the full spend rather than the understated abandonment figure',
+  );
+});
+
+/**
+ * Only a cycle that reported has declared itself done. Measured 2026-10-05: relliq's
+ * watcher died mid-cycle, the record read `crash`, and the runner sat idle at its prompt
+ * with an e2e run going in the background — an auto-release sent it /exit.
+ */
+test('lastCycleReported reads only a report as the cycle declaring itself done', () => {
+  const ended = (exit: CycleRecord['exit'], startedAt = new Date(NOW - 2 * HOUR).toISOString()) =>
+    cycle({ startedAt, endedAt: new Date(NOW - HOUR).toISOString(), exit });
+  assert.equal(lastCycleReported([]), false);
+  for (const exit of ['seam', 'context', 'capacity', 'blocked'] as const) {
+    assert.equal(lastCycleReported([ended(exit)]), true, exit);
+  }
+  for (const exit of ['crash', 'abandoned', 'stalled', 'deferred'] as const) {
+    assert.equal(lastCycleReported([ended(exit)]), false, exit);
+  }
+  assert.equal(lastCycleReported([cycle({ exit: 'running', endedAt: null })]), false, 'a start record is not an end');
+  assert.equal(
+    lastCycleReported([ended('abandoned'), ended('seam')]),
+    true,
+    'a late report superseding an abandoned record counts',
+  );
+  assert.equal(
+    lastCycleReported([ended('seam', new Date(NOW - 5 * HOUR).toISOString()), ended('crash')]),
+    false,
+    'an earlier cycle reporting says nothing about the latest one',
   );
 });

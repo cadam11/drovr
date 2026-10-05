@@ -293,7 +293,13 @@ export const adoptHandle = (list: unknown, tabId: string): string | null => {
 // The remembered terminal: one per program, on disk, because the process that started a
 // cycle is not the one that watches its state on the next tick.
 
-const rememberedShape = z.object({ handle: z.string(), tabId: z.string(), worktreeId: z.string() });
+const rememberedShape = z.object({
+  handle: z.string(),
+  tabId: z.string(),
+  worktreeId: z.string(),
+  /** `/exit` was sent and the runner stayed — the second would land in whatever answered it. */
+  exitSent: z.boolean().optional(),
+});
 export type RememberedTerminal = z.infer<typeof rememberedShape>;
 
 const terminalFile = (program: string): string => join(paths().programState(program), 'cycle-terminal.json');
@@ -451,7 +457,7 @@ const clearLeftover = async (program: Program): Promise<void> => {
   const handle = await runnerTerminal(program.name);
   if (handle === null) return;
   const state = await agentState(handle);
-  if (state === 'idle' && !(await releaseAgent(handle))) {
+  if (state === 'idle' && (await releaseAgent(handle)) !== 'released') {
     throw new PaneBusy(`${program.name}'s previous runner would not exit. The next tick tries again.`);
   }
   if (state === 'working' || state === 'blocked') {
@@ -541,7 +547,10 @@ export const startCycleAgent = async (input: {
  * sends while the session is not settled, which is what makes it retryable: the next
  * tick finds the agent idle and releases it then.
  */
-export const releaseAgent = async (handle: string, settleAttempts = 10): Promise<boolean> => {
+export const releaseAgent = async (
+  handle: string,
+  settleAttempts = 10,
+): Promise<'released' | 'busy' | 'exit-ignored'> => {
   let state = await agentState(handle);
   for (let attempt = 0; attempt < settleAttempts && !isSettled(state); attempt += 1) {
     await sleep(3_000);
@@ -549,19 +558,19 @@ export const releaseAgent = async (handle: string, settleAttempts = 10): Promise
   }
   if (state === 'gone') {
     await closeTerminal(handle);
-    return true;
+    return 'released';
   }
-  if (!isSettled(state)) return false;
+  if (!isSettled(state)) return 'busy';
 
   await orca(['terminal', 'send', '--terminal', handle, '--text', '/exit', '--enter']).catch(() => ({}));
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await sleep(2_000);
     if ((await agentState(handle)) === 'gone') {
       await closeTerminal(handle);
-      return true;
+      return 'released';
     }
   }
-  return false;
+  return 'exit-ignored';
 };
 
 /**
@@ -572,9 +581,38 @@ export const releaseAgent = async (handle: string, settleAttempts = 10): Promise
 export const releaseRunner = async (program: string, settleAttempts = 10): Promise<boolean> => {
   const handle = await runnerTerminal(program);
   if (handle === null) return true;
-  const released = await releaseAgent(handle, settleAttempts);
-  if (released) forgetTerminal(program);
-  return released;
+  const result = await releaseAgent(handle, settleAttempts);
+  if (result === 'released') forgetTerminal(program);
+  const remembered = rememberedTerminal(program);
+  if (result === 'exit-ignored' && remembered !== null) rememberTerminal(program, { ...remembered, exitSent: true });
+  return result === 'released';
+};
+
+/**
+ * What the tick may do with a runner its cycle left behind. An exited one is a bare
+ * terminal and always safe to close. An idle one only once its cycle reported — idle is
+ * not done, measured 2026-10-05 on a relliq runner idling mid-cycle over a background e2e
+ * run — and only once, because a runner with background work answers `/exit` with a
+ * "stop tasks?" dialog that a second `/exit` would be typed into.
+ */
+export const leftoverAction = (input: {
+  state: AgentState;
+  reported: boolean;
+  exitSent: boolean;
+}): 'close' | 'exit' | 'hold' => {
+  if (input.state === 'gone') return 'close';
+  if (input.state !== 'idle') return 'hold';
+  return input.reported && !input.exitSent ? 'exit' : 'hold';
+};
+
+/** The tick's release, by `leftoverAction`: true when nothing is left holding a terminal. */
+export const releaseLeftover = async (program: string, reported: boolean): Promise<boolean> => {
+  const handle = await runnerTerminal(program);
+  if (handle === null) return true;
+  const exitSent = rememberedTerminal(program)?.exitSent === true;
+  const action = leftoverAction({ state: await agentState(handle), reported, exitSent });
+  if (action === 'hold') return false;
+  return releaseRunner(program, 0);
 };
 
 /** Submits a prompt to a live session — how a cycle is started, and how a stalled one is restarted. */
