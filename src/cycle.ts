@@ -218,6 +218,13 @@ export type CycleLimits = {
 
 const POLL_MS = 30_000;
 
+/**
+ * Ten minutes of consecutive failed polls. One slow orca answer used to end the watch as a
+ * `crash` with the runner still working — six times from 2026-10-01 to 10-05, three of them
+ * in the same second — orphaning a live runner whose report nothing would ever read.
+ */
+const MAX_POLL_FAILURES = 20;
+
 export type StallAction = 'wait' | 'nudge' | 'give-up' | 'alert';
 
 /**
@@ -367,6 +374,20 @@ const askForHuman = async (
   });
 };
 
+/**
+ * Orca stopped answering for long enough that drovr cannot say what the runner is doing.
+ * `abandoned`, like the deadline: a statement about the watch, not the cycle, so a report
+ * the runner writes later is reconciled by the next tick rather than lost under a crash.
+ */
+const lostSight = (program: string, failures: number): CycleOutcome => ({
+  finished: false,
+  abandoned: true,
+  detail:
+    `lost sight of ${program}'s runner after ${failures} failed polls in a row — orca is not ` +
+    'answering. Recorded as abandoned, not crashed; if it writes a report the next tick ' +
+    'supersedes this record with the real outcome',
+});
+
 const watchCycle = async (program: string, limits: CycleLimits): Promise<CycleOutcome> => {
   // Bounded: a wedged runner must not hold its capacity slot indefinitely.
   const deadline = Date.now() + limits.maxHours * 3_600_000;
@@ -374,12 +395,23 @@ const watchCycle = async (program: string, limits: CycleLimits): Promise<CycleOu
   let blockedSince: number | null = null;
   let nudges = 0;
   let alerted = false;
+  let pollFailures = 0;
 
   while (Date.now() < deadline) {
     await sleep(POLL_MS);
     if (pollReport(program) !== null) return releaseFinished(program);
 
-    const state: AgentState = await runnerState(program);
+    const state: AgentState | null = await runnerState(program).catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`${program}: could not read its runner's state (${detail}) — still watching`);
+      return null;
+    });
+    if (state === null) {
+      pollFailures += 1;
+      if (pollFailures >= MAX_POLL_FAILURES) return lostSight(program, pollFailures);
+      continue;
+    }
+    pollFailures = 0;
     if (state === 'gone') {
       return { finished: true, detail: `the runner is no longer present in ${(await runnerAddress(program)).where}` };
     }
