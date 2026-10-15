@@ -113,6 +113,14 @@ const parseJson = (text: string): unknown => {
 const orca = async (args: string[], timeoutMs = ORCA_TIMEOUT_MS): Promise<unknown> =>
   unwrap(await orcaRaw(args, timeoutMs), `orca ${args.join(' ')}`);
 
+/**
+ * A terminal on a paired remote runtime is addressed by its environment on *every* call:
+ * a handle issued there answers `terminal_handle_stale` to a call without it (measured
+ * 2026-10-15). Empty on the Mac, so every local call is unchanged.
+ */
+export const envArgs = (environment?: string): string[] =>
+  environment === undefined ? [] : ['--environment', environment];
+
 const terminalShape = z.object({
   terminal: z
     .object({
@@ -240,9 +248,18 @@ export const previewText = (read: unknown): string =>
 
 const SAFE_WORD = /^[A-Za-z0-9_\-./=:@%+,]+$/;
 
+/**
+ * A leading `~/` stays bare so the shell that runs the word expands it: a host's home is
+ * the one path drovr cannot resolve from here. The rest of the word is quoted as usual.
+ */
+const shellWord = (arg: string): string => {
+  if (SAFE_WORD.test(arg)) return arg;
+  if (arg.startsWith('~/')) return `~/${shellWord(arg.slice(2))}`;
+  return `'${arg.replaceAll("'", `'\\''`)}'`;
+};
+
 /** `terminal create --command` hands the text to a shell, so every argument is quoted for one. */
-export const shellCommand = (argv: string[]): string =>
-  argv.map((arg) => (SAFE_WORD.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`)).join(' ');
+export const shellCommand = (argv: string[]): string => argv.map(shellWord).join(' ');
 
 /**
  * A handle is drovr's grip on a terminal, not an address a human can follow. Every message
@@ -251,7 +268,7 @@ export const shellCommand = (argv: string[]): string =>
  */
 export type PaneAddress = { where: string; open: string | null };
 
-export const terminalAddress = (show: unknown, handle: string): PaneAddress => {
+export const terminalAddress = (show: unknown, handle: string, environment?: string): PaneAddress => {
   let terminal: z.infer<typeof terminalShape>['terminal'] | null;
   try {
     terminal = shownTerminal(show);
@@ -263,7 +280,7 @@ export const terminalAddress = (show: unknown, handle: string): PaneAddress => {
   }
   return {
     where: `its "${terminal.title}" tab in ${basename(terminal.worktreePath)}`,
-    open: `orca terminal switch --terminal ${handle}`,
+    open: ['orca', 'terminal', 'switch', '--terminal', handle, ...envArgs(environment)].join(' '),
   };
 };
 
@@ -297,10 +314,15 @@ const rememberedShape = z.object({
   handle: z.string(),
   tabId: z.string(),
   worktreeId: z.string(),
+  /** The paired runtime the terminal lives on; absent for one on this Mac. */
+  environment: z.string().optional(),
   /** `/exit` was sent and the runner stayed — the second would land in whatever answered it. */
   exitSent: z.boolean().optional(),
 });
 export type RememberedTerminal = z.infer<typeof rememberedShape>;
+
+/** drovr's grip on one terminal: the handle, and the runtime it was issued by. */
+export type TerminalRef = { handle: string; environment?: string | undefined };
 
 const terminalFile = (program: string): string => join(paths().programState(program), 'cycle-terminal.json');
 
@@ -330,25 +352,26 @@ const forgetTerminal = (program: string): void => {
 // ---------------------------------------------------------------------------------------
 // Live calls.
 
-const showTerminal = (handle: string): Promise<unknown> => orcaRaw(['terminal', 'show', '--terminal', handle]);
+const showTerminal = (handle: string, environment?: string): Promise<unknown> =>
+  orcaRaw(['terminal', 'show', '--terminal', handle, ...envArgs(environment)]);
 
-const probeIdle = (handle: string): Promise<unknown> =>
+const probeIdle = (handle: string, environment?: string): Promise<unknown> =>
   orcaRaw(
-    ['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', String(IDLE_PROBE_MS)],
+    ['terminal', 'wait', '--terminal', handle, '--for', 'tui-idle', '--timeout-ms', String(IDLE_PROBE_MS), ...envArgs(environment)],
     IDLE_PROBE_MS + ORCA_TIMEOUT_MS,
   );
 
 /** Answers at once either way: satisfied for a dead pty, `timeout` for a live one. */
-const probeExit = (handle: string): Promise<unknown> =>
-  orcaRaw(['terminal', 'wait', '--terminal', handle, '--for', 'exit', '--timeout-ms', '1']);
+const probeExit = (handle: string, environment?: string): Promise<unknown> =>
+  orcaRaw(['terminal', 'wait', '--terminal', handle, '--for', 'exit', '--timeout-ms', '1', ...envArgs(environment)]);
 
 /** State of the claude in one terminal. Three calls at most; the probes only when they can matter. */
-export const agentState = async (handle: string): Promise<AgentState> => {
-  const show = await showTerminal(handle);
+export const agentState = async (handle: string, environment?: string): Promise<AgentState> => {
+  const show = await showTerminal(handle, environment);
   if (occupancyFrom(show) !== 'occupied') return agentStateFrom(show, null);
-  const exit = await probeExit(handle);
+  const exit = await probeExit(handle, environment);
   if (terminalExited(exit)) return 'gone';
-  return agentStateFrom(show, await probeIdle(handle), exit);
+  return agentStateFrom(show, await probeIdle(handle, environment), exit);
 };
 
 /**
@@ -356,36 +379,40 @@ export const agentState = async (handle: string): Promise<AgentState> => {
  * handle is re-resolved through the remembered tab, and the file is rewritten so the
  * next reader pays nothing.
  */
-export const runnerTerminal = async (program: string): Promise<string | null> => {
+export const runnerTerminal = async (program: string): Promise<TerminalRef | null> => {
   const remembered = rememberedTerminal(program);
   if (remembered === null) return null;
-  if (shownTerminal(await showTerminal(remembered.handle)) !== null) return remembered.handle;
+  const { environment } = remembered;
+  if (shownTerminal(await showTerminal(remembered.handle, environment)) !== null) {
+    return { handle: remembered.handle, environment };
+  }
 
-  const list = await orcaRaw(['terminal', 'list', '--worktree', `id:${remembered.worktreeId}`]).catch(() => null);
+  const list = await orcaRaw(['terminal', 'list', '--worktree', `id:${remembered.worktreeId}`, ...envArgs(environment)]).catch(() => null);
   const adopted = list === null ? null : adoptHandle(list, remembered.tabId);
   if (adopted === null) return null;
   rememberTerminal(program, { ...remembered, handle: adopted });
-  return adopted;
+  return { handle: adopted, environment };
 };
 
 export const runnerState = async (program: string): Promise<AgentState> => {
-  const handle = await runnerTerminal(program);
-  return handle === null ? 'gone' : agentState(handle);
+  const terminal = await runnerTerminal(program);
+  return terminal === null ? 'gone' : agentState(terminal.handle, terminal.environment);
 };
 
 /** `runnerState(program) !== 'gone'`, for the callers that only ever asked that. See `presentFrom`. */
 export const runnerIsPresent = async (program: string): Promise<boolean> => {
-  const handle = await runnerTerminal(program);
-  if (handle === null) return false;
-  const show = await showTerminal(handle);
+  const terminal = await runnerTerminal(program);
+  if (terminal === null) return false;
+  const show = await showTerminal(terminal.handle, terminal.environment);
   if (occupancyFrom(show) !== 'occupied') return presentFrom(show);
-  return presentFrom(show, await probeExit(handle));
+  return presentFrom(show, await probeExit(terminal.handle, terminal.environment));
 };
 
 export const runnerAddress = async (program: string): Promise<PaneAddress> => {
-  const handle = await runnerTerminal(program).catch(() => null);
-  if (handle === null) return { where: `no terminal (${program} has never run, or its terminal is closed)`, open: null };
-  return terminalAddress(await showTerminal(handle).catch(() => null), handle);
+  const terminal = await runnerTerminal(program).catch(() => null);
+  if (terminal === null) return { where: `no terminal (${program} has never run, or its terminal is closed)`, open: null };
+  const { handle, environment } = terminal;
+  return terminalAddress(await showTerminal(handle, environment).catch(() => null), handle, environment);
 };
 
 const baseUrlCache = new Map<string, string | null>();
@@ -419,13 +446,16 @@ const worktreeShape = z.object({ worktree: z.object({ id: z.string() }).passthro
  * missing one is refused with the command that fixes it rather than fixed silently.
  */
 export const resolveWorktree = async (program: Program): Promise<string> => {
+  // On a host the checkout orca knows is the box's, not the local cwd direnv and asks use.
+  const cwd = program.host?.cwd ?? program.cwd;
+  const env = envArgs(program.host?.environment);
   try {
-    return worktreeShape.parse(await orca(['worktree', 'show', '--worktree', `path:${program.cwd}`])).worktree.id;
+    return worktreeShape.parse(await orca(['worktree', 'show', '--worktree', `path:${cwd}`, ...env])).worktree.id;
   } catch (error) {
     if (!isGone(error)) throw error;
     throw new Error(
-      `orca has no worktree at ${program.cwd}, so ${program.name} has nowhere to run. ` +
-        `Register it:  orca repo add --path ${program.cwd}`,
+      `orca has no worktree at ${cwd}, so ${program.name} has nowhere to run. ` +
+        `Register it:  orca repo add --path ${cwd}${env.length === 0 ? '' : ` ${env.join(' ')}`}`,
     );
   }
 };
@@ -441,8 +471,8 @@ export class PaneBusy extends Error {}
 
 export const cycleTabLabel = (program: string): string => `${program} cycles`;
 
-const closeTerminal = async (handle: string): Promise<void> => {
-  await orca(['terminal', 'close', '--terminal', handle]).catch((error: unknown) => {
+const closeTerminal = async (handle: string, environment?: string): Promise<void> => {
+  await orca(['terminal', 'close', '--terminal', handle, ...envArgs(environment)]).catch((error: unknown) => {
     if (!isGone(error)) throw error;
   });
 };
@@ -454,21 +484,22 @@ const closeTerminal = async (handle: string): Promise<void> => {
  * or waiting on a dialog is left strictly alone.
  */
 const clearLeftover = async (program: Program): Promise<void> => {
-  const handle = await runnerTerminal(program.name);
-  if (handle === null) return;
-  const state = await agentState(handle);
-  if (state === 'idle' && (await releaseAgent(handle)) !== 'released') {
+  const terminal = await runnerTerminal(program.name);
+  if (terminal === null) return;
+  const { handle, environment } = terminal;
+  const state = await agentState(handle, environment);
+  if (state === 'idle' && (await releaseAgent(handle, environment)) !== 'released') {
     throw new PaneBusy(`${program.name}'s previous runner would not exit. The next tick tries again.`);
   }
   if (state === 'working' || state === 'blocked') {
-    const address = terminalAddress(await showTerminal(handle).catch(() => null), handle);
+    const address = terminalAddress(await showTerminal(handle, environment).catch(() => null), handle, environment);
     throw new PaneBusy(
       `${program.name} already has a live session in ${address.where} (${state}). ` +
         'Leaving it alone — it is either still working or being used. ' +
         `The next tick tries again.${openLine(address)}`,
     );
   }
-  await closeTerminal(handle);
+  await closeTerminal(handle, environment);
   forgetTerminal(program.name);
 };
 
@@ -477,9 +508,9 @@ const createdShape = z.object({ terminal: z.object({ handle: z.string(), tabId: 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Bounded: claude takes seconds to appear behind `teamclaude run`; a shell that never grows one has crashed. */
-const waitForClaude = async (handle: string, attempts = 30): Promise<boolean> => {
+const waitForClaude = async (handle: string, environment?: string, attempts = 30): Promise<boolean> => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const terminal = shownTerminal(await showTerminal(handle));
+    const terminal = shownTerminal(await showTerminal(handle, environment));
     if (terminal === null) return false;
     if (terminal.agentIdentity !== null) return true;
     await sleep(3_000);
@@ -500,6 +531,7 @@ export const startCycleAgent = async (input: {
   prompt: string;
 }): Promise<StartedCycle> => {
   const { program, worktreeId, command, prompt } = input;
+  const environment = program.host?.environment;
   await clearLeftover(program);
 
   const created = createdShape.parse(
@@ -512,31 +544,32 @@ export const startCycleAgent = async (input: {
       cycleTabLabel(program.name),
       '--command',
       shellCommand(command),
+      ...envArgs(environment),
     ]),
   ).terminal;
   const started = { handle: created.handle, tabId: created.tabId };
-  rememberTerminal(program.name, { ...started, worktreeId });
+  rememberTerminal(program.name, { ...started, worktreeId, ...(environment === undefined ? {} : { environment }) });
 
-  if (!(await waitForClaude(started.handle))) {
-    throw new Error(`${program.name}'s runner exited before claude came up — check ${terminalAddress(null, started.handle).where}`);
+  if (!(await waitForClaude(started.handle, environment))) {
+    throw new Error(`${program.name}'s runner exited before claude came up — check ${terminalAddress(null, started.handle, environment).where}`);
   }
   await orcaRaw(
-    ['terminal', 'wait', '--terminal', started.handle, '--for', 'tui-idle', '--timeout-ms', String(AGENT_START_TIMEOUT_MS)],
+    ['terminal', 'wait', '--terminal', started.handle, '--for', 'tui-idle', '--timeout-ms', String(AGENT_START_TIMEOUT_MS), ...envArgs(environment)],
     AGENT_START_TIMEOUT_MS + ORCA_TIMEOUT_MS,
   );
 
   // A trust dialog settles the TUI too, so idle alone is not promptable. The agent is
   // live and its terminal is remembered; the next tick prompts it once Craig answers.
-  const state = await agentState(started.handle);
+  const state = await agentState(started.handle, environment);
   if (state !== 'idle') {
-    const address = terminalAddress(await showTerminal(started.handle).catch(() => null), started.handle);
+    const address = terminalAddress(await showTerminal(started.handle, environment).catch(() => null), started.handle, environment);
     throw new PaneBusy(
       `${program.name} started but is ${state} in ${address.where} — answer whatever it is ` +
         `waiting on there and the next tick will prompt it.${openLine(address)}`,
     );
   }
 
-  await promptAgent(started.handle, prompt);
+  await promptAgent(started.handle, prompt, environment);
   return started;
 };
 
@@ -549,24 +582,25 @@ export const startCycleAgent = async (input: {
  */
 export const releaseAgent = async (
   handle: string,
+  environment?: string,
   settleAttempts = 10,
 ): Promise<'released' | 'busy' | 'exit-ignored'> => {
-  let state = await agentState(handle);
+  let state = await agentState(handle, environment);
   for (let attempt = 0; attempt < settleAttempts && !isSettled(state); attempt += 1) {
     await sleep(3_000);
-    state = await agentState(handle);
+    state = await agentState(handle, environment);
   }
   if (state === 'gone') {
-    await closeTerminal(handle);
+    await closeTerminal(handle, environment);
     return 'released';
   }
   if (!isSettled(state)) return 'busy';
 
-  await orca(['terminal', 'send', '--terminal', handle, '--text', '/exit', '--enter']).catch(() => ({}));
+  await orca(['terminal', 'send', '--terminal', handle, '--text', '/exit', '--enter', ...envArgs(environment)]).catch(() => ({}));
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await sleep(2_000);
-    if ((await agentState(handle)) === 'gone') {
-      await closeTerminal(handle);
+    if ((await agentState(handle, environment)) === 'gone') {
+      await closeTerminal(handle, environment);
       return 'released';
     }
   }
@@ -579,9 +613,9 @@ export const releaseAgent = async (
  * busy runner at once instead of waiting half a minute for it to settle.
  */
 export const releaseRunner = async (program: string, settleAttempts = 10): Promise<boolean> => {
-  const handle = await runnerTerminal(program);
-  if (handle === null) return true;
-  const result = await releaseAgent(handle, settleAttempts);
+  const terminal = await runnerTerminal(program);
+  if (terminal === null) return true;
+  const result = await releaseAgent(terminal.handle, terminal.environment, settleAttempts);
   if (result === 'released') forgetTerminal(program);
   const remembered = rememberedTerminal(program);
   if (result === 'exit-ignored' && remembered !== null) rememberTerminal(program, { ...remembered, exitSent: true });
@@ -607,34 +641,37 @@ export const leftoverAction = (input: {
 
 /** The tick's release, by `leftoverAction`: true when nothing is left holding a terminal. */
 export const releaseLeftover = async (program: string, reported: boolean): Promise<boolean> => {
-  const handle = await runnerTerminal(program);
-  if (handle === null) return true;
+  const terminal = await runnerTerminal(program);
+  if (terminal === null) return true;
   const exitSent = rememberedTerminal(program)?.exitSent === true;
-  const action = leftoverAction({ state: await agentState(handle), reported, exitSent });
+  const action = leftoverAction({ state: await agentState(terminal.handle, terminal.environment), reported, exitSent });
   if (action === 'hold') return false;
   return releaseRunner(program, 0);
 };
 
 /** Submits a prompt to a live session — how a cycle is started, and how a stalled one is restarted. */
-export const promptAgent = async (handle: string, prompt: string): Promise<void> => {
+export const promptAgent = async (handle: string, prompt: string, environment?: string): Promise<void> => {
   await orca(
-    ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', String(PROMPT_SUBMIT_WAIT_S)],
+    ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', String(PROMPT_SUBMIT_WAIT_S), ...envArgs(environment)],
     PROMPT_SUBMIT_WAIT_S * 1_000 + ORCA_TIMEOUT_MS,
   );
 };
 
-const requireRunner = async (program: string): Promise<string> => {
-  const handle = await runnerTerminal(program);
-  if (handle === null) throw new Error(`${program} has no runner terminal`);
-  return handle;
+const requireRunner = async (program: string): Promise<TerminalRef> => {
+  const terminal = await runnerTerminal(program);
+  if (terminal === null) throw new Error(`${program} has no runner terminal`);
+  return terminal;
 };
 
-export const promptRunner = async (program: string, prompt: string): Promise<void> =>
-  promptAgent(await requireRunner(program), prompt);
+export const promptRunner = async (program: string, prompt: string): Promise<void> => {
+  const { handle, environment } = await requireRunner(program);
+  await promptAgent(handle, prompt, environment);
+};
 
 /** An interrupt, not a kill: the runner gets to wind down and write its report. */
 export const interruptRunner = async (program: string): Promise<void> => {
-  await orca(['terminal', 'send', '--terminal', await requireRunner(program), '--interrupt']);
+  const { handle, environment } = await requireRunner(program);
+  await orca(['terminal', 'send', '--terminal', handle, '--interrupt', ...envArgs(environment)]);
 };
 
 /**
@@ -643,10 +680,11 @@ export const interruptRunner = async (program: string): Promise<void> => {
  * live session is lost work. Returns the closed handle, or null when nothing was.
  */
 export const tidyRunnerTerminal = async (program: string): Promise<string | null> => {
-  const handle = await runnerTerminal(program);
-  if (handle === null) return null;
-  if ((await agentState(handle)) !== 'gone') return null;
-  await closeTerminal(handle);
+  const terminal = await runnerTerminal(program);
+  if (terminal === null) return null;
+  const { handle, environment } = terminal;
+  if ((await agentState(handle, environment)) !== 'gone') return null;
+  await closeTerminal(handle, environment);
   forgetTerminal(program);
   return handle;
 };
@@ -661,9 +699,9 @@ export const readPreview = async (
   program: string,
 ): Promise<{ preview: Preview | null; warning: string | null }> => {
   try {
-    const handle = await runnerTerminal(program);
-    if (handle === null) return { preview: null, warning: `preview unavailable for ${program}: no runner terminal` };
-    const read = await orcaRaw(['terminal', 'read', '--terminal', handle, '--limit', '40']);
+    const terminal = await runnerTerminal(program);
+    if (terminal === null) return { preview: null, warning: `preview unavailable for ${program}: no runner terminal` };
+    const read = await orcaRaw(['terminal', 'read', '--terminal', terminal.handle, '--limit', '40', ...envArgs(terminal.environment)]);
     return { preview: parsePreview(previewText(read)), warning: null };
   } catch (error) {
     const [firstLine] = explainSpawn('orca', error).message.split('\n');

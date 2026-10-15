@@ -39,3 +39,27 @@ test('a host missing its ssh target or environment is refused', () => {
 test('a host cwd must be absolute: orca addresses the worktree by path', () => {
   assert.throws(() => readControl(controlWith({ host: { ...host, cwd: 'code/relliq' } })), /absolute path on the box/);
 });
+
+// --- orca: the environment rides along on every call for a remote terminal
+
+import { envArgs, shellCommand, terminalAddress } from '../src/orca.ts';
+
+test('envArgs is empty on the Mac and names the paired runtime for a host', () => {
+  assert.deepEqual(envArgs(undefined), []);
+  assert.deepEqual(envArgs('a7a12606'), ['--environment', 'a7a12606']);
+});
+
+test('shellCommand leaves a leading ~/ bare so the box expands it, and quotes the rest', () => {
+  assert.equal(shellCommand(['~/.local/bin/claude', '--name', 'relliq program runner']), "~/.local/bin/claude --name 'relliq program runner'");
+  assert.equal(shellCommand(['cat', '~/.drovr/programs/my prog/last-cycle.json']), "cat ~/'.drovr/programs/my prog/last-cycle.json'");
+  assert.equal(shellCommand(['~alone']), "'~alone'");
+});
+
+test('terminalAddress opens a remote terminal in its environment', () => {
+  const shown = { ok: true, result: { terminal: { handle: 'term_1', agentIdentity: 'claude', title: 'relliq cycles', worktreePath: '/home/ubuntu/code/propra/relliq' } } };
+  assert.deepEqual(terminalAddress(shown, 'term_1', 'a7a12606'), {
+    where: 'its "relliq cycles" tab in relliq',
+    open: 'orca terminal switch --terminal term_1 --environment a7a12606',
+  });
+  assert.equal(terminalAddress(shown, 'term_1').open, 'orca terminal switch --terminal term_1');
+});
