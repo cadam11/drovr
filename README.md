@@ -110,6 +110,9 @@ drovr add <name> <path> [--priority n] [--deadline YYYY-MM-DD]
                         [--asks <page>] [--status-page <page>]
                         [--no-aice] [--no-direnv]
 drovr rm <name>          # stops tracking; ledger history is kept
+drovr host <name> --environment <id> --ssh <user@host> --cwd </path/on/box> [--wake '<cmd>']
+                         # run its cycles on a paired remote Orca runtime (see Remote hosts)
+drovr host <name> --clear
 ```
 
 Example:
@@ -212,6 +215,7 @@ drovr pause 3h            # hold cycles; edits take effect next tick
 drovr resume
 drovr mode away
 drovr ledger 20           # last 20 cycles
+drovr host <name> ...     # run a program's cycles on a remote Orca runtime
 drovr service print       # plist to stdout, writes nothing
 ```
 
@@ -294,6 +298,35 @@ For everything outside drovr, install the alias so a bare `claude` can never run
 ```bash
 teamclaude alias --install     # alias claude='teamclaude run --'
 ```
+
+### Remote hosts
+
+A program can run its cycles on a **paired remote Orca runtime** — a dev box — while drovr itself
+stays on the Mac. The Mac remains the default; a host is opt-in per program:
+
+```bash
+drovr host relliq --environment a7a12606-e7eb-4c62-bdfc-efd0a73a5f51 \
+  --ssh ubuntu@relliq-devbox --cwd /home/ubuntu/code/propra/relliq \
+  --wake 'cd ~/code/propra/relliq && pnpm devbox:start'
+drovr host relliq --clear      # back to the Mac
+```
+
+What moves is the cycle terminal: it is created on the remote runtime (`--environment`, from
+`orca environment list`) in the worktree at `--cwd` there, and every later orca call on it carries
+the same environment, because a remote handle is stale to a call without one. The runner on the
+box ends its cycle with its own `drovr report`, which writes `last-cycle.json` under the box's
+`DROVR_HOME` (`--drovr-home`, default `~/.drovr`); drovr reads it back with `ssh ... cat` on the
+same 30s poll, and the closing message from the box's `~/.claude`. The ledger — control.json,
+cycles.jsonl, usage, decisions — never leaves the Mac. Before a cycle, an unreachable box is woken
+with `--wake` (a *local* command that returns once ssh answers, up to six minutes); without one, an
+unreachable box is a failed cycle.
+
+Two things to set up on the box first: `drovr` on its PATH with a program of the **same name** in
+its own `control.json` (the runner's `drovr report` checks the name), and `claude` at `--claude`
+(default `~/.local/bin/claude`). The launch there calls that binary directly rather than
+`teamclaude run`, because the teamclaude pool is Mac-local and has no server on the box. The
+program's `<path>` from `drovr add` stays the local checkout: direnv and the asks page still read
+it here.
 
 ## The daily cap
 

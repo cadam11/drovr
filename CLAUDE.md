@@ -218,6 +218,9 @@ Written and type-checked, never seen to fire. Unproven, not done:
   numbers to both fields, so which string form actually arrived that day is still unknown.
 - **The same-directory gate holding a program.** Landed 2026-08-30 as future-proofing; no two
   registered programs share a cwd today, so by construction it has never fired outside the suite.
+- **A cycle on a remote host.** `drovr host` landed 2026-10-15: the environment is threaded through
+  every orca call, the report and transcript come back over ssh, a dark box is woken first. Proven
+  only in the suite; no hosted cycle has been started, watched, reported or released yet.
 - **The shadow re-forming when a rest lapses.** The un-shadowing half fired live within a
   minute of landing (2026-08-29 15:57: aice-x admitted over resting sunnyt, refused at 15:47
   by the old ranking); the reverse — a lapsed rest raising lower programs' bars again on its
@@ -320,6 +323,9 @@ anywhere; do not create one unprompted, but say so if the subject arises.
   an Orca worktree are refused with the `orca repo add --path <cwd>` that fixes it.
 - **teamclaude** — read-only, via `teamclaude status --json`, plus `teamclaude run` as the launch
   command of every cycle.
+- **ssh** — only for a program with a `host`: `ssh -o BatchMode=yes <target> cat|rm -f|true`
+  through `runSsh`, bounded, to read a hosted cycle's report and transcript back and to probe the
+  box before waking it. drovr never runs a cycle's work over ssh; the terminal is orca's.
 - **direnv** — cycles run through `direnv exec <cwd>` so each program repo's own `.envrc`
   supplies its aice install and tokens. Do not duplicate that into `control.json`.
 - **aice** — **read-only**, and only ever `notes list` against a program's asks page

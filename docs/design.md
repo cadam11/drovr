@@ -549,6 +549,56 @@ because what's collected will change.
 Deliberately **not** built: trend analysis, a telemetry page, self-proposed tuning. The data is
 captured; the analysis can be asked for when it's actually wanted.
 
+## Remote hosts
+
+A program may name a `host`: a paired remote Orca runtime, an ssh target, the checkout on the box.
+When it does, drovr still runs on the Mac and the cycle runs on the box. The split is deliberate.
+
+**The ledger stays on the Mac.** Admission is one decision over one pool for every program, and
+every input to it — control.json, cycles.jsonl, the usage samples, the decision log — is read on
+the Mac by one tick under one lock. Moving any of it to a box would either split the ledger (two
+supervisors disagreeing about the same quota) or make the Mac's tick depend on a machine that is
+*supposed* to be switched off between cycles. So only two things move: the terminal the runner
+lives in, and the file it writes when it is done.
+
+**The report comes back over ssh, not a shared folder.** The runner ends its cycle with its own
+`drovr report`, on the box, into the box's `DROVR_HOME`. A synced folder would make the report's
+appearance on the Mac depend on a sync agent's schedule and could show a half-copied file — the
+exact torn-read the staged rename exists to prevent. `ssh <target> cat <path>` on the existing 30s
+poll reads whole files only, and it fails *loudly*: cat's own "No such file" is "not yet", and
+anything else — a dark box, a refused key — is a failed poll counted toward `MAX_POLL_FAILURES`
+like an orca stall, so a flaky link ends the watch as `abandoned` rather than being swallowed or
+recorded as a crash. The path is built as a shell word, not resolved locally, because `~` there is
+the box's home and only the box knows it. The remote `drovr report` validates the program name
+against the box's own control.json, which is the one operational precondition: the box needs
+drovr on PATH with the same program name registered.
+
+**The box's state is the box's own.** Claude's `~/.claude` (transcripts, project memory) and Aven
+on the box are written there and read there — the closing message is lifted with the same `cat`
+over ssh, failing to "no closing" exactly as an unreadable local transcript does. Nothing syncs
+them to the Mac. A program that alternates between hosts will have two memories, and that is a
+sync problem to solve on purpose, not something drovr should paper over on a poll.
+
+**Every orca call carries the environment.** A handle issued by a remote runtime answers
+`terminal_handle_stale` to any call without `--environment <id>` (measured 2026-10-15), so the
+remembered terminal records which runtime issued it and `envArgs` is appended to every create,
+show, wait, send, read, close and list. Empty on the Mac: a local cycle issues the same calls it
+always did.
+
+**Wake is a step, not a gate.** A stopped box is the normal state between cycles, so before the
+worktree is resolved drovr probes `ssh <target> true`; if that fails and the program has a `wake`
+command, it runs it locally (bounded, six minutes — an EC2 instance from stopped) and probes once
+more. Still dark is an ordinary error through the existing crash path; no new exit reason, because
+"the box did not come up" is a thing that went wrong, not a verdict about capacity.
+
+**The teamclaude exception.** The Mac launch is `teamclaude run -- …`, which is where the proxy
+and the account rotation come from. The box has no teamclaude server — the pool is Mac-local —
+and its `claude` alias routes through one anyway, so the host launch names the configured binary
+(`host.claude`, default `~/.local/bin/claude`) with the same `--model`, `--name` and
+`--session-id`. The box's claude logs in with its own subscription; drovr's capacity model prices
+that cycle like any other, from the pool delta it observes, which is honest only insofar as the
+box's requests land on the same accounts. If they do not, the cycle reads as nearly free.
+
 ## Non-goals
 
 - **Killing cycles.** The supervisor starts them; they end themselves.
