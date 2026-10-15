@@ -592,7 +592,6 @@ const runInOrca = async (
   sessionId: string,
   limits: CycleLimits,
 ): Promise<CycleOutcome> => {
-  if (program.host !== null) await ensureReachable(program, program.host);
   const worktreeId = await resolveWorktree(program);
   const prompt = substitute(program.cyclePrompt, program, isOnboarding(program.name));
   const sessionName = substitute(program.sessionName, program, isOnboarding(program.name));
@@ -623,6 +622,8 @@ export const runCycle = async (
   limits: CycleLimits,
 ): Promise<CycleOutcome> => {
   ensureDirs(program.name);
+  // The box must be up before anything touches it: the report clear below rides ssh too.
+  if (program.host !== null) await ensureReachable(program, program.host);
   await reportSource(program).clear();
   return program.runner === 'headless'
     ? runHeadless(program, startedAt)
