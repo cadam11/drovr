@@ -35,6 +35,21 @@ const exec = promisify(execFile);
  */
 export class ExecTimedOut extends Error {}
 
+/**
+ * Non-interactive by construction: a box that wants a password or a host-key answer fails
+ * at once instead of holding the caller on a prompt nobody will see. `command` is a shell
+ * string the remote shell parses, so `~` in it is the remote user's home.
+ */
+export const runSsh = (
+  target: string,
+  command: string,
+  timeoutMs: number,
+): Promise<{ stdout: string; stderr: string }> =>
+  runBounded('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', target, command], {
+    timeoutMs,
+    label: `ssh ${target} ${command}`,
+  });
+
 export const runBounded = async (
   binary: string,
   args: string[],

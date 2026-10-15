@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseReportArgs, pollReport, readReport, writeReport } from '../src/cycle.ts';
+import { parseReportArgs, readReport, reportFromPoll, reportSource, writeReport } from '../src/cycle.ts';
+import { parseControl } from '../src/control.ts';
 import { paths } from '../src/paths.ts';
+
+/** The local source for a program with no host: today's file under DROVR_HOME. */
+const alpha = () => reportSource(parseControl({ programs: [{ name: 'alpha', cwd: '/x' }] }).programs[0]!);
 
 const NOW = Date.parse('2026-08-28T12:00:00Z');
 
@@ -67,7 +71,7 @@ test('a non-numeric value is refused naming its flag', () => {
   );
 });
 
-test('writeReport round-trips through readReport', () => {
+test('writeReport round-trips through readReport', async () => {
   freshHome();
   const written = writeReport('alpha', {
     exit: 'seam',
@@ -75,7 +79,7 @@ test('writeReport round-trips through readReport', () => {
     yield: { ticketsMoved: 1, prsOpened: 0, commits: 4 },
     asksRaised: 0,
   });
-  assert.deepEqual(readReport('alpha'), written);
+  assert.deepEqual(await readReport(alpha()), written);
 });
 
 test('writeReport refuses an invalid report before anything touches disk', () => {
@@ -90,21 +94,32 @@ test('writeReport leaves no staging file behind', () => {
   assert.deepEqual(readdirSync(paths().programState('alpha')), ['last-cycle.json']);
 });
 
-test('pollReport reads a torn file as not-yet, readReport as an error', () => {
+test('a poll reads a torn file as not-yet, readReport as an error', async () => {
   freshHome();
   writeReport('alpha', { exit: 'seam' });
   // What a poll sees when it catches a direct writer mid-write.
   writeFileSync(paths().lastCycle('alpha'), '{ "exit": "seam", "startupTo', 'utf8');
-  assert.equal(pollReport('alpha'), null);
-  assert.throws(() => readReport('alpha'), SyntaxError);
+  const source = alpha();
+  assert.equal(reportFromPoll(await source.read(), source.label), null);
+  await assert.rejects(readReport(source), SyntaxError);
 });
 
-test('pollReport still throws on a complete report with the wrong shape', () => {
+test('a poll still throws on a complete report with the wrong shape', async () => {
   freshHome();
   writeReport('alpha', { exit: 'seam' });
   // Complete, parseable, and in breach of the contract — not a torn write.
   writeFileSync(paths().lastCycle('alpha'), '{ "exit": "finished" }\n', 'utf8');
-  assert.throws(() => pollReport('alpha'), /not a valid cycle report/);
+  const source = alpha();
+  assert.throws(() => reportFromPoll('{ "exit": "finished" }', source.label), /not a valid cycle report/);
+});
+
+test('the local source reads an absent report as null and clears one that exists', async () => {
+  freshHome();
+  const source = alpha();
+  assert.equal(await source.read(), null);
+  writeReport('alpha', { exit: 'seam' });
+  await source.clear();
+  assert.equal(existsSync(paths().lastCycle('alpha')), false);
 });
 
 test('--pause-until takes a duration or an ISO date, bounded and future-only', () => {

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, lastCycleReported, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
 import { decide, fullReason, type Decision } from './decide.ts';
-import { isOnboarding, readReport, resumeCycle, runCycle, type CycleReport } from './cycle.ts';
+import { isOnboarding, readReport, reportSource, resumeCycle, runCycle, type CycleReport } from './cycle.ts';
 import { PaneBusy, releaseLeftover, runnerIsPresent } from './orca.ts';
 import { readAsks } from './asks.ts';
 import { nudgeIfNeglected, textCraig } from './nudge.ts';
@@ -26,11 +26,11 @@ const explain = (error: unknown): string => (error instanceof Error ? error.mess
  * `readReport` throws on one, and here that throw would land in the middle of a pass.
  * Logged to the tick log and read as absent — never swallowed, never fatal.
  */
-const readReportOrWarn = (program: string): CycleReport | null => {
+const readReportOrWarn = async (program: Program): Promise<CycleReport | null> => {
   try {
-    return readReport(program);
+    return await readReport(reportSource(program));
   } catch (error) {
-    console.error(`ignoring unreadable cycle report for ${program}: ${explain(error)}`);
+    console.error(`ignoring unreadable cycle report for ${program.name}: ${explain(error)}`);
     return null;
   }
 };
@@ -144,7 +144,7 @@ const reconcileAbandoned = async (now: number, control: Control, status: Teamcla
  * before admission for the same reason — the next cycle's `clearReport` would delete the
  * evidence.
  */
-const reconcileLateReports = (now: number): number => {
+const reconcileLateReports = async (now: number): Promise<number> => {
   const p = paths();
   const cycles = readCycles(p.cycles);
   const control = readControl(p.control);
@@ -158,7 +158,7 @@ const reconcileLateReports = (now: number): number => {
     // A malformed leftover file must cost this program's reconciliation, never the tick:
     // everything after this point — admission included — would otherwise stop until
     // someone deleted the file by hand.
-    const report = readReportOrWarn(program.name);
+    const report = await readReportOrWarn(program);
     if (report === null) continue;
 
     appendRecord(p.cycles, {
@@ -169,7 +169,7 @@ const reconcileLateReports = (now: number): number => {
       yield: report.yield,
       asksRaised: report.asksRaised,
       pauseUntil: report.pauseUntil,
-      closing: last.sessionId === null ? null : closingMessage(last.sessionId),
+      closing: last.sessionId === null ? null : await closingMessage(last.sessionId, program.host),
     });
     superseded += 1;
     console.log(
@@ -411,7 +411,7 @@ export const tick = async (): Promise<void> => {
     await reconcileAbandoned(now, control, status);
     // Before admission: the next cycle's clearReport() would delete the very report this
     // reads, so a late outcome has exactly one tick in which to be recovered.
-    reconcileLateReports(now);
+    await reconcileLateReports(now);
 
     // Workers write their own start record, so within one tick the earlier launches
     // are not yet visible in the ledger. Without tracking them here the concurrency
@@ -603,7 +603,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
     // Unreadable falls back to the unreported exit rather than throwing: a throw here
     // would skip record() and leave the cycle open in the ledger, charged as running
     // against the pool forever.
-    const report = readReportOrWarn(name);
+    const report = await readReportOrWarn(program);
     const after = snapshot(poolFrom(await readStatus(), ceilings, Date.now()));
 
     record({
@@ -615,7 +615,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       asksRaised: report?.asksRaised ?? 0,
       pauseUntil: report?.pauseUntil ?? null,
       // Only a cycle drovr saw end has a closing; an abandoned runner is still talking.
-      closing: outcome.finished ? closingMessage(sessionId) : null,
+      closing: outcome.finished ? await closingMessage(sessionId, program.host) : null,
     });
 
     // A stalled runner was nudged and stayed silent, so Craig is the only one left

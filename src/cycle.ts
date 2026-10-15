@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import { existsSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { MAX_REST_DAYS, parseDuration, type Program } from './control.ts';
+import { MAX_REST_DAYS, parseDuration, type Host, type Program } from './control.ts';
+import { runBounded, runSsh } from './exec.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { textCraig, type Recipient } from './nudge.ts';
 import {
@@ -13,10 +14,17 @@ import {
   resolveWorktree,
   runnerAddress,
   runnerState,
+  shellCommand,
   startCycleAgent,
   type AgentState,
   type StartedCycle,
 } from './orca.ts';
+
+/** One ssh round trip to a host: a `cat`, an `rm`, a `true`. Same budget as an orca call. */
+const SSH_TIMEOUT_MS = 20_000;
+
+/** A wake command boots a machine and waits for sshd; EC2 from stopped is a few minutes. */
+const WAKE_TIMEOUT_MS = 6 * 60_000;
 
 /**
  * Written by the runner before it exits. Its absence after the process ends is
@@ -46,10 +54,55 @@ const validated = (label: string, data: unknown): CycleReport => {
   return parsed.data;
 };
 
-export const readReport = (program: string): CycleReport | null => {
-  const path = paths().lastCycle(program);
-  if (!existsSync(path)) return null;
-  return validated(path, JSON.parse(readFileSync(path, 'utf8')));
+/**
+ * Where a program's `last-cycle.json` is read from and cleared. The runner writes it with
+ * its own `drovr report`, so on a host it lands in the box's DROVR_HOME and comes back
+ * over ssh; the ledger it feeds stays on this Mac either way. `read` is the file's text or
+ * null when there is none yet; a failure to look is thrown, never read as absent.
+ */
+export type ReportSource = {
+  /** Names the file in messages. */
+  label: string;
+  read: () => Promise<string | null>;
+  clear: () => Promise<void>;
+};
+
+/** Built as a shell word, not resolved here: `~` is the box's home and only the box knows it. */
+export const remoteReportPath = (host: Host, program: string): string =>
+  `${host.drovrHome}/programs/${program}/last-cycle.json`;
+
+/** cat's own complaint for an absent file; anything else ssh says is a real failure. */
+export const isMissingFile = (stderr: string): boolean => /No such file/.test(stderr);
+
+export const reportSource = (program: Program): ReportSource => {
+  const host = program.host;
+  if (host === null) {
+    const path = paths().lastCycle(program.name);
+    return {
+      label: path,
+      read: async () => (existsSync(path) ? readFileSync(path, 'utf8') : null),
+      clear: async () => rmSync(path, { force: true }),
+    };
+  }
+  const path = remoteReportPath(host, program.name);
+  return {
+    label: `${host.ssh}:${path}`,
+    read: () =>
+      runSsh(host.ssh, shellCommand(['cat', path]), SSH_TIMEOUT_MS)
+        .then(({ stdout }) => stdout)
+        .catch((error: unknown) => {
+          if (isMissingFile(String((error as { stderr?: unknown }).stderr ?? ''))) return null;
+          throw error;
+        }),
+    clear: async () => {
+      await runSsh(host.ssh, shellCommand(['rm', '-f', path]), SSH_TIMEOUT_MS);
+    },
+  };
+};
+
+export const readReport = async (source: ReportSource): Promise<CycleReport | null> => {
+  const text = await source.read();
+  return text === null ? null : validated(source.label, JSON.parse(text));
 };
 
 /**
@@ -59,16 +112,15 @@ export const readReport = (program: string): CycleReport | null => {
  * runners briefed under the old write-the-file contract. Valid JSON with the wrong
  * shape is a *complete* report that breaks the contract, and still throws.
  */
-export const pollReport = (program: string): CycleReport | null => {
-  const path = paths().lastCycle(program);
-  if (!existsSync(path)) return null;
+export const reportFromPoll = (text: string | null, label: string): CycleReport | null => {
+  if (text === null) return null;
   let data: unknown;
   try {
-    data = JSON.parse(readFileSync(path, 'utf8'));
+    data = JSON.parse(text);
   } catch {
     return null;
   }
-  return validated(path, data);
+  return validated(label, data);
 };
 
 /**
@@ -177,11 +229,6 @@ export const parseReportArgs = (args: string[], now: number): { program: string;
   };
 };
 
-export const clearReport = (program: string): void => {
-  const path = paths().lastCycle(program);
-  if (existsSync(path)) rmSync(path);
-};
-
 export const isOnboarding = (program: string): boolean =>
   !existsSync(paths().stateFile(program));
 
@@ -286,13 +333,69 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * tokens) in .envrc. Running through direnv keeps that the single source of truth instead
  * of duplicating it into control.json, where it would drift.
  *
- * The last of its two callers: drovr no longer publishes anything, so the only thing it
- * still wraps is the cycle command itself.
+ * Headless only now; the orca launch is `launchArgv`.
  */
 const wrap = (program: Program, argv: string[]): { file: string; args: string[] } =>
   program.useDirenv
     ? { file: 'direnv', args: ['exec', program.cwd, ...argv] }
     : { file: argv[0]!, args: argv.slice(1) };
+
+/**
+ * The full launch argv for the cycle terminal. --model per session, so the runner is always
+ * Fable without touching Craig's default; --name makes it obvious in the prompt box and
+ * /resume which program a session belongs to; --session-id is what lets the ledger find
+ * this cycle's transcript afterwards.
+ *
+ * On the Mac the proxy comes from `teamclaude run`, as Craig's own alias does. A host
+ * has no teamclaude server — its pool is Mac-local — and the box's `claude` alias routes
+ * through one anyway, so there the launch names the configured binary and runs direnv
+ * against the box's checkout.
+ */
+export const launchArgv = (program: Program, sessionName: string, sessionId: string): string[] => {
+  const claude = ['--model', program.model, '--name', sessionName, '--session-id', sessionId];
+  const host = program.host;
+  const argv = host === null ? ['teamclaude', 'run', '--', ...claude] : [host.claude, ...claude];
+  const cwd = host === null ? program.cwd : host.cwd;
+  return program.useDirenv ? ['direnv', 'exec', cwd, ...argv] : argv;
+};
+
+export type WakeDecision = 'proceed' | 'run-wake' | 'fail';
+
+export const wakeDecision = (reachable: boolean, wake: string | null): WakeDecision => {
+  if (reachable) return 'proceed';
+  return wake === null ? 'fail' : 'run-wake';
+};
+
+/** Null when `ssh <target> true` answered; otherwise why it did not. */
+const unreachableReason = (host: Host): Promise<string | null> =>
+  runSsh(host.ssh, 'true', SSH_TIMEOUT_MS).then(
+    () => null,
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+/**
+ * A stopped box is the normal state between cycles, not a fault, so the wake runs here
+ * before anything asks orca for the worktree. Probed once more afterwards; still dark is
+ * an error the existing crash path records.
+ */
+const ensureReachable = async (program: Program, host: Host): Promise<void> => {
+  const reason = await unreachableReason(host);
+  const decision = wakeDecision(reason === null, host.wake);
+  if (decision === 'proceed') return;
+  if (decision === 'fail') {
+    throw new Error(
+      `${host.ssh} is unreachable (${reason}) and ${program.name} has no wake command. ` +
+        `Start the box, or set one:  drovr host ${program.name} --wake '<command>'`,
+    );
+  }
+  const wake = host.wake!;
+  console.log(`${program.name}: ${host.ssh} is unreachable (${reason}) — waking it: ${wake}`);
+  await runBounded('sh', ['-c', wake], { timeoutMs: WAKE_TIMEOUT_MS, label: wake });
+  const after = await unreachableReason(host);
+  if (after !== null) {
+    throw new Error(`${host.ssh} is still unreachable after \`${wake}\` returned: ${after}`);
+  }
+};
 
 /** Headless fallback: claude -p to a log file. Nothing to talk to; used only when asked for. */
 const runHeadless = async (program: Program, startedAt: string): Promise<CycleOutcome> => {
@@ -376,20 +479,30 @@ const askForHuman = async (
 };
 
 /**
- * Orca stopped answering for long enough that drovr cannot say what the runner is doing.
- * `abandoned`, like the deadline: a statement about the watch, not the cycle, so a report
- * the runner writes later is reconciled by the next tick rather than lost under a crash.
+ * Orca (or the host) stopped answering for long enough that drovr cannot say what the
+ * runner is doing. `abandoned`, like the deadline: a statement about the watch, not the
+ * cycle, so a report the runner writes later is reconciled by the next tick rather than
+ * lost under a crash.
  */
 const lostSight = (program: string, failures: number): CycleOutcome => ({
   finished: false,
   abandoned: true,
   detail:
-    `lost sight of ${program}'s runner after ${failures} failed polls in a row — orca is not ` +
-    'answering. Recorded as abandoned, not crashed; if it writes a report the next tick ' +
-    'supersedes this record with the real outcome',
+    `lost sight of ${program}'s runner after ${failures} failed polls in a row — neither its ` +
+    'report nor its terminal could be read. Recorded as abandoned, not crashed; if it writes ' +
+    'a report the next tick supersedes this record with the real outcome',
 });
 
-const watchCycle = async (program: string, limits: CycleLimits): Promise<CycleOutcome> => {
+/** Logged, never swallowed: the caller counts it toward `MAX_POLL_FAILURES`. */
+const failedPoll =
+  (program: string, what: string) =>
+  (error: unknown): undefined => {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`${program}: could not read its ${what} (${detail}) — still watching`);
+    return undefined;
+  };
+
+const watchCycle = async (program: string, source: ReportSource, limits: CycleLimits): Promise<CycleOutcome> => {
   // Bounded: a wedged runner must not hold its capacity slot indefinitely.
   const deadline = Date.now() + limits.maxHours * 3_600_000;
   let idleSince: number | null = null;
@@ -400,19 +513,17 @@ const watchCycle = async (program: string, limits: CycleLimits): Promise<CycleOu
 
   while (Date.now() < deadline) {
     await sleep(POLL_MS);
-    if (pollReport(program) !== null) return releaseFinished(program);
-
-    const state: AgentState | null = await runnerState(program).catch((error: unknown) => {
-      const detail = error instanceof Error ? error.message : String(error);
-      console.error(`${program}: could not read its runner's state (${detail}) — still watching`);
-      return null;
-    });
-    if (state === null) {
+    // Over ssh the report read can fail like an orca call can; both count as one lost poll.
+    const text = await source.read().catch(failedPoll(program, 'report'));
+    const state: AgentState | undefined =
+      text === undefined ? undefined : await runnerState(program).catch(failedPoll(program, "runner's state"));
+    if (text === undefined || state === undefined) {
       pollFailures += 1;
       if (pollFailures >= MAX_POLL_FAILURES) return lostSight(program, pollFailures);
       continue;
     }
     pollFailures = 0;
+    if (reportFromPoll(text, source.label) !== null) return releaseFinished(program);
     if (state === 'gone') {
       return { finished: true, detail: `the runner is no longer present in ${(await runnerAddress(program)).where}` };
     }
@@ -481,16 +592,12 @@ const runInOrca = async (
   sessionId: string,
   limits: CycleLimits,
 ): Promise<CycleOutcome> => {
+  if (program.host !== null) await ensureReachable(program, program.host);
   const worktreeId = await resolveWorktree(program);
   const prompt = substitute(program.cyclePrompt, program, isOnboarding(program.name));
   const sessionName = substitute(program.sessionName, program, isOnboarding(program.name));
-  // --model per session, so the runner is always Fable without touching Craig's default;
-  // --name makes it obvious in the prompt box and /resume which program a session belongs to;
-  // --session-id is what lets the ledger find this cycle's transcript afterwards.
-  const { file, args } = wrap(program, [
-    'teamclaude', 'run', '--', '--model', program.model, '--name', sessionName, '--session-id', sessionId,
-  ]);
-  const started: StartedCycle = await startCycleAgent({ program, worktreeId, command: [file, ...args], prompt });
+  const command = launchArgv(program, sessionName, sessionId);
+  const started: StartedCycle = await startCycleAgent({ program, worktreeId, command, prompt });
 
   writeFileSync(
     join(paths().programState(program.name), 'current-cycle.json'),
@@ -498,15 +605,15 @@ const runInOrca = async (
     'utf8',
   );
 
-  return watchCycle(program.name, limits);
+  return watchCycle(program.name, reportSource(program), limits);
 };
 
 /**
  * Picks the watch back up for a cycle whose worker died with its runner still there. No
- * clearReport: a report the runner has written since is this cycle's outcome, not a leftover.
+ * clear: a report the runner has written since is this cycle's outcome, not a leftover.
  */
 export const resumeCycle = (program: Program, limits: CycleLimits): Promise<CycleOutcome> =>
-  watchCycle(program.name, limits);
+  watchCycle(program.name, reportSource(program), limits);
 
 /** Resolves once the cycle finishes or the watch window expires; cycles run for hours. */
 export const runCycle = async (
@@ -516,7 +623,7 @@ export const runCycle = async (
   limits: CycleLimits,
 ): Promise<CycleOutcome> => {
   ensureDirs(program.name);
-  clearReport(program.name);
+  await reportSource(program).clear();
   return program.runner === 'headless'
     ? runHeadless(program, startedAt)
     : runInOrca(program, startedAt, sessionId, limits);

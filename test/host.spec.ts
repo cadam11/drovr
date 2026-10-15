@@ -63,3 +63,52 @@ test('terminalAddress opens a remote terminal in its environment', () => {
   });
   assert.equal(terminalAddress(shown, 'term_1').open, 'orca terminal switch --terminal term_1');
 });
+
+// --- cycle: the report comes back over ssh, the box is woken, the launch names the binary
+
+import { isMissingFile, launchArgv, remoteReportPath, reportFromPoll, wakeDecision } from '../src/cycle.ts';
+
+const fullHost = { ...host, drovrHome: '~/.drovr', claude: '~/.local/bin/claude', wake: null };
+const program = (over: Record<string, unknown>) =>
+  readControl(controlWith(over)).programs[0]!;
+
+test('the remote report path is a shell word the box expands, not a path resolved here', () => {
+  assert.equal(shellCommand(['cat', remoteReportPath(fullHost, 'relliq')]), 'cat ~/.drovr/programs/relliq/last-cycle.json');
+  assert.equal(
+    shellCommand(['cat', remoteReportPath({ ...fullHost, drovrHome: '/srv/drovr' }, 'relliq')]),
+    'cat /srv/drovr/programs/relliq/last-cycle.json',
+  );
+});
+
+test('only cat\'s own "No such file" means not yet; anything else ssh says is a failure', () => {
+  assert.equal(isMissingFile('cat: /home/ubuntu/.drovr/programs/relliq/last-cycle.json: No such file or directory\n'), true);
+  assert.equal(isMissingFile('ssh: connect to host relliq-devbox port 22: Operation timed out\r\n'), false);
+  assert.equal(isMissingFile(''), false);
+});
+
+test('reportFromPoll reads absent and torn as not yet, and a wrong-shaped report as broken', () => {
+  assert.equal(reportFromPoll(null, 'x'), null);
+  assert.equal(reportFromPoll('{"exit": "sea', 'x'), null);
+  assert.equal(reportFromPoll('{"exit":"seam"}', 'x')?.exit, 'seam');
+  assert.throws(() => reportFromPoll('{"exit":"done"}', 'x'), /not a valid cycle report/);
+});
+
+test('wakeDecision: reachable proceeds, unreachable wakes when it can, else fails', () => {
+  assert.equal(wakeDecision(true, null), 'proceed');
+  assert.equal(wakeDecision(true, 'pnpm devbox:start'), 'proceed');
+  assert.equal(wakeDecision(false, 'pnpm devbox:start'), 'run-wake');
+  assert.equal(wakeDecision(false, null), 'fail');
+});
+
+test('the launch goes through teamclaude on the Mac and straight to the binary on a host', () => {
+  const claude = ['--model', 'fable', '--name', 'relliq program runner', '--session-id', 'sid'];
+  assert.deepEqual(launchArgv(program({}), 'relliq program runner', 'sid'), [
+    'direnv', 'exec', '/Users/cadam/code/propra/relliq', 'teamclaude', 'run', '--', ...claude,
+  ]);
+  assert.deepEqual(launchArgv(program({ host }), 'relliq program runner', 'sid'), [
+    'direnv', 'exec', '/home/ubuntu/code/propra/relliq', '~/.local/bin/claude', ...claude,
+  ]);
+  assert.deepEqual(launchArgv(program({ host, useDirenv: false }), 'relliq program runner', 'sid'), [
+    '~/.local/bin/claude', ...claude,
+  ]);
+});
