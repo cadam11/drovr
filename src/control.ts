@@ -69,9 +69,35 @@ const aiceShape = z.object({
   asksPage: z.string().nullable().default(null),
 });
 
+/**
+ * A cycle run on a paired remote Orca runtime instead of this Mac. drovr itself still runs
+ * here and keeps the one ledger; only the runner's terminal lives on the box, and the
+ * report comes back over ssh. `program.cwd` stays the local checkout for direnv and asks.
+ */
+const hostShape = z.object({
+  /** Orca environment id of the paired runtime, from `orca environment list`. */
+  environment: z.string(),
+  /** ssh target, e.g. ubuntu@relliq-devbox. */
+  ssh: z.string(),
+  /** The checkout on the box: an absolute path, since orca addresses the worktree by it. */
+  cwd: z.string().regex(/^\//, 'host.cwd must be an absolute path on the box'),
+  /** The box's own DROVR_HOME; `~` is the remote user's home, expanded there. */
+  drovrHome: z.string().default('~/.drovr'),
+  /**
+   * The claude binary on the box. Its `claude` alias routes through teamclaude, whose pool
+   * is Mac-local and has no server there, so the launch names the binary directly.
+   */
+  claude: z.string().default('~/.local/bin/claude'),
+  /** A local shell command that starts the box and returns once ssh answers. Null: never wake. */
+  wake: z.string().nullable().default(null),
+});
+
+export type Host = z.infer<typeof hostShape>;
+
 const programShape = z.object({
   name: z.string(),
   cwd: z.string(),
+  host: hostShape.nullable().default(null),
   /** {program} and {mode} are substituted before spawning. */
   cycleCommand: z
     .string()
