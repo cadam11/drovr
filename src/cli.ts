@@ -233,6 +233,7 @@ const statusPayload = async () => {
     programs: (await evaluateAll({ control, status, cycles, now })).map(({ program, decision, pid }) => ({
       name: program.name,
       cwd: program.cwd,
+      host: program.host,
       enabled: program.enabled,
       priority: program.priority,
       effectivePriority: effectivePriority(program, now, control.deadlineHorizonDays),
@@ -328,6 +329,9 @@ const showStatus = async (): Promise<void> => {
     const shown = effectivePriority(program, now, control.deadlineHorizonDays);
     const flags = `${program.enabled ? '' : ' [disabled]'}${pid === null ? '' : ` [pid ${pid}]`}`;
     console.log(`  [p${shown}] ${program.name}${flags}: ${decision.verdict} — ${decision.reason}`);
+    if (program.host !== null) {
+      console.log(`      runs on ${program.host.ssh} (orca environment ${program.host.environment}) in ${program.host.cwd}`);
+    }
   }
 };
 
@@ -551,6 +555,47 @@ const addProgram = (rest: string[]): void => {
   console.log('first tick will onboard it: reconstruct state, raise one ask, then stop');
 };
 
+const HOST_USAGE =
+  'usage: drovr host <program> --environment <orca env id> --ssh <user@host> --cwd </path/on/box> ' +
+  "[--drovr-home <path>] [--claude <path>] [--wake '<local command>']  |  drovr host <program> --clear";
+
+const requiredFlag = (rest: string[], name: string): string => {
+  const value = flag(rest, name);
+  if (value === undefined || value.startsWith('--')) throw new Error(`--${name} is required\n${HOST_USAGE}`);
+  return value;
+};
+
+/**
+ * `drovr host` — run a program's cycles on a paired remote Orca runtime, or back on this
+ * Mac with `--clear`. Only the terminal and the report move; the ledger stays here.
+ */
+const setHost = (rest: string[]): void => {
+  const [name] = rest;
+  if (name === undefined || name.startsWith('--')) throw new Error(HOST_USAGE);
+  const host = rest.includes('--clear')
+    ? null
+    : {
+        environment: requiredFlag(rest, 'environment'),
+        ssh: requiredFlag(rest, 'ssh'),
+        cwd: requiredFlag(rest, 'cwd'),
+        ...(flag(rest, 'drovr-home') === undefined ? {} : { drovrHome: flag(rest, 'drovr-home') }),
+        ...(flag(rest, 'claude') === undefined ? {} : { claude: flag(rest, 'claude') }),
+        wake: flag(rest, 'wake') ?? null,
+      };
+  mutate((control) => {
+    const programs = Array.isArray(control.programs) ? (control.programs as Record<string, unknown>[]) : [];
+    const entry = programs.find((candidate) => candidate.name === name);
+    if (entry === undefined) throw new Error(`no program named "${name}"`);
+    entry.host = host;
+  });
+  if (host === null) {
+    console.log(`${name} runs on this Mac again`);
+    return;
+  }
+  console.log(`${name} now runs on ${host.ssh} (orca environment ${host.environment}) in ${host.cwd}`);
+  console.log(`the box needs drovr on PATH with a program named "${name}" in its own control.json — the runner's \`drovr report\` checks the name`);
+};
+
 /**
  * The loop agent's way to end its cycle: validated before anything touches disk, and
  * written atomically, so drovr's watch can never read a torn or malformed report. The
@@ -721,6 +766,7 @@ const main = async (argv: string[]): Promise<void> => {
     return showStatus();
   }
   if (command === 'add') return addProgram(rest);
+  if (command === 'host') return setHost(rest);
   if (command === 'rm') return removeProgram(rest[0]);
   if (command === 'report') return reportCycle(rest);
   if (command === 'watch') return watch(Number.parseInt(rest[0] ?? '15', 10));
