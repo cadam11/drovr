@@ -255,8 +255,9 @@ platform applications `APNS/hey` and `APNS_SANDBOX/hey` (hey design,
 `docs/superpowers/specs/2026-10-15-notify-app-design.md`). The iOS app is `ios/Hey/`, a Debug
 build on Craig's phone until TestFlight (see "Not yet observed"); it reads its own partition
 straight from DynamoDB with identity-pool credentials and never calls the Lambda. Read state is
-the app's `read#<from>` rows, which is how the Lambda can put the unread-conversation count on
-each push as `aps.badge`; the app sets the same number itself whenever its unread set changes.
+the app's `read#<from>` rows, which is how the Lambda can put the unread-**message** count on
+each push as `aps.badge` (Craig, 2026-10-16: messages, not threads; a thread's dot is still per
+thread); the app sets the same number itself whenever its unread set changes.
 Two more row kinds live on the partition: `profile#<from>` (icon, summary, colour — the tile
 and the header; seeded once per program by `profile.ts` from Orca's repo icon, changed with
 `hey profile`) and `prefs` (quiet hours and away, written only by the phone's settings sheet).
