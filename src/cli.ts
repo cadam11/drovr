@@ -24,8 +24,7 @@ import { observedYours, readSamples, shareOf, type UsageSample } from './usage.t
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
 import { readAsks } from './asks.ts';
 import { parseReportArgs, writeReport } from './cycle.ts';
-import { textCraig } from './nudge.ts';
-import { unverified, verifyDelivery } from './delivery.ts';
+import { alertFrom, textCraig } from './nudge.ts';
 import { isSettled, releaseRunner as freeRunner, runnerAddress, runnerState, tidyRunnerTerminal } from './orca.ts';
 import { setReserve } from './keys.ts';
 import { heldBy, holder } from './lock.ts';
@@ -881,53 +880,34 @@ const main = async (argv: string[]): Promise<void> => {
         ? wanted.join(' ')
         : `drovr: notification test from ${hostname()} at ${new Date().toISOString()}`;
 
-    if (control.slackChannel === null && control.phoneNumber === null) {
-      console.error('neither slackChannel nor phoneNumber is set in ~/.drovr/control.json, so drovr cannot reach anyone.');
+    if (control.notifyTo === null) {
+      console.error('notifyTo is not set in ~/.drovr/control.json — set it to a hey handle, e.g. "craig" (see infra/users.tf).');
       process.exitCode = 1;
       return;
     }
 
-    const result = await textCraig(control, message);
-    const slack = result.via === 'slack';
-    const to = slack ? `slack ${control.slackChannel}` : control.phoneNumber;
-    const from = slack ? 'the Drovr app' : (control.originationNumber ?? 'whichever number SNS picks');
-
-    // Accepting a message and delivering it are different events, minutes apart. The
-    // only place the difference shows up is the delivery log, so look rather than guess.
-    const verdict = rest.includes('--no-verify')
-      ? unverified('not checked (--no-verify)')
-      : await verifyDelivery(result, 90_000);
-
+    const result = await textCraig(control, message, alertFrom(null, hostname()));
     if (json) {
       console.log(
         JSON.stringify(
           {
-            accepted: result.sent,
-            delivery: verdict.state,
-            reason: verdict.reason,
-            to,
-            from,
-            via: result.via,
-            messageId: result.messageId,
+            sent: result.sent,
+            id: result.messageId,
+            to: control.notifyTo,
             message,
-            note: 'accepted means the API took the message; delivery is the one that matters',
+            note: 'sent means the row exists in the hey table; the app shows it on its next refresh or push',
             usingThis: AGENT_NOTES,
           },
           null,
           2,
         ),
       );
-      if (!result.sent || verdict.state === 'failed') process.exitCode = 1;
-      return;
+    } else if (result.sent) {
+      console.log(`sent ${result.messageId} to ${control.notifyTo}`);
+    } else {
+      console.error('the send failed — the reason is logged above.');
     }
-    if (!result.sent) {
-      console.error('the send was refused — the reason is logged above.');
-      process.exitCode = 1;
-      return;
-    }
-    console.log(`sent to ${to} from ${from} via ${result.via}`);
-    console.log(`delivery: ${verdict.state} — ${verdict.reason}`);
-    if (verdict.state === 'failed') process.exitCode = 1;
+    if (!result.sent) process.exitCode = 1;
     return;
   }
 

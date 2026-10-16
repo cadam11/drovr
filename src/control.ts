@@ -187,20 +187,8 @@ const controlShape = z.object({
   contextCeilingTokens: z.number().default(250_000),
   /** Crashes only latch a program while they are recent; older ones age out. */
   crashWindowMinutes: z.number().default(60),
-  /** Texted when a program has been blocked on asks this long. Null disables it. */
-  phoneNumber: z.string().nullable().default(null),
-  /**
-   * E.164 number drovr's texts are sent *from*. Null lets SNS pick one per send,
-   * which works but means the alerts arrive from no fixed number. Set it to a
-   * dedicated long code so they are recognisable and replies land somewhere sane.
-   */
-  originationNumber: z.string().nullable().default(null),
-  /**
-   * Where the Drovr Slack app posts alerts: a channel id (the private #drovr, with the
-   * app invited) or a member id for a DM. Slack first; SMS is the fallback. The bot token is in the login keychain
-   * (service `drovr-slack`), never here.
-   */
-  slackChannel: z.string().nullable().default(null),
+  /** The hey handle alerts go to (infra/users.tf). Null disables every alert; the log line stays. */
+  notifyTo: z.string().nullable().default(null),
   nudgeAfterMinutes: z.number().default(240),
   /** How long to leave a blocked program alone before trying again. */
   blockedBackoffMinutes: z.number().default(60),

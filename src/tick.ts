@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, openSync, rmSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendRecord, inFlight, lastCycleReported, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
@@ -7,7 +8,7 @@ import { decide, fullReason, type Decision } from './decide.ts';
 import { isOnboarding, readReport, reportSource, resumeCycle, runCycle, type CycleReport } from './cycle.ts';
 import { PaneBusy, releaseLeftover, runnerIsPresent } from './orca.ts';
 import { readAsks } from './asks.ts';
-import { nudgeIfNeglected, textCraig } from './nudge.ts';
+import { alertFrom, nudgeIfNeglected, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
 
 import { poolFrom } from './capacity.ts';
@@ -263,7 +264,7 @@ const durationText = (ms: number): string =>
 const notifyOverrun = async (controlPath: string, message: string): Promise<void> => {
   try {
     const control = readControl(controlPath);
-    await textCraig(control, message);
+    await textCraig(control, message, alertFrom(null, hostname()));
   } catch (error) {
     console.error(`could not text the overrun: ${explain(error)}`);
   }
@@ -350,14 +351,13 @@ export const runTick = async (): Promise<void> => {
     if (recordTickFailure(p.tickFailure, Date.now(), error)) {
       try {
         const control = readControl(p.control);
-        const sent = await textCraig(control, failedTickText(error));
-        // "accepted", never "delivered": SNS returns a MessageId for texts that fail a
-        // minute later. The point of the line is that tick.err records drovr having tried
-        // to speak — the failure this exists for is the one nothing said anything about.
+        const sent = await textCraig(control, failedTickText(error), alertFrom(null, hostname()));
+        // The point of the line is that tick.err records drovr having tried to speak — the
+        // failure this exists for is the one nothing said anything about.
         console.error(
           sent.sent
-            ? `alerted the failed tick: accepted via ${sent.via}.`
-            : 'could not alert the failed tick: neither slack nor SMS took it (see above).',
+            ? `alerted the failed tick: hey ${sent.messageId ?? ''}.`
+            : 'could not alert the failed tick: hey did not take it (see above).',
         );
       } catch (alertError) {
         console.error(`could not alert the failed tick: ${explain(alertError)}`);
@@ -578,9 +578,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
       stallNudgeMs: control.stallNudgeMinutes * 60_000,
       maxStallNudges: control.maxStallNudges,
       blockedAlertMs: control.blockedAlertMinutes * 60_000,
-      slackChannel: control.slackChannel,
-      phoneNumber: control.phoneNumber,
-      originationNumber: control.originationNumber,
+      notifyTo: control.notifyTo,
     };
     const watch = resumed === undefined ? runCycle(program, startedAt, sessionId, limits) : resumeCycle(program, limits);
     const outcome = await watch.catch(
@@ -626,6 +624,7 @@ export const runProgramCycle = async (name: string): Promise<void> => {
         control,
         `drovr: ${name} stalled — its runner idled through ${control.maxStallNudges} nudges ` +
           `without writing a report. Its pane is free and the next tick starts a fresh cycle.`,
+        name,
       );
     }
 

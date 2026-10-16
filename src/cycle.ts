@@ -257,11 +257,8 @@ export type CycleLimits = {
   maxStallNudges: number;
   /** How long a runner may sit on a dialog before Craig is asked to come and clear it. */
   blockedAlertMs: number;
-  /** Null on both disables the alert; the log line is written either way. */
-  slackChannel: string | null;
-  phoneNumber: string | null;
-  /** drovr's own long code — without it SNS picks one of sunnyt's numbers (nudge.ts). */
-  originationNumber: string | null;
+  /** Null disables the alert; the log line is written either way. */
+  notifyTo: string | null;
 };
 
 const POLL_MS = 30_000;
@@ -472,7 +469,7 @@ const askForHuman = async (
     `prompt or a trust question. Only you can clear it. Open ${address.where} in orca ` +
     `and answer it; the cycle carries on from there. It holds its terminal until you do.${openLine(address)}`;
   console.error(`${program}: blocked ${minutes}m on a dialog — asked Craig to clear it`);
-  await textCraig(limits, message).catch((error: unknown) => {
+  await textCraig(limits, message, program).catch((error: unknown) => {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(`could not text about ${program} being blocked: ${detail}`);
   });

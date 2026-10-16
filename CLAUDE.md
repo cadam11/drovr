@@ -79,7 +79,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `lock.ts` | A bare pid **is valid JSON**, so the legacy format cannot be handled in a `catch`: `JSON.parse('76410')` succeeds and returns a number. Branch on the shape of what came back. Getting this wrong makes every pre-timestamp lock parse as unheld, which means `acquire` succeeds against a live holder and two ticks run at once — caught by a test, not by review. |
 | `lock.ts` | An unknown hold age is `null`, never `0`. A legacy bare-pid lock has no timestamp, and reading that as "taken just now" would make a wedged lock look freshly acquired forever. |
 | `asks.ts` | Every `aice` call carries an execFile `timeout`. `readAsks` runs inside the tick's per-program loop, so a hung `aice` there holds the tick lock and every later launchd firing logs `another tick is still evaluating` while admission stops silently. Every other spawner goes through `runBounded`; this file predates it and keeps its own bespoke error handling, which is why it is the one exception — and it is now the only `aice` call drovr makes at all. |
-| `nudge.ts` | `textCraig` is called from inside the tick, so an unbounded `aws` there means the thing whose job is to say something is wrong takes the supervisor down instead. Bounded at 30s, and best-effort on every path. |
+| `nudge.ts` | `textCraig` is called from inside the tick, so an unbounded send there means the thing whose job is to say something is wrong takes the supervisor down instead. The Lambda invoke is bounded at 15s with `maxAttempts: 1`, and best-effort on every path. |
 | `decide.ts` | `blocked` means waiting on a human, not broken. Never count it toward the zero-yield stuck streak, and back off rather than re-running every tick to rediscover the same unanswered ask. |
 | `watch.ts` | `setInterval` keeps the event loop alive — do not `unref()` it, and restore the cursor and raw mode on every exit path. |
 | `cycle.ts` | An interactive claude session cannot end itself — it finishes its turn and idles at the prompt forever. Once the report exists the cycle has declared itself done, so releasing the pane is cleanup, not a kill. Skip it and the pane stays occupied and the next cycle is refused. |
@@ -109,10 +109,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `decide.ts` | `undefined` for `runnerPresent` means *unknown*, never *absent*. orca being unreachable must not refuse every cycle, and a `headless` program has no agent to find. Only an affirmative `true` holds a program. |
 | `cycle.ts` | Never nudge a `blocked` agent. It is waiting on a dialog only Craig can answer, and a prompt queues up behind it rather than clearing it. |
 | `ledger.ts` | `stalled` counts toward the failure latch alongside `crash`, and toward nothing else. Leave it out and a program that stalls every cycle loops start → nudge×3 → stalled → start forever, paying full onboarding each round. |
-| `nudge.ts` | `textCraig`'s `originationNumber` is **required, never defaulted**. It was optional-defaulting-to-null once, and four of five call sites forgot it — so every tick-driven alert (blocked-asks nudge, stall text, watchdog overrun, blocked-runner alert) went out via bare SNS, which picks one of **sunnyt's** numbers: measured 2026-08-27 when the blocked-asks nudge arrived from the product's number. Null means "let SNS pick", and only `drovr notify` had it right. Pass `control.originationNumber` at every new call site; the required parameter is the guard, same as `runBounded`'s timeout. |
-| `nudge.ts` | SMS sends on the **default** aws profile, with no `--profile`. The named profiles are SSO-backed and their sessions expire — exactly the state an unattended overnight supervisor finds them in, which is how the alert path sat broken. The default profile is a static IAM user and still works at 4am. |
-| `nudge.ts` | SNS accepting a message is not proof a handset got it. Say "accepted", never "delivered", and never build anything that assumes the text arrived — `textCraig` is best-effort on every path. |
-| `nudge.ts` | Never conclude a send worked from its exit code. `aws sns publish` returns a MessageId and exit 0 for messages that fail at delivery a minute later; the reason appears only in the `DirectPublishToPhoneNumber/Failure` log group. `notify` waits for the real verdict — keep it that way. |
+| `nudge.ts` | `textCraig`'s `from` is **required, never defaulted** — the app files alerts under it, and a caller that forgets it buries every alert in one anonymous thread. Pass the program name for a cycle alert, `alertFrom(null, hostname())` for a supervisor one. The required parameter is the guard, same as `runBounded`'s timeout. |
 | `cycle.ts` | `last-cycle.json` has one blessed writer: `drovr report`, which validates against `reportShape` before anything touches disk and stages through a rename. A runner writing the file directly can be caught **mid-write by the watch's poll**, so `pollReport` reads unparseable bytes as "not yet" (the next poll sees the whole file) while a complete report with the wrong shape still throws — it is a declared interface, not a scrape. Everywhere the file is settled (`readReport`) stays strict. |
 | `tick.ts` | Neither tick-side read of `last-cycle.json` may throw. In `reconcileLateReports` a malformed leftover file would stop everything after it — admission included — every tick until hand-deleted; after `runCycle` a throw skips `record()`, so the cycle stays open in the ledger and is charged as running forever. `readReportOrWarn` logs and reads it as absent; the cost is one program's reconciliation or an `unreportedExit`, never the pass. |
 | `decide.ts` | Self-rest (`--pause-until`) and cadence are **readiness gates inside `decide()`**, not renderer state, so all four renderers inherit the hold and its reason without hand-syncing. `programPausedUntil` reads a lapsed timestamp as no pause — the `isPaused` trap at program level — and `nextCadenceStart` measures from the last *start* (a cycle in flight opens its window; measuring from the end would drift the schedule by the cycle's own length) and never holds a program that has not run. Both are waiting on the *world*; waiting on *Craig* stays `blocked` + asks, which nudges him. |
@@ -139,7 +136,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `state.ts` | `collectState`'s `probeMaxAgeMs` defaults to **0 — fresh** and only `drovr watch` passes anything else. The tick and `drovr status` must never reuse a probe: quota a few seconds old is admission deciding against room that is already gone. The cheap half (control.json, cycles, locks, service) is re-read on every call whatever the window, which is what lets a keystroke that writes control.json show its effect in the very next frame — a repaint of the last state would have left a stale mode line under `m`. |
 | `state.ts` | The subprocess half of a frame is the whole cost of it: 0.03ms to render, 2366ms to probe, measured 2026-09-17. `runnerIsPresent` exists because `agentStateFrom`'s tui-idle probe bills its full `IDLE_PROBE_MS` on a *working* claude, and both callers that ask only "is anything there" throw that distinction away. `cycle.ts` genuinely needs idle/working/blocked; nothing else does. |
 | `watch.ts` | A failed refresh must not end the session. Every draw ran `.catch(die)`, so one throw out of `collectState` — teamclaude's proxy missing its own 5s status budget is enough — restored the terminal and exited a live watch. `drawFailed` keeps the last good frame and puts the reason on the message line; only the first frame, which has nothing to keep, is still fatal. |
-| `tick.ts` | A tick that **throws** is as much an outage as one that overruns, and only the second had a watchdog. `runTick` wraps `tick()` from outside so the lock is released before a 30s SMS, and rethrows so the exit code still fails. The episode marker is cleared beside `stampTick` and nowhere else: a tick that returns early on a busy lock has completed nothing and must not end someone else's episode. |
+| `tick.ts` | A tick that **throws** is as much an outage as one that overruns, and only the second had a watchdog. `runTick` wraps `tick()` from outside so the lock is released before a 15s hey send, and rethrows so the exit code still fails. The episode marker is cleared beside `stampTick` and nowhere else: a tick that returns early on a busy lock has completed nothing and must not end someone else's episode. |
 | `keys.ts` | One writer of `control.json` now means **one code path, not one process**. `mutate` is called from the launchd tick, from `drovr watch` and from the CLI, and neither of the latter two takes the tick lock. The staged write-and-rename protects readers from a torn file; it does not order concurrent writers. The window is milliseconds and a lost update costs a re-pressed key, so do not build a lock for it — but do not claim single-writer serialization either. |
 
 ## The CLI is read by agents
@@ -225,41 +222,23 @@ Written and type-checked, never seen to fire. Unproven, not done:
   minute of landing (2026-08-29 15:57: aice-x admitted over resting sunnyt, refused at 15:47
   by the old ranking); the reverse — a lapsed rest raising lower programs' bars again on its
   own — is proven only in the suite.
+- **A drovr alert arriving on the phone.** Every alert writes its row through hey; no device is
+  registered until plan 3 ships, so `pushed` is false on every send today.
 
 ## Notifications
 
-**Slack first, SMS fallback.** `textCraig` posts to Craig's private channel from the **Drovr**
-Slack app (workspace getalonggang, manifest and icon in `slack/`) when `control.slackChannel` is
-set, reading the bot
-token from the login keychain (`security find-generic-password -s drovr-slack -w`), never from
-`control.json`. Slack answering `ok` is real delivery. Any Slack failure — no token, a refusal,
-a timeout — is logged and the alert goes out by SMS as below. The app is notify-only: no Socket
-Mode, no app-level token, nothing listening; Craig decided against an agent app on 2026-10-05.
+Every alert goes through **hey**, drovr's own channel: `textCraig` in `nudge.ts` calls the
+hey Lambda in `ca-central-1` on the default AWS profile, which writes a row to the `hey` table
+and pushes it to Craig's phone (plan 3 of the hey design,
+`docs/superpowers/specs/2026-10-15-notify-app-design.md`). `control.notifyTo` is the handle;
+null disables alerts and leaves the log line. The `from` label is the program for a cycle alert
+and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
+Slack app and no SMS any more: a failed send is a `console.error` line and an exit code, never a
+text. A send is never retried — a retried send is a duplicate message.
 
-`drovr notify` texts Craig. It waits for the delivery status rather than reporting the exit
-code, because acceptance and delivery are different events a minute or so apart — `aws sns
-publish` returns a MessageId and exit 0 for messages that never leave.
-
-drovr sends from its own Canadian long code, **+1 506 906 8159**
-(`phone-dceeb0a0acc6439dbdd0a08ebc73cb98`, $1/month, `pool-8a85c8fb`), set as
-`originationNumber` in `control.json`.
-
-**A configured `originationNumber` must be sent via `pinpoint-sms-voice-v2 send-text-message`,
-not `sns publish`.** SNS cannot resolve an explicit origination identity: it accepts the call
-and then fails at delivery with "The provided number does not exist or does not belong to the
-account". End User Messaging sends from the same number without complaint. Measured 2026-08-24
-to a live handset — SNS failed from that number three times, End User Messaging delivered three
-times. Pool membership and number age were both investigated and neither was the cause; the
-transport was.
-
-Leaving `originationNumber` null is *not* the safe fallback it looks like. SNS then picks a
-number itself, and it picks one of sunnyt's — so drovr's alerts arrive from the product's
-number and any reply lands in sunnyt's inbound topics, which its cycles poll.
-
-Delivery status is only readable on the SNS path, from the `DirectPublishToPhoneNumber` and
-`.../Failure` log groups. End User Messaging reports through a configuration set that drovr
-does not have, so `notify` says `unknown` there and names the two commands that would create
-one. Sending is unaffected.
+`hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
+The `hey` command lives in `src/hey-cli.ts` and is bundled by `pnpm build:hey` into `dist/hey`
+for machines without this checkout.
 
 ## drovr is also a program
 
@@ -323,6 +302,8 @@ anywhere; do not create one unprompted, but say so if the subject arises.
   an Orca worktree are refused with the `orca repo add --path <cwd>` that fixes it.
 - **teamclaude** — read-only, via `teamclaude status --json`, plus `teamclaude run` as the launch
   command of every cycle.
+- **hey** — the Lambda `hey` in `ca-central-1`, through `src/hey.ts`'s `lambdaInvoke`; the only
+  AWS call drovr makes.
 - **ssh** — only for a program with a `host`: `ssh -o BatchMode=yes <target> cat|rm -f|true`
   through `runSsh`, bounded, to read a hosted cycle's report and transcript back and to probe the
   box before waking it. drovr never runs a cycle's work over ssh; the terminal is orca's.

@@ -19,7 +19,7 @@ const home = (control: unknown): { lock: string; control: string } => {
  * which is the failure this whole path exists to end.
  */
 test('an overrunning tick releases its own lock', async () => {
-  const paths = home({ mode: 'normal', phoneNumber: null, programs: [] });
+  const paths = home({ mode: 'normal', notifyTo: null, programs: [] });
   assert.equal(acquire(paths.lock), true);
   assert.equal(holder(paths.lock), process.pid);
 
@@ -30,14 +30,14 @@ test('an overrunning tick releases its own lock', async () => {
 });
 
 test('a sub-minute budget is reported in seconds rather than rounded to a wrong minute', async () => {
-  const paths = home({ mode: 'normal', phoneNumber: null, programs: [] });
+  const paths = home({ mode: 'normal', notifyTo: null, programs: [] });
   acquire(paths.lock);
   const message = await releaseOverrunningTick(paths.lock, paths.control, 30_000);
   assert.match(message, /overran 30s/, 'Math.round(0.5) would have claimed 1m');
 });
 
 test('the reported message names the budget and the pid a reader would have to kill', async () => {
-  const paths = home({ mode: 'normal', phoneNumber: null, programs: [] });
+  const paths = home({ mode: 'normal', notifyTo: null, programs: [] });
   acquire(paths.lock);
   const message = await releaseOverrunningTick(paths.lock, paths.control, 3 * 60_000);
   assert.match(message, /overran 3m/);
@@ -69,7 +69,7 @@ test('a missing control file does not stop the lock being freed', async () => {
 
 /** Releasing a lock that is already gone is not an error — the watchdog can race a finish. */
 test('releasing an already-free lock is quiet', async () => {
-  const paths = home({ mode: 'normal', phoneNumber: null, programs: [] });
+  const paths = home({ mode: 'normal', notifyTo: null, programs: [] });
   await releaseOverrunningTick(paths.lock, paths.control, 8 * 60_000);
   assert.equal(holder(paths.lock), null);
 });
