@@ -138,6 +138,11 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `watch.ts` | A failed refresh must not end the session. Every draw ran `.catch(die)`, so one throw out of `collectState` — teamclaude's proxy missing its own 5s status budget is enough — restored the terminal and exited a live watch. `drawFailed` keeps the last good frame and puts the reason on the message line; only the first frame, which has nothing to keep, is still fatal. |
 | `tick.ts` | A tick that **throws** is as much an outage as one that overruns, and only the second had a watchdog. `runTick` wraps `tick()` from outside so the lock is released before a 15s hey send, and rethrows so the exit code still fails. The episode marker is cleared beside `stampTick` and nowhere else: a tick that returns early on a busy lock has completed nothing and must not end someone else's episode. |
 | `keys.ts` | One writer of `control.json` now means **one code path, not one process**. `mutate` is called from the launchd tick, from `drovr watch` and from the CLI, and neither of the latter two takes the tick lock. The staged write-and-rename protects readers from a torn file; it does not order concurrent writers. The window is milliseconds and a lost update costs a re-pressed key, so do not build a lock for it — but do not claim single-writer serialization either. |
+| `profile.ts` | A sender profile is **decoration**, so both ends read it leniently — `profileFromRepo` yields nothing for a repo shape it does not know and `ProfileIcon.parse` yields nil for an icon it cannot draw — while the Lambda validates it strictly on the way in. A strict reader here would fail an inbox load over a tile. The seed runs **after** `startCycleAgent`, never before: two orca calls and an invoke are bounded, but a late launch is the wrong price for an avatar. |
+| `tick.ts` | The phone's Away is applied with `applyAwayMode` to the `Control` every `decide({` caller builds and is **never written** to control.json: a pass that wrote it would make the toggle sticky after Craig turned it off. `off` is not overridden — it is a stop, not a ceiling. `state.ts` reads it in the probe half and caches it with the quota probe, or every `watch` frame would pay a 15s-bounded Lambda call. |
+| `handler.ts` | A `prefs` row the Lambda cannot parse reads as the defaults with a log line and the send goes out **loud**; a newer app writing a key this Lambda does not know is exactly the case, and a failed send over a setting would be worse than a sound. The app's decoder is strict the other way for the same reason: a row it cannot write back whole is one it must not overwrite. |
+| `ConversationsView.swift` | A swipe button with `role: .destructive` makes SwiftUI's `List` animate the row away **before the action runs**. Put a confirmation between the swipe and the delete and the row stays while the List already counted it gone; when the real removal lands, the collection view asserts "Invalid Number Of Items In Section" and the app dies — measured 2026-10-16, three runs. Deferred destructive actions are red by `.tint(.red)` and no role. |
+| `AppModel.swift` | Optimistic removal's rollback is a **reload**, not a saved copy: a thread delete that fails halfway has already removed some rows from the table, so restoring the old array would show rows the table no longer holds. `deleteThread` reloads on failure and the list is whatever the table says; the error rides the load banner. |
 
 ## The CLI is read by agents
 
@@ -252,6 +257,15 @@ build on Craig's phone until TestFlight (see "Not yet observed"); it reads its o
 straight from DynamoDB with identity-pool credentials and never calls the Lambda. Read state is
 the app's `read#<from>` rows, which is how the Lambda can put the unread-conversation count on
 each push as `aps.badge`; the app sets the same number itself whenever its unread set changes.
+Two more row kinds live on the partition: `profile#<from>` (icon, summary, colour — the tile
+and the header; seeded once per program by `profile.ts` from Orca's repo icon, changed with
+`hey profile`) and `prefs` (quiet hours and away, written only by the phone's settings sheet).
+The Lambda reads `prefs` on every send — quiet hours make the push passive, not absent — and
+drovr reads it once per tick: `away` runs the pass on the `away` ceiling without touching
+control.json. A waiting send may offer `--choices`; exactly yes/no is answerable from the lock
+screen, anything else is chips in the thread. The phone can mark a thread unread (deletes its
+`read#` row) and delete a thread (its `msg#` rows and `read#` row, never `profile#`); a `hey
+--wait` whose message was deleted ends with one line and exit 2, like no reply.
 `control.notifyTo` is the handle;
 null disables alerts and leaves the log line. The `from` label is the program for a cycle alert
 and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
@@ -341,6 +355,10 @@ anywhere; do not create one unprompted, but say so if the subject arises.
   dependencies are Amplify Swift 2.62.1 (Auth and AWSPluginsCore) and AWS SDK for Swift 1.7.60
   (DynamoDB, SNS; the version Amplify pins), in `ios/Hey/project.yml`. Every `xcodebuild` on it
   needs `-skipPackagePluginValidation` for smithy-swift's code-generator plugin.
+  The device role may also `DeleteItem` on its own partition (sign-out removes the phone's
+  `device#` rows first; mark-unread and delete-thread remove `read#` and `msg#` rows). `hey help`,
+  `hey help <cmd>`, `hey <cmd> --help`, `hey help --json` and `hey guide` render from
+  `src/hey-help.ts`; a command exists there iff it is dispatched.
 - **ssh** — only for a program with a `host`: `ssh -o BatchMode=yes <target> cat|rm -f|true`
   through `runSsh`, bounded, to read a hosted cycle's report and transcript back and to probe the
   box before waking it. drovr never runs a cycle's work over ssh; the terminal is orca's.
