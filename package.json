@@ -13,7 +13,8 @@
   "scripts": {
     "test": "node --test test/*.spec.ts lambda/hey/*.spec.ts",
     "check-types": "tsc --noEmit",
-    "build:lambda": "esbuild lambda/hey/index.ts --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=lambda/hey/dist/index.mjs"
+    "build:lambda": "esbuild lambda/hey/index.ts --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=lambda/hey/dist/index.mjs",
+    "build:hey": "esbuild src/hey-cli.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/hey && chmod +x dist/hey"
   },
   "dependencies": {
     "zod": "^3.23.8"
