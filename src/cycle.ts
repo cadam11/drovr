@@ -375,8 +375,22 @@ const unreachableReason = (host: Host): Promise<string | null> =>
  * before anything asks orca for the worktree. Probed once more afterwards; still dark is
  * an error the existing crash path records.
  */
+/**
+ * Tailscale SSH in check mode holds every connection until a human visits a link, so the
+ * box is up and no wake can help; the link is the only useful thing to say.
+ */
+export const tailscaleCheckLink = (reason: string | null): string | null =>
+  reason?.match(/https:\/\/login\.tailscale\.com\/a\/\S+/)?.[0] ?? null;
+
 const ensureReachable = async (program: Program, host: Host): Promise<void> => {
   const reason = await unreachableReason(host);
+  const link = tailscaleCheckLink(reason);
+  if (link !== null) {
+    throw new Error(
+      `${host.ssh} holds ssh on a Tailscale SSH check; visit ${link}, or set the box's ssh rule ` +
+        `to "accept" in the tailnet ACL so unattended wakes work`,
+    );
+  }
   const decision = wakeDecision(reason === null, host.wake);
   if (decision === 'proceed') return;
   if (decision === 'fail') {

@@ -66,7 +66,7 @@ test('terminalAddress opens a remote terminal in its environment', () => {
 
 // --- cycle: the report comes back over ssh, the box is woken, the launch names the binary
 
-import { isMissingFile, launchArgv, remoteReportPath, reportFromPoll, wakeDecision } from '../src/cycle.ts';
+import { isMissingFile, launchArgv, remoteReportPath, reportFromPoll, tailscaleCheckLink, wakeDecision } from '../src/cycle.ts';
 
 const fullHost = { ...host, drovrHome: '~/.drovr', claude: '~/.local/bin/claude', wake: null };
 const program = (over: Record<string, unknown>) =>
@@ -111,4 +111,13 @@ test('the launch goes through teamclaude on the Mac and straight to the binary o
   assert.deepEqual(launchArgv(program({ host, useDirenv: false }), 'relliq program runner', 'sid'), [
     '~/.local/bin/claude', ...claude,
   ]);
+});
+
+test('tailscaleCheckLink: lifts the check link out of a hung probe, else null', () => {
+  const reason =
+    'ssh ubuntu@box true did not return within 20s and was killed; it had printed: ' +
+    '# Tailscale SSH requires an additional check. # To authenticate, visit: https://login.tailscale.com/a/l1e8671de330fd4';
+  assert.equal(tailscaleCheckLink(reason), 'https://login.tailscale.com/a/l1e8671de330fd4');
+  assert.equal(tailscaleCheckLink('ssh ubuntu@box true did not return within 20s and was killed'), null);
+  assert.equal(tailscaleCheckLink(null), null);
 });

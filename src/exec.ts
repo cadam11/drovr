@@ -66,8 +66,12 @@ export const runBounded = async (
     // execFile reports its own expiry as a killed child carrying a generic "Command
     // failed", which names neither the command nor the ceiling it hit.
     if ((error as { killed?: boolean }).killed === true) {
+      // The child's stderr often says what it was waiting on (an ssh prompt, a pairing
+      // link), so the last of it rides along.
+      const stderr = ((error as { stderr?: string }).stderr ?? '').trim();
+      const tail = stderr === '' ? '' : `; it had printed: ${stderr.split('\n').slice(-2).join(' ')}`;
       throw new ExecTimedOut(
-        `${shown} did not return within ${Math.round(options.timeoutMs / 1000)}s and was killed`,
+        `${shown} did not return within ${Math.round(options.timeoutMs / 1000)}s and was killed${tail}`,
       );
     }
     // Non-ENOENT errors come back as the original object, so a caller that lifts a
