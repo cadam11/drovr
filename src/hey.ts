@@ -150,6 +150,9 @@ export const waitForReply = async (opts: {
 
 export const REGION = 'ca-central-1';
 export const FUNCTION_NAME = 'hey';
+/** A bare name resolves in the caller's own account. A sender in another account (a Hadrian box, whose
+ *  role is granted on the Lambda) must name the full ARN: HEY_FUNCTION=arn:aws:lambda:ca-central-1:…:function:hey */
+export const functionName = (env: NodeJS.ProcessEnv = process.env): string => env.HEY_FUNCTION ?? FUNCTION_NAME;
 /** One network call, and the Lambda itself is capped at 10s. */
 const INVOKE_TIMEOUT_MS = 15_000;
 
@@ -182,7 +185,7 @@ export const lambdaInvoke = (): Invoke => {
   });
   return async (payload) => {
     const out = await client.send(
-      new InvokeCommand({ FunctionName: FUNCTION_NAME, Payload: new TextEncoder().encode(JSON.stringify(payload)) }),
+      new InvokeCommand({ FunctionName: functionName(), Payload: new TextEncoder().encode(JSON.stringify(payload)) }),
     );
     return invokeResult(out.FunctionError, out.Payload);
   };

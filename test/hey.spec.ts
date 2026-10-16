@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  functionName,
   invokeResult,
   parseArgs,
   parseDuration,
@@ -150,4 +151,9 @@ test('invokeResult: a clean payload is parsed, a FunctionError carries the lambd
 test('invokeResult: a FunctionError with a payload that is not JSON still names the failure', () => {
   assert.throws(() => invokeResult('Unhandled', bytes('Task timed out after 10.00 seconds')), /Task timed out/);
   assert.throws(() => invokeResult(undefined, undefined), /empty/);
+});
+
+test('functionName is the bare name at home and the full ARN when HEY_FUNCTION names one (cross-account sender)', () => {
+  assert.equal(functionName({}), 'hey');
+  assert.equal(functionName({ HEY_FUNCTION: 'arn:aws:lambda:ca-central-1:000000000000:function:hey' }), 'arn:aws:lambda:ca-central-1:000000000000:function:hey');
 });
