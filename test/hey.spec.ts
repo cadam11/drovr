@@ -7,6 +7,7 @@ import {
   commandOf,
   functionName,
   invokeResult,
+  MessageGone,
   parseArgs,
   parseChoices,
   parseDuration,
@@ -22,6 +23,7 @@ import {
   wantsHelp,
   type Invoke,
 } from '../src/hey.ts';
+import type { MessageRow } from '../lambda/hey/handler.ts';
 
 const defaults = { to: 'craig', from: null, host: 'mac', cwd: '/Users/cadam/code/drovr' };
 
@@ -249,4 +251,22 @@ test('prefs args: --to or the default, nothing else', () => {
   assert.deepEqual(parsePrefsArgs(['--to', 'ann'], { to: 'craig' }), { to: 'ann' });
   assert.throws(() => parsePrefsArgs([], { to: null }), /--to or HEY_TO/);
   assert.throws(() => parsePrefsArgs(['extra'], { to: 'craig' }), UsageError);
+});
+
+test('readMessage turns the lambda\'s not_found into MessageGone; any other failure stays as it was', async () => {
+  await assert.rejects(() => readMessage(async () => { throw new Error('no message 01A'); }, 'sub', '01A'), MessageGone);
+  await assert.rejects(() => readMessage(async () => { throw new Error('Task timed out'); }, 'sub', '01A'), /Task timed out/);
+});
+
+test('wait: a message deleted on the phone ends the wait as deleted, not failed, however many polls remain', async () => {
+  const { nowMs, sleep } = clock(0);
+  let polls = 0;
+  const read = async (): Promise<MessageRow> => {
+    polls += 1;
+    if (polls < 3) return row;
+    throw new MessageGone('01A');
+  };
+  const outcome = await waitForReply({ read, sleep, nowMs, waitUntilMs: 600_000, onPollError: () => { throw new Error('not a poll error'); } });
+  assert.deepEqual(outcome, { status: 'deleted' });
+  assert.equal(polls, 3);
 });

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { z } from 'zod';
-import { messageShape, prefsShape, type MessageRow, type Prefs, type Profile } from '../lambda/hey/handler.ts';
+import { messageShape, NOT_FOUND_PREFIX, prefsShape, type MessageRow, type Prefs, type Profile } from '../lambda/hey/handler.ts';
 
 export const POLL_MS = 5_000;
 /** Consecutive, not total: a flaky network that still answers is not a lost wait. */
@@ -167,8 +167,21 @@ export const send = async (invoke: Invoke, input: SendInput): Promise<SendRespon
   return sendResponseShape.parse(await invoke(payload));
 };
 
-export const readMessage = async (invoke: Invoke, pk: string, id: string): Promise<MessageRow> =>
-  messageShape.parse(await invoke({ action: 'read', pk, id }));
+/** The row a wait was polling is gone: Craig deleted the thread on the phone. Not a poll failure. */
+export class MessageGone extends Error {
+  constructor(id: string) {
+    super(`message ${id} was deleted on the phone`);
+  }
+}
+
+export const readMessage = async (invoke: Invoke, pk: string, id: string): Promise<MessageRow> => {
+  try {
+    return messageShape.parse(await invoke({ action: 'read', pk, id }));
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith(NOT_FOUND_PREFIX)) throw new MessageGone(id);
+    throw error;
+  }
+};
 
 export const readPrefs = async (invoke: Invoke, to: string): Promise<Prefs> =>
   prefsShape.parse(await invoke({ action: 'prefs', to }));
@@ -231,6 +244,7 @@ export const parsePrefsArgs = (argv: string[], defaults: { to: string | null }):
 export type WaitOutcome =
   | { status: 'replied'; reply: string; repliedAt: string }
   | { status: 'unanswered' }
+  | { status: 'deleted' }
   | { status: 'failed'; reason: string };
 
 /**
@@ -252,6 +266,8 @@ export const waitForReply = async (opts: {
       failures = 0;
       if (row.reply !== undefined) return { status: 'replied', reply: row.reply, repliedAt: row.repliedAt ?? '' };
     } catch (error) {
+      // Nobody will answer a message that no longer exists; it is an outcome, not a flaky poll.
+      if (error instanceof MessageGone) return { status: 'deleted' };
       failures += 1;
       const reason = error instanceof Error ? error.message : String(error);
       if (failures >= MAX_POLL_FAILURES) return { status: 'failed', reason };
