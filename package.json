@@ -3,12 +3,27 @@
   "version": "0.1.0",
   "description": "Capacity-aware supervisor for long-horizon autonomous delivery loops",
   "type": "module",
-  "bin": { "drovr": "./src/cli.ts" },
-  "engines": { "node": ">=24.0.0" },
+  "bin": {
+    "drovr": "./src/cli.ts"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "test": "node --test test/*.spec.ts lambda/hey/*.spec.ts",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "build:lambda": "esbuild lambda/hey/index.ts --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=lambda/hey/dist/index.mjs"
   },
-  "dependencies": { "zod": "^3.23.8" },
-  "devDependencies": { "typescript": "^5.6.0", "@types/node": "^22.0.0" }
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1152.0",
+    "@aws-sdk/client-lambda": "^3.1152.0",
+    "@aws-sdk/client-sns": "^3.1152.0",
+    "@aws-sdk/lib-dynamodb": "^3.1152.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.6.0"
+  }
 }
