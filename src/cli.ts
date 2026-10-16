@@ -905,7 +905,7 @@ const main = async (argv: string[]): Promise<void> => {
     } else if (result.sent) {
       console.log(`sent ${result.messageId} to ${control.notifyTo}`);
     } else {
-      console.error('the send failed — the reason is logged above.');
+      console.error(`the send failed: ${result.reason ?? 'no reason given'}`);
     }
     if (!result.sent) process.exitCode = 1;
     return;

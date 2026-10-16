@@ -8,14 +8,14 @@ importers:
 
   .:
     dependencies:
+      '@aws-sdk/client-lambda':
+        specifier: ^3.1152.0
+        version: 3.1152.0
       zod:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
       '@aws-sdk/client-dynamodb':
-        specifier: ^3.1152.0
-        version: 3.1152.0
-      '@aws-sdk/client-lambda':
         specifier: ^3.1152.0
         version: 3.1152.0
       '@aws-sdk/client-sns':

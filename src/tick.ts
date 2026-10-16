@@ -357,7 +357,7 @@ export const runTick = async (): Promise<void> => {
         console.error(
           sent.sent
             ? `alerted the failed tick: hey ${sent.messageId ?? ''}.`
-            : 'could not alert the failed tick: hey did not take it (see above).',
+            : `could not alert the failed tick: ${sent.reason ?? 'hey did not take it'}.`,
         );
       } catch (alertError) {
         console.error(`could not alert the failed tick: ${explain(alertError)}`);

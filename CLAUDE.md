@@ -224,6 +224,8 @@ Written and type-checked, never seen to fire. Unproven, not done:
   own — is proven only in the suite.
 - **A drovr alert arriving on the phone.** Every alert writes its row through hey; no device is
   registered until plan 3 ships, so `pushed` is false on every send today.
+- **A `pushed: true` send.** No SNS publish has executed against a real endpoint; the
+  disabled-endpoint cleanup and the push-failure reason are proven only in the suite.
 
 ## Notifications
 

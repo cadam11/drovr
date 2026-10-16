@@ -12,6 +12,7 @@ import {
   send,
   UsageError,
   waitForReply,
+  wantsHelp,
   type Invoke,
 } from '../src/hey.ts';
 
@@ -57,6 +58,15 @@ test('config: a missing file is empty, a malformed one is an error, a good one s
   assert.deepEqual(readConfig(join(dir, 'good.json')), { to: 'craig', from: null });
   writeFileSync(join(dir, 'bad.json'), '{"to":5}');
   assert.throws(() => readConfig(join(dir, 'bad.json')), /bad.json/);
+  writeFileSync(join(dir, 'broken.json'), '{to: craig}');
+  assert.throws(() => readConfig(join(dir, 'broken.json')), /broken.json is not JSON/);
+});
+
+test('--help anywhere asks for usage instead of a send', () => {
+  assert.equal(wantsHelp(['--help']), true);
+  assert.equal(wantsHelp(['-h']), true);
+  assert.equal(wantsHelp(['--to', 'craig', 'hi', '--help']), true);
+  assert.equal(wantsHelp(['hi']), false);
 });
 
 const row = { pk: 'sub', sk: 'msg#01A', createdAt: 'c', from: 'f', host: 'h', cwd: 'c', text: 't', expiresAt: 1 };

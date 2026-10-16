@@ -10,6 +10,8 @@ export type SendResult = {
   /** The hey message id, which `drovr status` and the app both show. */
   messageId: string | null;
   via: 'hey';
+  /** Why `sent` is false, so no caller has to print "see above" over an empty log. */
+  reason: string | null;
 };
 
 /** A `Control` satisfies it, so callers pass the control object rather than picking fields. */
@@ -27,7 +29,11 @@ export const alertFrom = (program: string | null, host: string): string => progr
  * failure is logged and reported rather than thrown. Bounded by the invoke's own 15s.
  */
 export const textCraig = async (to: Recipient, message: string, from: string): Promise<SendResult> => {
-  if (to.notifyTo === null) return { sent: false, messageId: null, via: 'hey' };
+  if (to.notifyTo === null) {
+    const reason = 'notifyTo is null in control.json, so the alert was dropped';
+    console.error(`${reason}: ${message.slice(0, 80)}`);
+    return { sent: false, messageId: null, via: 'hey', reason };
+  }
   try {
     const result = await send(lambdaInvoke(), {
       to: to.notifyTo,
@@ -38,14 +44,14 @@ export const textCraig = async (to: Recipient, message: string, from: string): P
       waitSeconds: null,
     });
     if (!result.pushed) console.error(`sent ${result.id}, but push failed: ${result.reason ?? 'no reason given'}`);
-    return { sent: true, messageId: result.id, via: 'hey' };
+    return { sent: true, messageId: result.id, via: 'hey', reason: null };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const hint = /credential|expired|security token|AccessDenied/i.test(detail)
       ? ' Check the default profile with: aws sts get-caller-identity'
       : '';
     console.error(`could not send through hey: ${detail}${hint}`);
-    return { sent: false, messageId: null, via: 'hey' };
+    return { sent: false, messageId: null, via: 'hey', reason: detail };
   }
 };
 

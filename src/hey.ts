@@ -69,9 +69,21 @@ export const parseArgs = (
 
 const configShape = z.object({ to: z.string().min(1).optional(), from: z.string().min(1).optional() });
 
+/** Any flag that asks for usage wins over everything else on the line. */
+export const wantsHelp = (argv: string[]): boolean => argv.includes('--help') || argv.includes('-h');
+
+const parseJsonFile = (path: string): unknown => {
+  const text = readFileSync(path, 'utf8');
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${path} is not JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
 export const readConfig = (path: string): { to: string | null; from: string | null } => {
   if (!existsSync(path)) return { to: null, from: null };
-  const parsed = configShape.safeParse(JSON.parse(readFileSync(path, 'utf8')));
+  const parsed = configShape.safeParse(parseJsonFile(path));
   if (!parsed.success) {
     throw new Error(`${path} is not {"to"?: string, "from"?: string}: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
   }
