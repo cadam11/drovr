@@ -460,6 +460,20 @@ export const resolveWorktree = async (program: Program): Promise<string> => {
   }
 };
 
+const worktreeRepoShape = z.object({ worktree: z.object({ repoId: z.string() }).passthrough() });
+
+/** The repo that owns the program's worktree: a cwd is usually a worktree, and `repo list` is keyed by this. */
+export const worktreeRepoId = async (program: Program): Promise<string> => {
+  const cwd = program.host?.cwd ?? program.cwd;
+  const env = envArgs(program.host?.environment);
+  return worktreeRepoShape.parse(await orca(['worktree', 'show', '--worktree', `path:${cwd}`, ...env])).worktree.repoId;
+};
+
+const repoListShape = z.object({ repos: z.array(z.unknown()) });
+
+/** Every repo Orca knows, raw: profile.ts reads the icon leniently, because a tile is decoration. */
+export const listRepos = async (): Promise<unknown[]> => repoListShape.parse(await orca(['repo', 'list'])).repos;
+
 export type StartedCycle = { handle: string; tabId: string };
 
 /**

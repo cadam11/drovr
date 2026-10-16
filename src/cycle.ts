@@ -6,6 +6,7 @@ import { MAX_REST_DAYS, parseDuration, type Host, type Program } from './control
 import { runBounded, runSsh } from './exec.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { textCraig, type Recipient } from './nudge.ts';
+import { seedSenderProfile } from './profile.ts';
 import {
   openLine,
   PaneBusy,
@@ -614,6 +615,10 @@ const runInOrca = async (
     `${JSON.stringify({ ...started, worktreeId, prompt, startedAt }, null, 2)}\n`,
     'utf8',
   );
+
+  // After the terminal is up, before the watch: the profile is for the thread this cycle's
+  // alerts land in, and nothing about it may delay the launch.
+  await seedSenderProfile(program, limits.notifyTo);
 
   return watchCycle(program.name, reportSource(program), limits);
 };

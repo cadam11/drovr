@@ -97,6 +97,8 @@ export type Host = z.infer<typeof hostShape>;
 const programShape = z.object({
   name: z.string(),
   cwd: z.string(),
+  /** One line to a few sentences on what this program is for; seeded into its hey profile as the thread's summary. Edit control.json directly. */
+  description: z.string().max(500).nullable().default(null),
   host: hostShape.nullable().default(null),
   /** {program} and {mode} are substituted before spawning. */
   cycleCommand: z
