@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { contributingAccounts, cyclesFundableFrom, decide, programReadiness, requiredCycles } from '../src/decide.ts';
 import { poolFrom } from '../src/capacity.ts';
 import { inFlight, type CycleRecord } from '../src/ledger.ts';
+import { applyAwayMode } from '../src/control.ts';
 import { account, control, healthy, HOUR, NOW, status } from './fixtures.ts';
 
 const cycle = (overrides: Partial<CycleRecord> = {}): CycleRecord => ({
@@ -1142,4 +1143,23 @@ test('cycles that asked to rest do not count toward the zero-yield stuck latch',
   // Three plain zero-yield cycles latch; the same three declaring a rest do not.
   assert.equal(run({ cycles: [idle(6), idle(4), idle(2)] }).verdict, 'STOP');
   assert.equal(run({ cycles: [rested(6), rested(4), rested(2)] }).verdict, 'GO');
+});
+
+test('applyAwayMode: away from the phone evaluates under the away ceilings, off stays off, nothing is written', () => {
+  const normal = control();
+  const away = applyAwayMode(normal, true);
+  assert.equal(away.mode, 'away');
+  assert.equal(normal.mode, 'normal');
+  assert.equal(applyAwayMode(control({ mode: 'off' }), true).mode, 'off');
+  assert.equal(applyAwayMode(control({ mode: 'low' }), true).mode, 'away');
+  assert.equal(applyAwayMode(normal, false), normal);
+  assert.equal(applyAwayMode(control({ mode: 'away' }), true).mode, 'away');
+});
+
+test("a pass under the phone's away admits what normal refuses", () => {
+  // One account with session 0.30 used against the seed session cost of 0.25: under normal (ceiling 0.40)
+  // the headroom is 0.10, or 0.4 cycles, short of the 1 a session bucket must fund; under away (0.60) it is 1.2.
+  const tight = status([account({ name: 'a', fable: 0.1, general: 0.1, session: 0.3 })]);
+  assert.equal(run({ status: tight }).verdict, 'WAIT');
+  assert.equal(run({ status: tight, control: applyAwayMode(control(), true) }).verdict, 'GO');
 });

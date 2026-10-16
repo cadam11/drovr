@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { lambdaInvoke, send } from './hey.ts';
+import { lambdaInvoke, readPrefs, send } from './hey.ts';
 import { ensureDirs, paths } from './paths.ts';
 
 export type SendResult = {
@@ -66,6 +66,24 @@ const alreadyNudged = (program: string, askedAt: number): boolean => {
   if (!existsSync(path)) return false;
   const parsed = sentShape.safeParse(JSON.parse(readFileSync(path, 'utf8')));
   return parsed.success && parsed.data.askedAt === askedAt;
+};
+
+export type PhonePrefs = { away: boolean; warning: string | null };
+
+/**
+ * One bounded read per pass (the invoke's own 15s), never a thrown error: a phone that cannot
+ * be asked means the pass runs on the stored mode, and the warning is the caller's to place —
+ * stderr under launchd, the frame in `drovr watch`. No handle is no phone, which is not a warning.
+ */
+export const phonePrefs = async (to: Recipient): Promise<PhonePrefs> => {
+  if (to.notifyTo === null) return { away: false, warning: null };
+  try {
+    const prefs = await readPrefs(lambdaInvoke(), to.notifyTo);
+    return { away: prefs.away, warning: null };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { away: false, warning: `could not read the phone's prefs (${detail}) — this pass runs on the stored mode` };
+  }
 };
 
 /**

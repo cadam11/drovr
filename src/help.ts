@@ -278,6 +278,8 @@ export const COMMANDS: Command[] = [
     details: [
       'Each mode is a ceiling on total usage, so the remainder is always held for Craig:',
       'off reserves everything, low 75%, normal 45%, away 15%.',
+      "The Hey app's Away toggle overrides the stored mode to away for each pass while it is on,",
+      'without writing control.json: status and watch then read "away (phone)". Turn it off on the phone.',
     ],
     writes: 'control.json',
   },

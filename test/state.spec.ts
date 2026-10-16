@@ -222,3 +222,13 @@ test('buildState reports the weekly reset when a weekly bucket is what binds', (
   assert.equal(state.bindingBucket, 'fable');
   assert.equal(state.bindingRecoveryAt, new Date(NOW + 84 * HOUR).toISOString());
 });
+
+test("buildState under the phone's away reports the away mode and says it came from the phone", () => {
+  const state = buildState({ ...input(), awayFromPhone: true });
+  assert.equal(state.mode, 'away');
+  assert.equal(state.modeFromPhone, true);
+  assert.equal(state.reserve, 0.15);
+  const plain = buildState(input());
+  assert.equal(plain.mode, 'normal');
+  assert.equal(plain.modeFromPhone, false);
+});

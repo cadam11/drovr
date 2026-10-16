@@ -8,11 +8,11 @@ import { decide, fullReason, type Decision } from './decide.ts';
 import { isOnboarding, readReport, reportSource, resumeCycle, runCycle, type CycleReport } from './cycle.ts';
 import { PaneBusy, releaseLeftover, runnerIsPresent } from './orca.ts';
 import { readAsks } from './asks.ts';
-import { alertFrom, nudgeIfNeglected, textCraig } from './nudge.ts';
+import { alertFrom, nudgeIfNeglected, phonePrefs, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
 
 import { poolFrom } from './capacity.ts';
-import { byPriority, ceilingsFor, readControl, type Control, type Program } from './control.ts';
+import { applyAwayMode, byPriority, ceilingsFor, readControl, type Control, type Program } from './control.ts';
 import { acquire, heldBy, holder, release } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
 import { readStatus, type TeamclaudeStatus } from './teamclaude.ts';
@@ -406,7 +406,11 @@ export const tick = async (): Promise<void> => {
 
   try {
     const now = Date.now();
-    const control = readControl(p.control);
+    const stored = readControl(p.control);
+    const phone = await phonePrefs(stored);
+    if (phone.warning !== null) console.error(phone.warning);
+    const control = applyAwayMode(stored, phone.away);
+    if (control.mode !== stored.mode) console.log(`mode ${stored.mode} → away for this pass: the phone says away`);
     const status = await readStatus();
     await reconcileAbandoned(now, control, status);
     // Before admission: the next cycle's clearReport() would delete the very report this

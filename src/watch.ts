@@ -515,7 +515,7 @@ export const frameWithHits = (
 
   const lines: Tagged[] = [
     plain(
-      `${bold('drovr')}  ${dim(`mode ${state.mode}`)}${held}  ` +
+      `${bold('drovr')}  ${dim(`mode ${state.mode}${state.modeFromPhone ? ' (phone)' : ''}`)}${held}  ` +
         dim(new Date(now).toTimeString().slice(0, 8)),
     ),
     plain(`  ${paint(healthy ? 32 : 31, '●')} ${dim(serviceLine(state.service, now))}`),

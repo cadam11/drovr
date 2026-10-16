@@ -239,6 +239,14 @@ export const ceilingsFor = (control: Control): Ceilings | null => {
 };
 
 /**
+ * The phone's Away toggle, for one pass. Returned, never written: the TUI's `m` key and
+ * `drovr mode` own the stored mode, and a pass that wrote `away` back would make the toggle
+ * sticky after Craig turned it off. `off` is left alone — it is a stop, not a ceiling to loosen.
+ */
+export const applyAwayMode = (control: Control, awayFromPhone: boolean): Control =>
+  awayFromPhone && control.mode !== 'off' ? { ...control, mode: 'away' } : control;
+
+/**
  * A calendar-bound program earns a priority step as its date closes in, and keeps
  * it while overdue — a deadline that has passed is more urgent, not less.
  */

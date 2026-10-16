@@ -1,12 +1,13 @@
 import { allocationFor, type Allocation, type BucketName } from './allocation.ts';
 import { hoursToWeeklyReset, poolFrom } from './capacity.ts';
-import { byPriority, ceilingsFor, effectivePriority, readControl, type Control } from './control.ts';
+import { applyAwayMode, byPriority, ceilingsFor, effectivePriority, readControl, type Control } from './control.ts';
 import { contributingAccounts, cyclesFundableFrom, decide, poolContext, type Verdict } from './decide.ts';
 import {
   chargeForRunning, estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles,
   snapshot, spentSince, type CycleRecord,
 } from './ledger.ts';
 import { aiceBaseUrl, readPreview, runnerIsPresent } from './orca.ts';
+import { phonePrefs, type PhonePrefs } from './nudge.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
 import type { Preview } from './preview.ts';
@@ -48,6 +49,8 @@ export type DrovrState = {
   schemaVersion: 1;
   generatedAt: string;
   mode: string;
+  /** True when `mode` is the phone's Away override rather than the stored mode. */
+  modeFromPhone: boolean;
   pauseUntil: string | null;
   maxConcurrentCycles: number;
   /**
@@ -118,6 +121,8 @@ export type StateInput = {
   previews: Map<string, Preview>;
   /** Per program: whether an orca runner is still present. Absent means unknown. */
   runners?: Map<string, boolean>;
+  /** The phone's Away toggle, applied to `control` for this state only; absent means not away. */
+  awayFromPhone?: boolean;
   locks: Map<string, number>;
   asksUrls: Map<string, string>;
 };
@@ -174,7 +179,8 @@ const RUNNING_PLACEHOLDER: CycleRecord = {
 };
 
 const programsOf = (input: StateInput): ProgramState[] => {
-  const { control, cycles, now, previews, locks, asksUrls } = input;
+  const { cycles, now, previews, locks, asksUrls } = input;
+  const control = applyAwayMode(input.control, input.awayFromPhone ?? false);
   const runners = input.runners ?? new Map<string, boolean>();
   const running = inFlight(cycles, now, control.maxCycleHours);
   const ordered = byPriority(control.programs, now, control.deadlineHorizonDays);
@@ -222,7 +228,8 @@ const programsOf = (input: StateInput): ProgramState[] => {
 
 /** Pure: every read already happened in collectState. */
 export const buildState = (input: StateInput): DrovrState => {
-  const { status, control, cycles, now } = input;
+  const { status, cycles, now } = input;
+  const control = applyAwayMode(input.control, input.awayFromPhone ?? false);
   const ceilings = ceilingsFor(control) ?? { weekly: 0, session: 0 };
   const pool = poolFrom(status, ceilings, now);
   // Same window decide() uses (control.maxCycleHours, not inFlight's own 24h
@@ -253,6 +260,7 @@ export const buildState = (input: StateInput): DrovrState => {
     schemaVersion: 1,
     generatedAt: new Date(now).toISOString(),
     mode: control.mode,
+    modeFromPhone: control.mode !== input.control.mode,
     pauseUntil: control.pauseUntil,
     maxConcurrentCycles: control.maxConcurrentCycles,
     reserve: r(1 - ceilings.weekly),
@@ -303,6 +311,7 @@ type Probes = {
   previews: Map<string, Preview>;
   runners: Map<string, boolean>;
   warnings: string[];
+  phone: PhonePrefs;
 };
 
 let lastProbes: Probes | null = null;
@@ -334,6 +343,9 @@ export const collectState = async (
   for (const warning of reused?.warnings ?? []) onWarning?.(warning);
 
   const status = reused?.status ?? (await readStatus());
+  // Cached with the quota probe: a 15s-bounded Lambda call per frame would be the whole cost
+  // of a frame, and the phone's toggle is not more urgent than the quota it sits beside.
+  const phone = reused?.phone ?? (await phonePrefs(control));
   const previews = new Map<string, Preview>(reused?.previews);
   // Kept as well as reported, so a reused probe replays the same diagnostics rather than
   // letting a live preview warning blink out of the frame between probes.
@@ -378,7 +390,8 @@ export const collectState = async (
     if (warning !== null) warn(warning);
   }));
 
-  if (reused === null) lastProbes = { at: now, status, previews, runners, warnings };
+  if (reused === null && phone.warning !== null) warn(phone.warning);
+  if (reused === null) lastProbes = { at: now, status, previews, runners, warnings, phone };
 
   const service = serviceState();
   return buildState({
@@ -392,5 +405,6 @@ export const collectState = async (
       lastTickAt: readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions),
     },
     previews, locks, asksUrls, runners,
+    awayFromPhone: phone.away,
   });
 };

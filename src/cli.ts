@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { poolFrom } from './capacity.ts';
 import {
-  byPriority, ceilingsFor, effectivePriority, isPaused, parseControl, parseDuration, readControl,
+  applyAwayMode, byPriority, ceilingsFor, effectivePriority, isPaused, parseControl, parseDuration, readControl,
 } from './control.ts';
 import { contributingAccounts, cyclesFundableFrom, decide, poolContext, type Funding } from './decide.ts';
 import {
@@ -24,7 +24,7 @@ import { observedYours, readSamples, shareOf, type UsageSample } from './usage.t
 import { AGENT_NOTES, findCommand, helpTree, renderCommand, renderList } from './help.ts';
 import { readAsks } from './asks.ts';
 import { parseReportArgs, writeReport } from './cycle.ts';
-import { alertFrom, textCraig } from './nudge.ts';
+import { alertFrom, phonePrefs, textCraig } from './nudge.ts';
 import { isSettled, releaseRunner as freeRunner, runnerAddress, runnerState, tidyRunnerTerminal } from './orca.ts';
 import { setReserve } from './keys.ts';
 import { heldBy, holder } from './lock.ts';
@@ -186,7 +186,10 @@ const fundingPayload = (funding: Funding) => ({
 });
 
 const statusPayload = async () => {
-  const control = readControl(p.control);
+  const stored = readControl(p.control);
+  const phone = await phonePrefs(stored);
+  if (phone.warning !== null) console.error(phone.warning);
+  const control = applyAwayMode(stored, phone.away);
   const status = await readStatus();
   const cycles = readCycles(p.cycles);
   const now = Date.now();
@@ -209,10 +212,12 @@ const statusPayload = async () => {
       lastTickAt: iso(lastTick),
     },
     mode: control.mode,
+    modeFromPhone: control.mode !== stored.mode,
     modeMeaning:
       control.mode === 'off'
         ? 'no cycles will start'
-        : `programs may use up to ${round((control.ceilings[control.mode]?.weekly ?? 0) * 100)}% of each account's weekly quota; the rest stays available to Craig`,
+        : `programs may use up to ${round((control.ceilings[control.mode]?.weekly ?? 0) * 100)}% of each account's weekly quota; the rest stays available to Craig` +
+          (control.mode !== stored.mode ? `; away is the phone's toggle for this pass, the stored mode is ${stored.mode}` : ''),
     pausedUntil: control.pauseUntil,
     // isPaused, not a bare presence check on pausedUntil: a lapsed timestamp is not a
     // pause, and --json has no renderer downstream to apply that guard itself.
@@ -277,7 +282,10 @@ const VERDICT_MEANING: Record<string, string> = {
 };
 
 const showStatus = async (): Promise<void> => {
-  const control = readControl(p.control);
+  const stored = readControl(p.control);
+  const phone = await phonePrefs(stored);
+  if (phone.warning !== null) console.error(phone.warning);
+  const control = applyAwayMode(stored, phone.away);
   const status = await readStatus();
   const cycles = readCycles(p.cycles);
   const now = Date.now();
@@ -292,7 +300,7 @@ const showStatus = async (): Promise<void> => {
   // "paused until 22:16" for hours after it lapsed, directly above verdicts that named a
   // different reason entirely — the same false-cause bug the panel had (CLAUDE.md).
   const pause = isPaused(control, now) ? ` (paused until ${control.pauseUntil})` : '';
-  console.log(`mode: ${control.mode}${pause}`);
+  console.log(`mode: ${control.mode}${control.mode !== stored.mode ? ' (phone)' : ''}${pause}`);
   if (ceilings !== null) {
     const pool = poolFrom(status, ceilings, now);
     const cost = estimateCycleCost(cycles, control.seedCycleCost);
