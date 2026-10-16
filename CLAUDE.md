@@ -222,20 +222,37 @@ Written and type-checked, never seen to fire. Unproven, not done:
   minute of landing (2026-08-29 15:57: aice-x admitted over resting sunnyt, refused at 15:47
   by the old ranking); the reverse — a lapsed rest raising lower programs' bars again on its
   own — is proven only in the suite.
-- **A drovr alert arriving on the phone.** Every alert writes its row through hey; no device is
-  registered until plan 3 ships, so `pushed` is false on every send today.
-- **A `pushed: true` send.** No SNS publish has executed against a real endpoint; the
-  disabled-endpoint cleanup and the push-failure reason are proven only in the suite.
-- **A passkey sign-in.** The pool accepts `WEB_AUTHN` and the relying-party ID is set, but only an
-  `EMAIL_OTP` sign-in has run (plan 2, from the Mac). The passkey ceremony needs the app and the
-  AASA file on drovr.app, which are plans 3 and 4.
+- **A TestFlight build of Hey.** Plan 4's Task 8 is deferred until the dedicated Apple developer
+  account is approved; every device build so far is a Debug build signed by a temporary team
+  (`TEAMID0000` in `infra/apple.tf` and `ios/Hey/project.yml`), and the plan's Task 8 preamble is
+  the team-switch checklist that runs first. With it unobserved: the `APNS/hey` (production)
+  platform application has never minted an endpoint, so no `production` device row exists and
+  `ExportOptions.plist` has never been written.
+- **A sandbox device row dying through `EndpointDisabled`.** The Lambda's disabled-endpoint
+  branch has run only in the suite; the one sandbox token is still live.
+- **Identity-pool credentials past their hour.** `AmplifyCredentials` asks Amplify on every
+  request and caches nothing, but no Debug build has sat 65 minutes in the background and then
+  refreshed (plan 4, Task 3 step 9 — the app was reinstalled too often on 2026-10-16 to run it).
+- **`ALLOW_REFRESH_TOKEN_AUTH` past the refresh token's first day.** A session restore across a
+  relaunch is observed (2026-10-16); one across days is not.
+- **A load error from a half-answered row in the wild.** `MessageRow.decode` and the Lambda's
+  `messageShape` refuse a row with `reply` but no `repliedAt`; only the suite has produced one,
+  since the app's UpdateItem sets both at once.
+- **A read mark written from a second phone.** Read marks are `read#<from>` rows on the server
+  so two phones agree; one phone exists.
 
 ## Notifications
 
 Every alert goes through **hey**, drovr's own channel: `textCraig` in `nudge.ts` calls the
 hey Lambda in `ca-central-1` on the default AWS profile, which writes a row to the `hey` table
-and pushes it to Craig's phone (plan 3 of the hey design,
-`docs/superpowers/specs/2026-10-15-notify-app-design.md`). `control.notifyTo` is the handle;
+and publishes to every `device#` row the recipient's phones have registered, through the SNS
+platform applications `APNS/hey` and `APNS_SANDBOX/hey` (hey design,
+`docs/superpowers/specs/2026-10-15-notify-app-design.md`). The iOS app is `ios/Hey/`, a Debug
+build on Craig's phone until TestFlight (see "Not yet observed"); it reads its own partition
+straight from DynamoDB with identity-pool credentials and never calls the Lambda. Read state is
+the app's `read#<from>` rows, which is how the Lambda can put the unread-conversation count on
+each push as `aps.badge`; the app sets the same number itself whenever its unread set changes.
+`control.notifyTo` is the handle;
 null disables alerts and leaves the log line. The `from` label is the program for a cycle alert
 and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
 Slack app and no SMS any more: a failed send is a `console.error` line and an exit code, never a
@@ -315,6 +332,15 @@ anywhere; do not create one unprompted, but say so if the subject arises.
   AWS call drovr makes. Sign-in is Cognito pool "hey" (passkey, email code), custom domain
   auth.drovr.app; devices get credentials from identity pool "hey" under role hey-device, confined
   to their own partition by dynamodb:LeadingKeys.
+  APNs goes through SNS platform applications `APNS/hey` and `APNS_SANDBOX/hey` (token key from
+  the Apple developer portal, reaching Tofu as `TF_VAR_apns_key_id` and `TF_VAR_apns_p8` from the
+  dotenvx-encrypted, committed `infra/.env` — every plan and apply is
+  `dotenvx run -f infra/.env -- tofu ...`, the private key is the gitignored `infra/.env.keys`,
+  and a lost key file means a new APNs key from the portal); the passkey association file is
+  `https://drovr.app/.well-known/apple-app-site-association` (`infra/apple.tf`). The app's own
+  dependencies are Amplify Swift 2.62.1 (Auth and AWSPluginsCore) and AWS SDK for Swift 1.7.60
+  (DynamoDB, SNS; the version Amplify pins), in `ios/Hey/project.yml`. Every `xcodebuild` on it
+  needs `-skipPackagePluginValidation` for smithy-swift's code-generator plugin.
 - **ssh** — only for a program with a `host`: `ssh -o BatchMode=yes <target> cat|rm -f|true`
   through `runSsh`, bounded, to read a hosted cycle's report and transcript back and to probe the
   box before waking it. drovr never runs a cycle's work over ssh; the terminal is orca's.
