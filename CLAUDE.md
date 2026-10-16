@@ -226,6 +226,9 @@ Written and type-checked, never seen to fire. Unproven, not done:
   registered until plan 3 ships, so `pushed` is false on every send today.
 - **A `pushed: true` send.** No SNS publish has executed against a real endpoint; the
   disabled-endpoint cleanup and the push-failure reason are proven only in the suite.
+- **A passkey sign-in.** The pool accepts `WEB_AUTHN` and the relying-party ID is set, but only an
+  `EMAIL_OTP` sign-in has run (plan 2, from the Mac). The passkey ceremony needs the app and the
+  AASA file on drovr.app, which are plans 3 and 4.
 
 ## Notifications
 
@@ -309,7 +312,9 @@ anywhere; do not create one unprompted, but say so if the subject arises.
 - **teamclaude** — read-only, via `teamclaude status --json`, plus `teamclaude run` as the launch
   command of every cycle.
 - **hey** — the Lambda `hey` in `ca-central-1`, through `src/hey.ts`'s `lambdaInvoke`; the only
-  AWS call drovr makes.
+  AWS call drovr makes. Sign-in is Cognito pool "hey" (passkey, email code), custom domain
+  auth.drovr.app; devices get credentials from identity pool "hey" under role hey-device, confined
+  to their own partition by dynamodb:LeadingKeys.
 - **ssh** — only for a program with a `host`: `ssh -o BatchMode=yes <target> cat|rm -f|true`
   through `runSsh`, bounded, to read a hosted cycle's report and transcript back and to probe the
   box before waking it. drovr never runs a cycle's work over ssh; the terminal is orca's.
