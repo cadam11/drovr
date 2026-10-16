@@ -2,3 +2,6 @@ node_modules/
 *.log
 dist/
 lambda/hey/dist/
+ios/Hey/Hey.xcodeproj/
+ios/Hey/Hey/Info.plist
+ios/Hey/build/
