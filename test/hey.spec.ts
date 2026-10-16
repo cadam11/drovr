@@ -4,13 +4,19 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  commandOf,
   functionName,
   invokeResult,
   parseArgs,
+  parseChoices,
   parseDuration,
+  parsePrefsArgs,
+  parseProfileArgs,
   readConfig,
   readMessage,
+  readPrefs,
   send,
+  setProfile,
   UsageError,
   waitForReply,
   wantsHelp,
@@ -38,6 +44,7 @@ test('args: text, --to, --from, --wait, --json, and the defaults', () => {
     cwd: '/Users/cadam/code/drovr',
     text: 'merge it?',
     waitSeconds: 1800,
+    choices: null,
     json: true,
   });
   assert.equal(parseArgs(['--to', 'ann', '--from', 'relliq', '--host', 'devbox', '--cwd', 'relliq', 'hi'], defaults).from, 'relliq');
@@ -80,12 +87,12 @@ test('send and readMessage validate what the lambda returns', async () => {
       ? { id: '01A', pk: 'sub', createdAt: 'c', waitUntil: null, pushed: false, reason: 'no devices registered' }
       : row;
   };
-  const response = await send(invoke, { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null });
+  const response = await send(invoke, { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null });
   assert.equal(response.id, '01A');
   assert.deepEqual(sent[0], { action: 'send', to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't' });
   assert.equal((await readMessage(invoke, 'sub', '01A')).text, 't');
   await assert.rejects(() =>
-    send(async () => ({ nope: true }), { to: 'c', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null }),
+    send(async () => ({ nope: true }), { to: 'c', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null }),
   );
 });
 
@@ -156,4 +163,90 @@ test('invokeResult: a FunctionError with a payload that is not JSON still names 
 test('functionName is the bare name at home and the full ARN when HEY_FUNCTION names one (cross-account sender)', () => {
   assert.equal(functionName({}), 'hey');
   assert.equal(functionName({ HEY_FUNCTION: 'arn:aws:lambda:ca-central-1:000000000000:function:hey' }), 'arn:aws:lambda:ca-central-1:000000000000:function:hey');
+});
+
+test('commandOf: a known first word is the command, anything else is a send', () => {
+  assert.deepEqual(commandOf(['profile', '--from', 'sunnyt']), { command: 'profile', rest: ['--from', 'sunnyt'] });
+  assert.deepEqual(commandOf(['prefs']), { command: 'prefs', rest: [] });
+  assert.deepEqual(commandOf(['help', 'profile']), { command: 'help', rest: ['profile'] });
+  assert.deepEqual(commandOf(['send', 'hi']), { command: 'send', rest: ['hi'] });
+  assert.deepEqual(commandOf(['hi there']), { command: 'send', rest: ['hi there'] });
+  assert.deepEqual(commandOf(['--wait', '5m', 'hi']), { command: 'send', rest: ['--wait', '5m', 'hi'] });
+  assert.deepEqual(commandOf([]), { command: 'send', rest: [] });
+});
+
+test('choices: two to four, trimmed, non-empty, at most 24 chars, distinct', () => {
+  assert.deepEqual(parseChoices(' yes , no'), ['yes', 'no']);
+  assert.deepEqual(parseChoices('merge,hold,ask,skip'), ['merge', 'hold', 'ask', 'skip']);
+  for (const bad of ['yes', 'a,b,c,d,e', 'yes,,no', 'yes, ', `ok,${'x'.repeat(25)}`, 'same,same', '']) {
+    assert.throws(() => parseChoices(bad), UsageError, bad);
+  }
+});
+
+test('args: --choices rides with --wait and is refused without it', () => {
+  const parsed = parseArgs(['--wait', '5m', '--choices', 'yes,no', 'merge it?'], defaults);
+  assert.deepEqual(parsed.choices, ['yes', 'no']);
+  assert.equal(parseArgs(['hi'], defaults).choices, null);
+  assert.throws(() => parseArgs(['--choices', 'yes,no', 'merge it?'], defaults), /--choices needs --wait/);
+});
+
+test('send carries choices only when given, and reads quiet with a default for an older lambda', async () => {
+  const sent: Record<string, unknown>[] = [];
+  const invoke: Invoke = async (payload) => {
+    sent.push(payload);
+    return { id: '01A', pk: 'sub', createdAt: 'c', waitUntil: 'w', pushed: true, quiet: true };
+  };
+  const input = { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['yes', 'no'] };
+  const response = await send(invoke, input);
+  assert.equal(response.quiet, true);
+  assert.deepEqual(sent[0], { action: 'send', to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['yes', 'no'] });
+  await send(invoke, { ...input, choices: null });
+  assert.equal('choices' in sent[1]!, false);
+  const older = await send(async () => ({ id: '01A', pk: 'sub', createdAt: 'c', waitUntil: null, pushed: false, reason: 'no devices registered' }), { ...input, waitSeconds: null, choices: null });
+  assert.equal(older.quiet, false);
+});
+
+test('readPrefs asks the prefs action and refuses a shape with unknown keys', async () => {
+  const asked: Record<string, unknown>[] = [];
+  const prefs = await readPrefs(async (payload) => {
+    asked.push(payload);
+    return { quietHours: null, away: true };
+  }, 'craig');
+  assert.deepEqual(prefs, { quietHours: null, away: true });
+  assert.deepEqual(asked[0], { action: 'prefs', to: 'craig' });
+  await assert.rejects(() => readPrefs(async () => ({ quietHours: null, away: true, theme: 'dark' }), 'craig'));
+});
+
+test('setProfile sends only the fields given and parses the profile back', async () => {
+  const sent: Record<string, unknown>[] = [];
+  const profile = await setProfile(async (payload) => {
+    sent.push(payload);
+    return { from: 'sunnyt', icon: '🦾', summary: null, color: null, updatedAt: '2026-10-16T00:00:00.000Z' };
+  }, { to: 'craig', from: 'sunnyt', icon: '🦾' });
+  assert.deepEqual(sent[0], { action: 'profile', to: 'craig', from: 'sunnyt', icon: '🦾' });
+  assert.equal(profile.icon, '🦾');
+  assert.equal(profile.summary, null);
+});
+
+test('profile args: --from is required, the three fields are optional, --to defaults', () => {
+  assert.deepEqual(parseProfileArgs(['--from', 'sunnyt', '--icon', '🦾', '--summary', 'Ticket loop', '--color', '#737373'], { to: 'craig' }), {
+    to: 'craig',
+    from: 'sunnyt',
+    icon: '🦾',
+    summary: 'Ticket loop',
+    color: '#737373',
+  });
+  assert.deepEqual(parseProfileArgs(['--from', 'sunnyt'], { to: 'craig' }), { to: 'craig', from: 'sunnyt' });
+  assert.deepEqual(parseProfileArgs(['--from', 'sunnyt', '--color', ''], { to: 'craig' }), { to: 'craig', from: 'sunnyt', color: '' });
+  assert.throws(() => parseProfileArgs(['--icon', '🦾'], { to: 'craig' }), /--from/);
+  assert.throws(() => parseProfileArgs(['--from', 'sunnyt'], { to: null }), /--to or HEY_TO/);
+  assert.throws(() => parseProfileArgs(['--from', 'sunnyt', 'stray'], { to: 'craig' }), UsageError);
+  assert.throws(() => parseProfileArgs(['--from', 'sunnyt', '--bogus', 'x'], { to: 'craig' }), /unknown flag/);
+});
+
+test('prefs args: --to or the default, nothing else', () => {
+  assert.deepEqual(parsePrefsArgs([], { to: 'craig' }), { to: 'craig' });
+  assert.deepEqual(parsePrefsArgs(['--to', 'ann'], { to: 'craig' }), { to: 'ann' });
+  assert.throws(() => parsePrefsArgs([], { to: null }), /--to or HEY_TO/);
+  assert.throws(() => parsePrefsArgs(['extra'], { to: 'craig' }), UsageError);
 });

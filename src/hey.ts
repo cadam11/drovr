@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { z } from 'zod';
-import { messageShape, type MessageRow } from '../lambda/hey/handler.ts';
+import { messageShape, prefsShape, type MessageRow, type Prefs, type Profile } from '../lambda/hey/handler.ts';
 
 export const POLL_MS = 5_000;
 /** Consecutive, not total: a flaky network that still answers is not a lost wait. */
@@ -10,7 +10,9 @@ const MAX_WAIT_SECONDS = 86_400;
 
 export class UsageError extends Error {}
 
-export const USAGE = 'usage: hey [--to <handle>] [--from <label>] [--host <host>] [--cwd <dir>] [--wait <dur>] [--json] <text>';
+export const USAGE =
+  'usage: hey [send] [--to <handle>] [--from <label>] [--host <host>] [--cwd <dir>] [--wait <dur>] [--choices a,b] [--json] <text>\n' +
+  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey help [command]';
 
 export const parseDuration = (text: string): number => {
   const match = /^(\d+)([smh])$/.exec(text);
@@ -21,9 +23,45 @@ export const parseDuration = (text: string): number => {
   return seconds;
 };
 
-export type Parsed = { to: string; from: string; host: string; cwd: string; text: string; waitSeconds: number | null; json: boolean };
+export const COMMAND_NAMES = ['send', 'profile', 'prefs', 'guide', 'help'] as const;
+export type CommandName = (typeof COMMAND_NAMES)[number];
 
-const VALUE_FLAGS = ['--to', '--from', '--host', '--cwd', '--wait'] as const;
+/** The first word is a command only when it names one; everything else is the message it always was. */
+export const commandOf = (argv: string[]): { command: CommandName; rest: string[] } => {
+  const first = argv[0];
+  const named = COMMAND_NAMES.find((name) => name === first);
+  return named === undefined ? { command: 'send', rest: argv } : { command: named, rest: argv.slice(1) };
+};
+
+const MAX_CHOICES = 4;
+const MAX_CHOICE_CHARS = 24;
+
+/** Mirrors the Lambda's `choicesShape`, so a bad list is refused here with the usage line rather than as a bad_request after a round trip. */
+export const parseChoices = (text: string): string[] => {
+  const choices = text.split(',').map((choice) => choice.trim());
+  if (choices.length < 2 || choices.length > MAX_CHOICES) throw new UsageError(`--choices takes 2 to ${MAX_CHOICES} comma-separated answers, not "${text}"`);
+  if (choices.some((choice) => choice === '')) throw new UsageError(`--choices has an empty answer in "${text}"`);
+  const long = choices.find((choice) => choice.length > MAX_CHOICE_CHARS);
+  if (long !== undefined) throw new UsageError(`--choices: "${long}" is over ${MAX_CHOICE_CHARS} characters`);
+  if (new Set(choices).size !== choices.length) throw new UsageError(`--choices repeats an answer in "${text}"`);
+  return choices;
+};
+
+export type Parsed = {
+  to: string;
+  from: string;
+  host: string;
+  cwd: string;
+  text: string;
+  waitSeconds: number | null;
+  choices: string[] | null;
+  json: boolean;
+};
+
+const VALUE_FLAGS = ['--to', '--from', '--host', '--cwd', '--wait', '--choices'] as const;
+
+const noRecipient = (): UsageError =>
+  new UsageError('no recipient: pass --to or HEY_TO, or put {"to": "<handle>"} in ~/.config/hey.json');
 
 export const parseArgs = (
   argv: string[],
@@ -53,16 +91,20 @@ export const parseArgs = (
   const text = positional[0]!;
   if (text.trim() === '') throw new UsageError('the message text is blank');
   const to = values['--to'] ?? defaults.to;
-  if (to === null) throw new UsageError('no recipient: pass --to or HEY_TO, or put {"to": "<handle>"} in ~/.config/hey.json');
+  if (to === null) throw noRecipient();
   const host = values['--host'] ?? defaults.host;
   const cwd = values['--cwd'] ?? defaults.cwd;
+  const waitSeconds = values['--wait'] === undefined ? null : parseDuration(values['--wait']);
+  const choices = values['--choices'] === undefined ? null : parseChoices(values['--choices']);
+  if (choices !== null && waitSeconds === null) throw new UsageError('--choices needs --wait: nobody would read the answer');
   return {
     to,
     from: values['--from'] ?? defaults.from ?? `${host}:${cwd}`,
     host,
     cwd,
     text,
-    waitSeconds: values['--wait'] === undefined ? null : parseDuration(values['--wait']),
+    waitSeconds,
+    choices,
     json,
   };
 };
@@ -92,7 +134,15 @@ export const readConfig = (path: string): { to: string | null; from: string | nu
 
 export type Invoke = (payload: Record<string, unknown>) => Promise<unknown>;
 
-export type SendInput = { to: string; from: string; host: string; cwd: string; text: string; waitSeconds: number | null };
+export type SendInput = {
+  to: string;
+  from: string;
+  host: string;
+  cwd: string;
+  text: string;
+  waitSeconds: number | null;
+  choices: string[] | null;
+};
 
 const sendResponseShape = z.object({
   id: z.string().min(1),
@@ -100,18 +150,83 @@ const sendResponseShape = z.object({
   createdAt: z.string(),
   waitUntil: z.string().nullable(),
   pushed: z.boolean(),
+  /** Default, so a Lambda not yet redeployed still parses. */
+  quiet: z.boolean().default(false),
   reason: z.string().optional(),
 });
 export type SendResponse = z.infer<typeof sendResponseShape>;
 
 export const send = async (invoke: Invoke, input: SendInput): Promise<SendResponse> => {
-  const { waitSeconds, ...rest } = input;
-  const payload = { action: 'send', ...rest, ...(waitSeconds === null ? {} : { waitSeconds }) };
+  const { waitSeconds, choices, ...rest } = input;
+  const payload = {
+    action: 'send',
+    ...rest,
+    ...(waitSeconds === null ? {} : { waitSeconds }),
+    ...(choices === null ? {} : { choices }),
+  };
   return sendResponseShape.parse(await invoke(payload));
 };
 
 export const readMessage = async (invoke: Invoke, pk: string, id: string): Promise<MessageRow> =>
   messageShape.parse(await invoke({ action: 'read', pk, id }));
+
+export const readPrefs = async (invoke: Invoke, to: string): Promise<Prefs> =>
+  prefsShape.parse(await invoke({ action: 'prefs', to }));
+
+const profileShape = z.object({
+  from: z.string(),
+  icon: z.string().nullable(),
+  summary: z.string().nullable(),
+  color: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
+
+export type ProfileInput = { to: string; from: string; icon?: string; summary?: string; color?: string };
+
+/** Only the fields given travel: the Lambda merges, and an absent field must not read as "clear". */
+export const setProfile = async (invoke: Invoke, input: ProfileInput): Promise<Profile> => {
+  const payload: Record<string, unknown> = { action: 'profile', to: input.to, from: input.from };
+  for (const field of ['icon', 'summary', 'color'] as const) {
+    if (input[field] !== undefined) payload[field] = input[field];
+  }
+  return profileShape.parse(await invoke(payload));
+};
+
+/** `--flag value` pairs from a fixed set; a positional or an unknown flag is a usage error naming it. */
+const flagValues = (argv: string[], known: readonly string[]): Map<string, string> => {
+  const values = new Map<string, string>();
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    if (!known.includes(arg)) throw new UsageError(arg.startsWith('--') ? `unknown flag ${arg}` : `unexpected argument "${arg}"`);
+    const value = argv[i + 1];
+    if (value === undefined) throw new UsageError(`${arg} needs a value`);
+    values.set(arg, value);
+    i += 1;
+  }
+  return values;
+};
+
+export const parseProfileArgs = (argv: string[], defaults: { to: string | null }): ProfileInput => {
+  const values = flagValues(argv, ['--to', '--from', '--icon', '--summary', '--color']);
+  const from = values.get('--from');
+  if (from === undefined) throw new UsageError('hey profile needs --from <label>: the sender whose profile this is');
+  const to = values.get('--to') ?? defaults.to;
+  if (to === null) throw noRecipient();
+  const input: ProfileInput = { to, from };
+  const icon = values.get('--icon');
+  const summary = values.get('--summary');
+  const color = values.get('--color');
+  if (icon !== undefined) input.icon = icon;
+  if (summary !== undefined) input.summary = summary;
+  if (color !== undefined) input.color = color;
+  return input;
+};
+
+export const parsePrefsArgs = (argv: string[], defaults: { to: string | null }): { to: string } => {
+  const to = flagValues(argv, ['--to']).get('--to') ?? defaults.to;
+  if (to === null) throw noRecipient();
+  return { to };
+};
 
 export type WaitOutcome =
   | { status: 'replied'; reply: string; repliedAt: string }

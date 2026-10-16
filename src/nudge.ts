@@ -42,6 +42,7 @@ export const textCraig = async (to: Recipient, message: string, from: string): P
       cwd: from,
       text: message,
       waitSeconds: null,
+      choices: null,
     });
     if (!result.pushed) console.error(`sent ${result.id}, but push failed: ${result.reason ?? 'no reason given'}`);
     return { sent: true, messageId: result.id, via: 'hey', reason: null };
