@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseArgs, parseDuration, readConfig, readMessage, send, UsageError, waitForReply, type Invoke } from '../src/hey.ts';
+import {
+  invokeResult,
+  parseArgs,
+  parseDuration,
+  readConfig,
+  readMessage,
+  send,
+  UsageError,
+  waitForReply,
+  type Invoke,
+} from '../src/hey.ts';
 
 const defaults = { to: 'craig', from: null, host: 'mac', cwd: '/Users/cadam/code/drovr' };
 
@@ -115,4 +125,19 @@ test('wait: five consecutive failed polls end the wait as failed, and a success 
   assert.deepEqual(outcome, { status: 'failed', reason: 'boom 8' });
   assert.equal(polls, 8);
   assert.equal(errors.length, 6);
+});
+
+const bytes = (text: string) => new TextEncoder().encode(text);
+
+test('invokeResult: a clean payload is parsed, a FunctionError carries the lambda message', () => {
+  assert.deepEqual(invokeResult(undefined, bytes('{"id":"01A"}')), { id: '01A' });
+  assert.throws(
+    () => invokeResult('Unhandled', bytes('{"errorType":"HeyError","errorMessage":"no user with the handle \\"x\\""}')),
+    /no user with the handle "x"/,
+  );
+});
+
+test('invokeResult: a FunctionError with a payload that is not JSON still names the failure', () => {
+  assert.throws(() => invokeResult('Unhandled', bytes('Task timed out after 10.00 seconds')), /Task timed out/);
+  assert.throws(() => invokeResult(undefined, undefined), /empty/);
 });

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { z } from 'zod';
 import { messageShape, type MessageRow } from '../lambda/hey/handler.ts';
 
@@ -39,16 +40,16 @@ export const parseArgs = (
     }
     const flag = VALUE_FLAGS.find((known) => known === arg);
     if (flag === undefined) {
-      if (arg.startsWith('--')) throw new UsageError(`unknown flag ${arg}\n${USAGE}`);
+      if (arg.startsWith('--')) throw new UsageError(`unknown flag ${arg}`);
       positional.push(arg);
       continue;
     }
     const value = argv[i + 1];
-    if (value === undefined) throw new UsageError(`${flag} needs a value\n${USAGE}`);
+    if (value === undefined) throw new UsageError(`${flag} needs a value`);
     values[flag] = value;
     i += 1;
   }
-  if (positional.length !== 1) throw new UsageError(`exactly one message text, quoted\n${USAGE}`);
+  if (positional.length !== 1) throw new UsageError(`exactly one message text, quoted`);
   const text = positional[0]!;
   if (text.trim() === '') throw new UsageError('the message text is blank');
   const to = values['--to'] ?? defaults.to;
@@ -133,4 +134,44 @@ export const waitForReply = async (opts: {
     await opts.sleep(POLL_MS);
   }
   return { status: 'unanswered' };
+};
+
+export const REGION = 'ca-central-1';
+export const FUNCTION_NAME = 'hey';
+/** One network call, and the Lambda itself is capped at 10s. */
+const INVOKE_TIMEOUT_MS = 15_000;
+
+const errorPayloadShape = z.object({ errorMessage: z.string() });
+
+/** The error payload is read leniently: a timeout arrives as plain text, not JSON. */
+export const invokeResult = (functionError: string | undefined, payload: Uint8Array | undefined): unknown => {
+  if (payload === undefined || payload.length === 0) throw new Error('the hey lambda returned an empty response');
+  const text = new TextDecoder().decode(payload);
+  if (functionError === undefined) return JSON.parse(text);
+  try {
+    const parsed = errorPayloadShape.safeParse(JSON.parse(text));
+    throw new Error(parsed.success ? parsed.data.errorMessage : text);
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error(text);
+    throw error;
+  }
+};
+
+/**
+ * The default credential chain and nothing else: the Mac's default profile, a scoped
+ * user's keys in the environment elsewhere. maxAttempts 1 because a retried send is a
+ * duplicate message, and a retried read is the wait loop's job.
+ */
+export const lambdaInvoke = (): Invoke => {
+  const client = new LambdaClient({
+    region: REGION,
+    maxAttempts: 1,
+    requestHandler: { connectionTimeout: INVOKE_TIMEOUT_MS, requestTimeout: INVOKE_TIMEOUT_MS },
+  });
+  return async (payload) => {
+    const out = await client.send(
+      new InvokeCommand({ FunctionName: FUNCTION_NAME, Payload: new TextEncoder().encode(JSON.stringify(payload)) }),
+    );
+    return invokeResult(out.FunctionError, out.Payload);
+  };
 };
