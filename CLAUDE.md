@@ -242,6 +242,10 @@ text. A send is never retried — a retried send is a duplicate message.
 The `hey` command lives in `src/hey-cli.ts` and is bundled by `pnpm build:hey` into `dist/hey`
 for machines without this checkout.
 
+The infrastructure is the Tofu root in `infra/`, state in S3 (`drovr-tfstate-000000000000`,
+created once by `infra/bootstrap`, whose own state is local and gitignored). `pnpm build:lambda`
+must run before any `tofu plan` there: the function's zip is built from a gitignored bundle.
+
 ## drovr is also a program
 
 drovr supervises a program named `drovr` that works on this codebase — but never in this
