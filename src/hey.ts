@@ -12,7 +12,8 @@ export class UsageError extends Error {}
 
 export const USAGE =
   'usage: hey [send] [--to <handle>] [--from <label>] [--host <host>] [--cwd <dir>] [--wait <dur>] [--choices a,b] [--json] <text>\n' +
-  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey help [command]';
+  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey help [command]\n' +
+  '       --multi with --choices lets several answers be picked; the reply is them joined by ", "';
 
 export const parseDuration = (text: string): number => {
   const match = /^(\d+)([smh])$/.exec(text);
@@ -55,6 +56,7 @@ export type Parsed = {
   text: string;
   waitSeconds: number | null;
   choices: string[] | null;
+  multi: boolean;
   json: boolean;
 };
 
@@ -69,11 +71,16 @@ export const parseArgs = (
 ): Parsed => {
   const values: Partial<Record<(typeof VALUE_FLAGS)[number], string>> = {};
   let json = false;
+  let multi = false;
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
     if (arg === '--json') {
       json = true;
+      continue;
+    }
+    if (arg === '--multi') {
+      multi = true;
       continue;
     }
     const flag = VALUE_FLAGS.find((known) => known === arg);
@@ -97,6 +104,7 @@ export const parseArgs = (
   const waitSeconds = values['--wait'] === undefined ? null : parseDuration(values['--wait']);
   const choices = values['--choices'] === undefined ? null : parseChoices(values['--choices']);
   if (choices !== null && waitSeconds === null) throw new UsageError('--choices needs --wait: nobody would read the answer');
+  if (multi && choices === null) throw new UsageError('--multi needs --choices: there is nothing to pick several of');
   return {
     to,
     from: values['--from'] ?? defaults.from ?? `${host}:${cwd}`,
@@ -105,6 +113,7 @@ export const parseArgs = (
     text,
     waitSeconds,
     choices,
+    multi,
     json,
   };
 };
@@ -142,6 +151,7 @@ export type SendInput = {
   text: string;
   waitSeconds: number | null;
   choices: string[] | null;
+  multi: boolean;
 };
 
 const sendResponseShape = z.object({
@@ -157,12 +167,13 @@ const sendResponseShape = z.object({
 export type SendResponse = z.infer<typeof sendResponseShape>;
 
 export const send = async (invoke: Invoke, input: SendInput): Promise<SendResponse> => {
-  const { waitSeconds, choices, ...rest } = input;
+  const { waitSeconds, choices, multi, ...rest } = input;
   const payload = {
     action: 'send',
     ...rest,
     ...(waitSeconds === null ? {} : { waitSeconds }),
     ...(choices === null ? {} : { choices }),
+    ...(multi ? { multi } : {}),
   };
   return sendResponseShape.parse(await invoke(payload));
 };

@@ -47,6 +47,7 @@ test('args: text, --to, --from, --wait, --json, and the defaults', () => {
     text: 'merge it?',
     waitSeconds: 1800,
     choices: null,
+    multi: false,
     json: true,
   });
   assert.equal(parseArgs(['--to', 'ann', '--from', 'relliq', '--host', 'devbox', '--cwd', 'relliq', 'hi'], defaults).from, 'relliq');
@@ -89,12 +90,12 @@ test('send and readMessage validate what the lambda returns', async () => {
       ? { id: '01A', pk: 'sub', createdAt: 'c', waitUntil: null, pushed: false, reason: 'no devices registered' }
       : row;
   };
-  const response = await send(invoke, { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null });
+  const response = await send(invoke, { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null, multi: false });
   assert.equal(response.id, '01A');
   assert.deepEqual(sent[0], { action: 'send', to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't' });
   assert.equal((await readMessage(invoke, 'sub', '01A')).text, 't');
   await assert.rejects(() =>
-    send(async () => ({ nope: true }), { to: 'c', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null }),
+    send(async () => ({ nope: true }), { to: 'c', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null, multi: false }),
   );
 });
 
@@ -198,7 +199,7 @@ test('send carries choices only when given, and reads quiet with a default for a
     sent.push(payload);
     return { id: '01A', pk: 'sub', createdAt: 'c', waitUntil: 'w', pushed: true, quiet: true };
   };
-  const input = { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['yes', 'no'] };
+  const input = { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['yes', 'no'], multi: false };
   const response = await send(invoke, input);
   assert.equal(response.quiet, true);
   assert.deepEqual(sent[0], { action: 'send', to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['yes', 'no'] });
@@ -269,4 +270,21 @@ test('wait: a message deleted on the phone ends the wait as deleted, not failed,
   const outcome = await waitForReply({ read, sleep, nowMs, waitUntilMs: 600_000, onPollError: () => { throw new Error('not a poll error'); } });
   assert.deepEqual(outcome, { status: 'deleted' });
   assert.equal(polls, 3);
+});
+
+test('args: --multi rides with --choices and is refused without it; send carries it only when set', async () => {
+  const parsed = parseArgs(['--wait', '5m', '--choices', 'a,b,c', '--multi', 'pick two'], defaults);
+  assert.equal(parsed.multi, true);
+  assert.equal(parseArgs(['--wait', '5m', '--choices', 'a,b', 'x'], defaults).multi, false);
+  assert.throws(() => parseArgs(['--wait', '5m', '--multi', 'x'], defaults), /--multi needs --choices/);
+  const sent: Record<string, unknown>[] = [];
+  const invoke: Invoke = async (payload) => {
+    sent.push(payload);
+    return { id: '01A', pk: 'sub', createdAt: 'c', waitUntil: 'w', pushed: true, quiet: false };
+  };
+  const input = { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['a', 'b'], multi: true };
+  await send(invoke, input);
+  assert.equal(sent[0]!.multi, true);
+  await send(invoke, { ...input, multi: false });
+  assert.equal('multi' in sent[1]!, false);
 });
