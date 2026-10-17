@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { lambdaInvoke, readPrefs, send } from './hey.ts';
+import { lambdaInvoke, putStatus, readPrefs, send, type Invoke } from './hey.ts';
 import { ensureDirs, paths } from './paths.ts';
 
 export type SendResult = {
@@ -19,6 +19,9 @@ export type Recipient = { notifyTo: string | null };
 
 /** The `from` label the app groups a thread by: the program, or drovr itself on this machine. */
 export const alertFrom = (program: string | null, host: string): string => program ?? `drovr on ${host}`;
+
+const credentialHint = (detail: string): string =>
+  /credential|expired|security token|AccessDenied/i.test(detail) ? ' Check the default profile with: aws sts get-caller-identity' : '';
 
 /**
  * The one place drovr alerts Craig, through the same hey lambda the CLI uses. `from` is
@@ -49,11 +52,32 @@ export const textCraig = async (to: Recipient, message: string, from: string): P
     return { sent: true, messageId: result.id, via: 'hey', reason: null };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    const hint = /credential|expired|security token|AccessDenied/i.test(detail)
-      ? ' Check the default profile with: aws sts get-caller-identity'
-      : '';
-    console.error(`could not send through hey: ${detail}${hint}`);
+    console.error(`could not send through hey: ${detail}${credentialHint(detail)}`);
     return { sent: false, messageId: null, via: 'hey', reason: detail };
+  }
+};
+
+export type PublishResult = { sent: boolean; reason: string | null };
+
+/**
+ * The tick's status row, published to the same handle alerts go to. Best-effort like
+ * textCraig and for the same reason: a window onto the tick must never take the tick down.
+ * A null notifyTo returns a reason without a log line — it is a configuration, not a
+ * failure, and this runs every tick.
+ */
+export const publishStatus = async (
+  to: Recipient,
+  input: { host: string; at: string; payload: string },
+  invoke: Invoke = lambdaInvoke(),
+): Promise<PublishResult> => {
+  if (to.notifyTo === null) return { sent: false, reason: 'notifyTo is null in control.json' };
+  try {
+    await putStatus(invoke, { to: to.notifyTo, ...input });
+    return { sent: true, reason: null };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`could not publish status through hey: ${detail}${credentialHint(detail)}`);
+    return { sent: false, reason: detail };
   }
 };
 

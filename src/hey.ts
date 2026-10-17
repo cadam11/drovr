@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { z } from 'zod';
-import { messageShape, NOT_FOUND_PREFIX, prefsShape, type MessageRow, type Prefs, type Profile } from '../lambda/hey/handler.ts';
+import {
+  messageShape, NOT_FOUND_PREFIX, prefsShape, statusRowShape, type MessageRow, type Prefs, type Profile, type StatusRow,
+} from '../lambda/hey/handler.ts';
 
 export const POLL_MS = 5_000;
 /** Consecutive, not total: a flaky network that still answers is not a lost wait. */
@@ -196,6 +198,18 @@ export const readMessage = async (invoke: Invoke, pk: string, id: string): Promi
 
 export const readPrefs = async (invoke: Invoke, to: string): Promise<Prefs> =>
   prefsShape.parse(await invoke({ action: 'prefs', to }));
+
+const statusAckShape = z.object({ pk: z.string().min(1), sk: z.string().min(1), at: z.string(), expiresAt: z.number() });
+export type StatusAck = z.infer<typeof statusAckShape>;
+
+export type StatusInput = { to: string; host: string; at: string; payload: string };
+
+/** drovr's once-a-tick status row; `payload` is the `drovr status --json` text, validated by the Lambda. */
+export const putStatus = async (invoke: Invoke, input: StatusInput): Promise<StatusAck> =>
+  statusAckShape.parse(await invoke({ action: 'status', ...input }));
+
+export const readStatuses = async (invoke: Invoke, to: string): Promise<StatusRow[]> =>
+  z.array(statusRowShape).parse(await invoke({ action: 'readStatus', to }));
 
 const profileShape = z.object({
   from: z.string(),

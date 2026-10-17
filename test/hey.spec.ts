@@ -13,6 +13,8 @@ import {
   parseDuration,
   parsePrefsArgs,
   parseProfileArgs,
+  putStatus,
+  readStatuses,
   readConfig,
   readMessage,
   readPrefs,
@@ -287,4 +289,21 @@ test('args: --multi rides with --choices and is refused without it; send carries
   assert.equal(sent[0]!.multi, true);
   await send(invoke, { ...input, multi: false });
   assert.equal('multi' in sent[1]!, false);
+});
+
+test('putStatus sends the status action and validates the ack; readStatuses validates the rows', async () => {
+  const sent: Record<string, unknown>[] = [];
+  const ack = { pk: 'sub', sk: 'status#drovr@mac', at: '2026-10-16T18:40:00.000Z', expiresAt: 1_760_000_000 };
+  const statusRow = { ...ack, host: 'mac', payload: '{"mode":"normal"}' };
+  const invoke: Invoke = async (payload) => {
+    sent.push(payload);
+    return payload.action === 'status' ? ack : [statusRow];
+  };
+  const input = { to: 'craig', host: 'mac', at: '2026-10-16T18:40:00.000Z', payload: '{"mode":"normal"}' };
+  assert.deepEqual(await putStatus(invoke, input), ack);
+  assert.deepEqual(sent[0], { action: 'status', ...input });
+  assert.deepEqual(await readStatuses(invoke, 'craig'), [statusRow]);
+  assert.deepEqual(sent[1], { action: 'readStatus', to: 'craig' });
+  await assert.rejects(() => putStatus(async () => ({ ok: true }), input));
+  await assert.rejects(() => readStatuses(async () => [{ sk: 'msg#x' }], 'craig'));
 });
