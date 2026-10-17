@@ -261,6 +261,9 @@ Written and type-checked, never seen to fire. Unproven, not done:
   --multi` → tap a and c → Send → `a, c`) has not run on the device.
 - **The message-count badge on the phone.** `unreadBadge` and `unreadCount` count messages in
   the suites; check 10 (two unread in one thread → badge 2) has not run on the device.
+- **A refused lock-screen answer announcing itself.** `announceRefusal` posts a local notification
+  when a yes/no action lands after the lapse; `refusalNotice` is tested, the post is not, and no
+  device has shown it.
 - **Full-width swipes and the growing compose field on the device.** Proven in the Simulator
   (`testSwipeTogglesReadAndDeleteRemovesTheThread`, `testComposeGrowsWithALongDraftAndTheChipsStayPut`);
   the build carrying them (b0950ee) is compiled but was not installed before Craig stepped away.
