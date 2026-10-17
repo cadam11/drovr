@@ -293,6 +293,19 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **`away (phone)` on the card, from a tick that ran under it.** The mode line reads plan 5's
   `AppModel.prefs.away` the moment the toggle flips; the published row saying `mode: "away"` on
   the next tick (plan 5's `applyAwayMode`) has not yet been seen to follow it on the phone.
+- **A hey-mcp session refreshing its Cognito token.** The `REFRESH_TOKEN_AUTH` call fires only
+  once a session is an hour old; proven in the suite against a canned Cognito, not yet seen live.
+- **A Cognito refusal revoking a hey-mcp session.** Disabling the Cognito user should 401 every
+  connector within the hour; nobody has disabled it. The throttle-is-a-502 branch beside it is
+  equally unseen live.
+- **A wrong email code re-offering the form, live.** Cognito's acceptance of a second
+  `EMAIL_OTP` answer on the same session after `CodeMismatchException` is what the page assumes;
+  only the right-code path has run against the real pool.
+- **A `wait` spanning two tool calls.** `listening: true` followed by a second `wait` that
+  returns the reply has run only in the suite; the live `wait` lapsed unanswered.
+- **The losing side of a refresh race.** Two concurrent live refreshes returned one pair, but
+  which request lost — and that it deleted its unreturned pair — is proven only by reasoning,
+  not by a test or a log line.
 
 ## Notifications
 
