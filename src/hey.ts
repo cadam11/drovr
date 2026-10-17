@@ -2,8 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { NOT_FOUND_PREFIX, prefsShape, statusRowShape, type Prefs, type Profile, type StatusRow } from '../lambda/hey/handler.ts';
+import { NOT_FOUND_PREFIX, prefsShape, PROGRAM_PATTERN, statusRowShape, type Prefs, type Profile, type StatusRow } from '../lambda/hey/handler.ts';
 import { credentialsPath, DEFAULT_ENDPOINT, toolCaller } from './hey-http.ts';
+import { accountsFromTeamclaude, statusAccountShape } from './status-accounts.ts';
+import { parseStatus } from './teamclaude.ts';
 
 export const POLL_MS = 5_000;
 /** Consecutive, not total: a flaky network that still answers is not a lost wait. */
@@ -14,7 +16,7 @@ export class UsageError extends Error {}
 
 export const USAGE =
   'usage: hey [send] [--to <handle>] [--from <label>] [--host <host>] [--cwd <dir>] [--wait <dur>] [--choices a,b] [--json] <text>\n' +
-  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey status [--json]   |   hey login | logout | whoami   |   hey help [command]\n' +
+  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey status [--json]   |   hey status put --program <name> [--host <host>] [--teamclaude] -   |   hey login | logout | whoami   |   hey help [command]\n' +
   '       --multi with --choices lets several answers be picked; the reply is them joined by ", "';
 
 export const parseDuration = (text: string): number => {
@@ -208,9 +210,9 @@ export const readPrefs = async (call: Call, to: string): Promise<Prefs> => z.obj
 const statusAckShape = z.object({ sk: z.string().min(1), at: z.string(), expiresAt: z.number() });
 export type StatusAck = z.infer<typeof statusAckShape>;
 
-export type StatusInput = { to: string; host: string; at: string; payload: string };
+export type StatusInput = { to: string; program?: string; host: string; at: string; payload: string };
 
-/** drovr's once-a-tick status row; `payload` is the `drovr status --json` text, validated by the handler. */
+/** One status row: drovr's tick omits `program` (the handler defaults it); any other writer names itself. `payload` is JSON text the handler checks is an object. */
 export const putStatus = async (call: Call, input: StatusInput): Promise<StatusAck> => statusAckShape.parse(await call('putStatus', { ...input }));
 
 export const readStatuses = async (call: Call, to: string): Promise<StatusRow[]> => z.object({ status: z.array(statusRowShape) }).parse(await call('status', { to })).status;
@@ -238,6 +240,79 @@ export const parseStatusArgs = (argv: string[], defaults: { to: string | null })
   return { to, json };
 };
 
+export const GENERIC_STATUS_MAX_LINES = 20;
+
+const lineShape = z.object({
+  label: z.string().min(1).max(40),
+  value: z.string().max(120),
+  state: z.enum(['ok', 'warn', 'bad']).optional(),
+});
+
+/**
+ * What a program other than drovr puts on its card. `z.object` strips keys it does not
+ * declare, which is the contract: Hadrian pipes the one object it also writes to SSM, with
+ * `at`, `box` and `tickets` beside these, and only the known fields travel. A known field
+ * of the wrong shape is refused here, with its path, before anything is sent.
+ */
+export const genericStatusShape = z.object({
+  title: z.string().min(1).max(60),
+  intervalSeconds: z.number().int().min(10).max(86_400).optional(),
+  accounts: z.array(statusAccountShape).max(50).optional(),
+  lines: z.array(lineShape).max(GENERIC_STATUS_MAX_LINES).optional(),
+  note: z.string().max(200).optional(),
+});
+export type GenericStatus = z.infer<typeof genericStatusShape>;
+
+const parseStdinObject = (stdin: string): Record<string, unknown> => {
+  let value: unknown;
+  try {
+    value = JSON.parse(stdin);
+  } catch (error) {
+    throw new UsageError(`stdin is not JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new UsageError('stdin is not a JSON object');
+  return value as Record<string, unknown>;
+};
+
+/**
+ * The payload text for `hey status put`. Plain mode validates stdin as the generic shape;
+ * `--teamclaude` runs `teamclaude status --json` through drovr's own parser and the shared
+ * accounts builder, so a box pipes it with no mapping code. The title defaults to
+ * `<program>@<host>` either way: a writer has a card before it has written any copy.
+ */
+export const buildGenericPayload = (input: { program: string; host: string; stdin: string; teamclaude: boolean }): string => {
+  const title = `${input.program}@${input.host}`;
+  if (input.teamclaude) {
+    const accounts = accountsFromTeamclaude(parseStatus(parseStdinObject(input.stdin)));
+    return JSON.stringify(genericStatusShape.parse({ title, accounts }));
+  }
+  const object = parseStdinObject(input.stdin);
+  const parsed = genericStatusShape.safeParse({ title, ...object });
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new UsageError(`payload ${issue?.path.join('.') || 'is invalid'}: ${issue?.message ?? 'invalid'}`);
+  }
+  return JSON.stringify(parsed.data);
+};
+
+export type StatusPutArgs = { to: string; program: string; host: string; teamclaude: boolean };
+
+/** `hey status put --program <name> [--host <host>] [--to <handle>] [--teamclaude] -`: the trailing `-` says the payload is on stdin. */
+export const parseStatusPutArgs = (argv: string[], defaults: { to: string | null; host: string }): StatusPutArgs => {
+  const teamclaude = argv.includes('--teamclaude');
+  const dash = argv.includes('-');
+  const rest = argv.filter((arg) => arg !== '--teamclaude' && arg !== '-');
+  const values = flagValues(rest, ['--to', '--program', '--host']);
+  const program = values.get('--program');
+  if (program === undefined) throw new UsageError('hey status put needs --program <name>: the writer this row belongs to');
+  if (program === 'drovr') throw new UsageError('--program drovr is refused: drovr writes its own row from the tick');
+  if (!PROGRAM_PATTERN.test(program)) throw new UsageError(`--program is lowercase letters, digits and hyphens, starting with a letter, at most 32 characters, not "${program}"`);
+  if (!dash) throw new UsageError('hey status put reads its payload from stdin: end the line with -');
+  const to = values.get('--to') ?? defaults.to;
+  if (to === null) throw noRecipient();
+  return { to, program, host: values.get('--host') ?? defaults.host, teamclaude };
+};
+
 /** Read leniently: this is a summary line over a payload drovr owns, and a missing field costs a word, not the line. */
 const statusSummaryShape = z.object({
   mode: z.string().optional(),
@@ -245,17 +320,30 @@ const statusSummaryShape = z.object({
   programs: z.array(z.unknown()).optional(),
 });
 
-export const describeStatusRow = (row: StatusRow, nowMs: number): string => {
+/** Same leniency for a generic row: the phone is strict about this shape; a terminal summary is not the place to refuse it. */
+const genericSummaryShape = z.object({ title: z.string().optional(), lines: z.array(z.unknown()).optional() });
+
+const ageMinutes = (row: StatusRow, nowMs: number): number => Math.max(0, Math.floor((nowMs - Date.parse(row.at)) / 60_000));
+
+const describeDrovrRow = (row: StatusRow, nowMs: number): string => {
   const parsed = statusSummaryShape.safeParse(JSON.parse(row.payload));
   const summary = parsed.success ? parsed.data : {};
-  const ageMinutes = Math.max(0, Math.floor((nowMs - Date.parse(row.at)) / 60_000));
   const capacity = summary.capacity ?? null;
   const funding =
     capacity === null || capacity.cyclesFundable === null
       ? 'no capacity figure'
       : `${capacity.cyclesFundable.toFixed(2)} cycles fundable · ${capacity.bindingBucket} binding`;
-  return `drovr@${row.host}  ${row.at} (${ageMinutes}m ago)  ${summary.mode ?? '?'} · ${funding} · ${summary.programs?.length ?? 0} programs`;
+  return `drovr@${row.host}  ${row.at} (${ageMinutes(row, nowMs)}m ago)  ${summary.mode ?? '?'} · ${funding} · ${summary.programs?.length ?? 0} programs`;
 };
+
+const describeGenericRow = (row: StatusRow, nowMs: number): string => {
+  const parsed = genericSummaryShape.safeParse(JSON.parse(row.payload));
+  const summary = parsed.success ? parsed.data : {};
+  return `${row.program}@${row.host}  ${row.at} (${ageMinutes(row, nowMs)}m ago)  ${summary.title ?? '?'} · ${summary.lines?.length ?? 0} lines`;
+};
+
+export const describeStatusRow = (row: StatusRow, nowMs: number): string =>
+  row.program === 'drovr' ? describeDrovrRow(row, nowMs) : describeGenericRow(row, nowMs);
 
 const profileShape = z.object({
   from: z.string(),

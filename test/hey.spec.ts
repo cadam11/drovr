@@ -12,7 +12,10 @@ import {
   parsePrefsArgs,
   parseProfileArgs,
   parseStatusArgs,
+  buildGenericPayload,
   describeStatusRow,
+  genericStatusShape,
+  parseStatusPutArgs,
   putStatus,
   readStatuses,
   readConfig,
@@ -323,4 +326,86 @@ test('commandOf: login, logout and whoami are commands, not messages', () => {
   assert.deepEqual(commandOf(['login']), { command: 'login', rest: [] });
   assert.deepEqual(commandOf(['logout']), { command: 'logout', rest: [] });
   assert.deepEqual(commandOf(['whoami', '--json']), { command: 'whoami', rest: ['--json'] });
+});
+
+const hadrianObject = {
+  title: 'hadrian@craig', intervalSeconds: 60, at: '2026-10-17T14:46:07Z',
+  box: { state: 'running', idleStopAt: '2026-10-17T15:16:07Z' },
+  lines: [{ label: 'P-3730', value: 'plan · attempt 1 · 4m', state: 'ok' }, { label: 'P-4265', value: 'done', extra: true }],
+  tickets: [{ ticket: 'P-3730', phase: 'plan' }],
+  note: 'self-stop in 18m',
+};
+
+test('Review Focus 1: genericStatusShape strips at, box and tickets and refuses a bad lines[].state naming the path', () => {
+  const parsed = genericStatusShape.parse(hadrianObject);
+  assert.deepEqual(Object.keys(parsed).sort(), ['intervalSeconds', 'lines', 'note', 'title']);
+  assert.deepEqual(parsed.lines?.[1], { label: 'P-4265', value: 'done' });
+  const bad = genericStatusShape.safeParse({ ...hadrianObject, lines: [hadrianObject.lines[0], { label: 'x', value: 'y', state: 'meh' }] });
+  assert.equal(bad.success, false);
+  assert.deepEqual(bad.success ? [] : bad.error.issues[0]?.path, ['lines', 1, 'state']);
+  assert.equal(genericStatusShape.safeParse({ ...hadrianObject, title: 5 }).success, false);
+  assert.equal(genericStatusShape.safeParse({ ...hadrianObject, lines: Array.from({ length: 21 }, () => ({ label: 'a', value: '' })) }).success, false);
+  assert.equal(genericStatusShape.safeParse({ ...hadrianObject, intervalSeconds: 5 }).success, false);
+  assert.equal(genericStatusShape.safeParse({ ...hadrianObject, note: 'n'.repeat(201) }).success, false);
+});
+
+test('buildGenericPayload: stdin JSON is stripped, validated and given a default title; it is one JSON object on the way out', () => {
+  const text = buildGenericPayload({ program: 'hadrian', host: 'craig', stdin: JSON.stringify({ ...hadrianObject, title: undefined }), teamclaude: false });
+  const out = JSON.parse(text) as Record<string, unknown>;
+  assert.equal(out.title, 'hadrian@craig');
+  assert.ok(!('box' in out) && !('tickets' in out) && !('at' in out));
+  assert.equal((out.lines as unknown[]).length, 2);
+  assert.throws(() => buildGenericPayload({ program: 'hadrian', host: 'craig', stdin: 'not json', teamclaude: false }), /stdin is not JSON/);
+  assert.throws(() => buildGenericPayload({ program: 'hadrian', host: 'craig', stdin: '[]', teamclaude: false }), /not a JSON object/);
+  assert.throws(() => buildGenericPayload({ program: 'hadrian', host: 'craig', stdin: JSON.stringify({ lines: 'nope' }), teamclaude: false }), /payload lines: Expected array/);
+});
+
+test('buildGenericPayload --teamclaude: a recorded teamclaude status becomes accounts through the shared builder, title defaulted, nothing else', () => {
+  const teamclaude = {
+    currentAccount: 'a@x', accounts: [{ name: 'a@x', type: 'oauth', orgName: null, status: 'active', sessions: 1, disabled: false,
+      quota: { unified5h: 0.4, unified5hReset: 1787596200000, unified7d: 0.5, unified7dReset: 1787778000000, unified7dFable: 0.6, unified7dFableReset: 1787778000000, unifiedStatus: null },
+      usage: { lastUsed: null }, rateLimitedUntil: null, pausedUntil: null, switchThreshold: null }],
+    routes: [], switchThreshold: 0.95, switchThresholds: null,
+  };
+  const out = JSON.parse(buildGenericPayload({ program: 'hadrian', host: 'craig', stdin: JSON.stringify(teamclaude), teamclaude: true })) as { title: string; accounts: unknown[] };
+  assert.equal(out.title, 'hadrian@craig');
+  assert.deepEqual(Object.keys(out).sort(), ['accounts', 'title']);
+  assert.deepEqual(out.accounts[0], {
+    name: 'a@x', org: null, status: 'active', sessions: 1, disabled: false, current: true, lastUsedAt: null, fableEligible: null, fableTarget: false,
+    buckets: { session: { usedFraction: 0.4, resetsAt: '2026-08-24T18:30:00.000Z' }, general: { usedFraction: 0.5, resetsAt: '2026-08-26T21:00:00.000Z' }, fable: { usedFraction: 0.6, resetsAt: '2026-08-26T21:00:00.000Z' } },
+    switchThresholds: { session: 0.95, general: 0.95, fable: 0.95 },
+  });
+  assert.throws(() => buildGenericPayload({ program: 'hadrian', host: 'craig', stdin: '{"accounts": 1}', teamclaude: true }), /teamclaude status did not match/);
+});
+
+test('Review Focus 2: parseStatusPutArgs needs --program and the trailing -, refuses drovr by name, defaults host and to', () => {
+  assert.deepEqual(parseStatusPutArgs(['--program', 'hadrian', '-'], { to: 'craig', host: 'box' }), { to: 'craig', program: 'hadrian', host: 'box', teamclaude: false });
+  assert.deepEqual(parseStatusPutArgs(['--program', 'hadrian', '--host', 'craig', '--to', 'craig', '--teamclaude', '-'], { to: null, host: 'box' }), { to: 'craig', program: 'hadrian', host: 'craig', teamclaude: true });
+  assert.throws(() => parseStatusPutArgs(['--program', 'drovr', '-'], { to: 'craig', host: 'box' }), /drovr writes its own row from the tick/);
+  assert.throws(() => parseStatusPutArgs(['--program', 'Hadrian', '-'], { to: 'craig', host: 'box' }), UsageError);
+  assert.throws(() => parseStatusPutArgs(['-'], { to: 'craig', host: 'box' }), /--program/);
+  assert.throws(() => parseStatusPutArgs(['--program', 'hadrian'], { to: 'craig', host: 'box' }), /stdin/);
+  assert.throws(() => parseStatusPutArgs(['--program', 'hadrian', '-'], { to: null, host: 'box' }), /no recipient/);
+  assert.throws(() => parseStatusPutArgs(['--program', 'hadrian', '--line', 'a=b', '-'], { to: 'craig', host: 'box' }), /unknown flag --line/);
+});
+
+test('putStatus passes program when given and omits it when not, so the tick’s call is byte-identical to before', async () => {
+  const sent: unknown[] = [];
+  const call = async (tool: string, args: Record<string, unknown>) => {
+    sent.push([tool, args]);
+    return { sk: `status#${args.program ?? 'drovr'}@${args.host}`, at: args.at, expiresAt: 1 };
+  };
+  await putStatus(call, { to: 'craig', host: 'mac', at: '2026-10-17T12:00:00.000Z', payload: '{}' });
+  await putStatus(call, { to: 'craig', program: 'hadrian', host: 'craig', at: '2026-10-17T12:00:00.000Z', payload: '{}' });
+  assert.deepEqual(sent[0], ['putStatus', { to: 'craig', host: 'mac', at: '2026-10-17T12:00:00.000Z', payload: '{}' }]);
+  assert.deepEqual(sent[1], ['putStatus', { to: 'craig', program: 'hadrian', host: 'craig', at: '2026-10-17T12:00:00.000Z', payload: '{}' }]);
+});
+
+test('describeStatusRow: a generic row is program@host, age, title and the line count; drovr’s line is unchanged', () => {
+  const generic = { pk: 'sub', sk: 'status#hadrian@craig', program: 'hadrian', host: 'craig', at: '2026-10-17T14:46:07.000Z', payload: JSON.stringify(genericStatusShape.parse(hadrianObject)), expiresAt: 1 };
+  assert.equal(describeStatusRow(generic, Date.parse('2026-10-17T14:49:00.000Z')), 'hadrian@craig  2026-10-17T14:46:07.000Z (2m ago)  hadrian@craig · 2 lines');
+  const bare = { ...generic, payload: '{"title":"t"}' };
+  assert.equal(describeStatusRow(bare, Date.parse('2026-10-17T14:49:00.000Z')), 'hadrian@craig  2026-10-17T14:46:07.000Z (2m ago)  t · 0 lines');
+  const broken = { ...generic, payload: '{"lines": 3}' };
+  assert.match(describeStatusRow(broken, Date.parse('2026-10-17T14:49:00.000Z')), /^hadrian@craig  .* \(2m ago\)  \? · 0 lines$/);
 });
