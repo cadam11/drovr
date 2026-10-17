@@ -340,6 +340,10 @@ Written and type-checked, never seen to fire. Unproven, not done:
   the stale marker are proven only in the Simulator and the suite. Install the device build and look.
 - **Two hosts' drovr cards.** One row per host is proven in `handler.spec.ts`; only the Mac publishes
   drovr's row today.
+- **A status card deleted from the phone.** Landed 2026-10-17 (long-press → Delete card → confirm;
+  one DeleteItem on the `status#` row). Proven in the Simulator UI suite and against the fake store;
+  no device has run the build, so the real DeleteItem under the device role and the row coming back
+  on the sender's next put are unseen.
 - **The publish failing without failing the tick, live.** `publishStatus` returns a reason and
   `stampTick` runs regardless (Task 3's tests); no real invoke has failed since it landed.
 - **`away (phone)` on the card, from a tick that ran under it.** The mode line reads plan 5's
@@ -379,8 +383,9 @@ The Lambda reads `prefs` on every send — quiet hours make the push passive, no
 drovr reads it once per tick: `away` runs the pass on the `away` ceiling without touching
 control.json. A waiting send may offer `--choices`; exactly yes/no is answerable from the lock
 screen, anything else is chips in the thread. The phone can mark a thread unread (deletes its
-`read#` row) and delete a thread (its `msg#` rows and `read#` row, never `profile#`); a `hey
---wait` whose message was deleted ends with one line and exit 2, like no reply.
+`read#` row), delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
+status card from a long-press (its one `status#` row), which a live sender rewrites on its next
+put; a `hey --wait` whose message was deleted ends with one line and exit 2, like no reply.
 `control.notifyTo` is the handle;
 null disables alerts and leaves the log line. The `from` label is the program for a cycle alert
 and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
