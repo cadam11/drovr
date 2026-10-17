@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { iconForm } from '../lambda/hey/handler.ts';
 import type { Program } from './control.ts';
-import { lambdaInvoke, setProfile } from './hey.ts';
+import { defaultCaller, setProfile } from './hey.ts';
 import { listRepos, worktreeRepoId } from './orca.ts';
 import { ensureDirs, paths } from './paths.ts';
 
@@ -102,7 +102,7 @@ export const seedSenderProfile = async (program: Program, notifyTo: string | nul
     if (patch === null) {
       console.log(`${program.name}: nothing to seed into its hey profile (no Orca icon or colour, no description). To try again: rm ${marker}`);
     } else {
-      await setProfile(lambdaInvoke(), { to: notifyTo, from: program.name, ...patch });
+      await setProfile(defaultCaller(), { to: notifyTo, from: program.name, ...patch });
       console.log(`${program.name}: seeded its hey profile (${Object.keys(patch).join(', ')}). Change it with: hey profile --from ${program.name} …; to seed again: rm ${marker}`);
     }
     ensureDirs(program.name);

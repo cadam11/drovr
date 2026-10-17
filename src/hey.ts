@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { z } from 'zod';
-import {
-  messageShape, NOT_FOUND_PREFIX, prefsShape, statusRowShape, type MessageRow, type Prefs, type Profile, type StatusRow,
-} from '../lambda/hey/handler.ts';
+import { NOT_FOUND_PREFIX, prefsShape, statusRowShape, type Prefs, type Profile, type StatusRow } from '../lambda/hey/handler.ts';
+import { credentialsPath, DEFAULT_ENDPOINT, toolCaller } from './hey-http.ts';
 
 export const POLL_MS = 5_000;
 /** Consecutive, not total: a flaky network that still answers is not a lost wait. */
@@ -120,7 +120,12 @@ export const parseArgs = (
   };
 };
 
-const configShape = z.object({ to: z.string().min(1).optional(), from: z.string().min(1).optional() });
+const configShape = z.object({
+  to: z.string().min(1).optional(),
+  from: z.string().min(1).optional(),
+  /** A second deployment, one day; the credentials file's issuer must be this URL's origin. */
+  endpoint: z.string().url().startsWith('https://').optional(),
+});
 
 /** Any flag that asks for usage wins over everything else on the line. */
 export const wantsHelp = (argv: string[]): boolean => argv.includes('--help') || argv.includes('-h');
@@ -134,16 +139,21 @@ const parseJsonFile = (path: string): unknown => {
   }
 };
 
-export const readConfig = (path: string): { to: string | null; from: string | null } => {
-  if (!existsSync(path)) return { to: null, from: null };
+export const readConfig = (path: string): { to: string | null; from: string | null; endpoint: string } => {
+  if (!existsSync(path)) return { to: null, from: null, endpoint: DEFAULT_ENDPOINT };
   const parsed = configShape.safeParse(parseJsonFile(path));
   if (!parsed.success) {
-    throw new Error(`${path} is not {"to"?: string, "from"?: string}: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
+    throw new Error(`${path} is not {"to"?: string, "from"?: string, "endpoint"?: "https://…"}: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
   }
-  return { to: parsed.data.to ?? null, from: parsed.data.from ?? null };
+  return { to: parsed.data.to ?? null, from: parsed.data.from ?? null, endpoint: parsed.data.endpoint ?? DEFAULT_ENDPOINT };
 };
 
-export type Invoke = (payload: Record<string, unknown>) => Promise<unknown>;
+/** One MCP tool call: the tool's name and arguments in, its structured result out; every caller parses it with zod. */
+export type Call = (tool: string, args: Record<string, unknown>) => Promise<unknown>;
+
+/** The caller every command and drovr's own sends use: the config's endpoint, the credentials file under `home`, the real clock. */
+export const defaultCaller = (home: string = homedir()): Call =>
+  toolCaller({ http: fetch, endpoint: readConfig(join(home, '.config', 'hey.json')).endpoint, path: credentialsPath(home), nowMs: Date.now });
 
 export type SendInput = {
   to: string;
@@ -158,26 +168,19 @@ export type SendInput = {
 
 const sendResponseShape = z.object({
   id: z.string().min(1),
-  pk: z.string().min(1),
   createdAt: z.string(),
   waitUntil: z.string().nullable(),
   pushed: z.boolean(),
-  /** Default, so a Lambda not yet redeployed still parses. */
-  quiet: z.boolean().default(false),
-  reason: z.string().optional(),
+  quiet: z.boolean(),
+  reason: z.string().nullable(),
 });
 export type SendResponse = z.infer<typeof sendResponseShape>;
 
-export const send = async (invoke: Invoke, input: SendInput): Promise<SendResponse> => {
+export const send = async (call: Call, input: SendInput): Promise<SendResponse> => {
   const { waitSeconds, choices, multi, ...rest } = input;
-  const payload = {
-    action: 'send',
-    ...rest,
-    ...(waitSeconds === null ? {} : { waitSeconds }),
-    ...(choices === null ? {} : { choices }),
-    ...(multi ? { multi } : {}),
-  };
-  return sendResponseShape.parse(await invoke(payload));
+  return sendResponseShape.parse(
+    await call('send', { ...rest, ...(waitSeconds === null ? {} : { waitSeconds }), ...(choices === null ? {} : { choices }), ...(multi ? { multi } : {}) }),
+  );
 };
 
 /** The row a wait was polling is gone: Craig deleted the thread on the phone. Not a poll failure. */
@@ -187,29 +190,30 @@ export class MessageGone extends Error {
   }
 }
 
-export const readMessage = async (invoke: Invoke, pk: string, id: string): Promise<MessageRow> => {
+/** The `read` tool's shape (tools.ts `publicMessage`): absent becomes null there, so "answered" is `reply !== null` here. */
+export const publicMessageShape = z.object({ id: z.string().min(1), text: z.string(), waitUntil: z.string().nullable(), reply: z.string().nullable(), repliedAt: z.string().nullable() });
+export type PublicMessage = z.infer<typeof publicMessageShape>;
+
+export const readMessage = async (call: Call, id: string): Promise<PublicMessage> => {
   try {
-    return messageShape.parse(await invoke({ action: 'read', pk, id }));
+    return publicMessageShape.parse(await call('read', { id }));
   } catch (error) {
     if (error instanceof Error && error.message.startsWith(NOT_FOUND_PREFIX)) throw new MessageGone(id);
     throw error;
   }
 };
 
-export const readPrefs = async (invoke: Invoke, to: string): Promise<Prefs> =>
-  prefsShape.parse(await invoke({ action: 'prefs', to }));
+export const readPrefs = async (call: Call, to: string): Promise<Prefs> => z.object({ prefs: prefsShape }).parse(await call('prefs', { to })).prefs;
 
-const statusAckShape = z.object({ pk: z.string().min(1), sk: z.string().min(1), at: z.string(), expiresAt: z.number() });
+const statusAckShape = z.object({ sk: z.string().min(1), at: z.string(), expiresAt: z.number() });
 export type StatusAck = z.infer<typeof statusAckShape>;
 
 export type StatusInput = { to: string; host: string; at: string; payload: string };
 
-/** drovr's once-a-tick status row; `payload` is the `drovr status --json` text, validated by the Lambda. */
-export const putStatus = async (invoke: Invoke, input: StatusInput): Promise<StatusAck> =>
-  statusAckShape.parse(await invoke({ action: 'status', ...input }));
+/** drovr's once-a-tick status row; `payload` is the `drovr status --json` text, validated by the handler. */
+export const putStatus = async (call: Call, input: StatusInput): Promise<StatusAck> => statusAckShape.parse(await call('putStatus', { ...input }));
 
-export const readStatuses = async (invoke: Invoke, to: string): Promise<StatusRow[]> =>
-  z.array(statusRowShape).parse(await invoke({ action: 'readStatus', to }));
+export const readStatuses = async (call: Call, to: string): Promise<StatusRow[]> => z.object({ status: z.array(statusRowShape) }).parse(await call('status', { to })).status;
 
 /** `hey status` takes no text and no wait; anything but --to and --json is a usage error. */
 export const parseStatusArgs = (argv: string[], defaults: { to: string | null }): { to: string; json: boolean } => {
@@ -263,14 +267,18 @@ const profileShape = z.object({
 
 export type ProfileInput = { to: string; from: string; icon?: string; summary?: string; color?: string };
 
-/** Only the fields given travel: the Lambda merges, and an absent field must not read as "clear". */
-export const setProfile = async (invoke: Invoke, input: ProfileInput): Promise<Profile> => {
-  const payload: Record<string, unknown> = { action: 'profile', to: input.to, from: input.from };
+/** Only the fields given travel: the handler merges, and an absent field must not read as "clear". */
+export const setProfile = async (call: Call, input: ProfileInput): Promise<Profile> => {
+  const payload: Record<string, unknown> = { to: input.to, from: input.from };
   for (const field of ['icon', 'summary', 'color'] as const) {
     if (input[field] !== undefined) payload[field] = input[field];
   }
-  return profileShape.parse(await invoke(payload));
+  return z.object({ profile: profileShape }).parse(await call('profile', payload)).profile;
 };
+
+const whoamiShape = z.object({ email: z.string().min(1), handle: z.string().min(1), sub: z.string().min(1) });
+export type Whoami = z.infer<typeof whoamiShape>;
+export const whoami = async (call: Call): Promise<Whoami> => whoamiShape.parse(await call('whoami', {}));
 
 /** `--flag value` pairs from a fixed set; a positional or an unknown flag is a usage error naming it. */
 const flagValues = (argv: string[], known: readonly string[]): Map<string, string> => {
@@ -319,7 +327,7 @@ export type WaitOutcome =
  * present, never truthy — "" is an answer someone typed.
  */
 export const waitForReply = async (opts: {
-  read: () => Promise<MessageRow>;
+  read: () => Promise<{ reply: string | null; repliedAt: string | null }>;
   sleep: (ms: number) => Promise<void>;
   nowMs: () => number;
   waitUntilMs: number;
@@ -331,7 +339,7 @@ export const waitForReply = async (opts: {
     try {
       const row = await opts.read();
       failures = 0;
-      if (row.reply !== undefined) return { status: 'replied', reply: row.reply, repliedAt: row.repliedAt ?? '' };
+      if (row.reply !== null) return { status: 'replied', reply: row.reply, repliedAt: row.repliedAt ?? '' };
     } catch (error) {
       // Nobody will answer a message that no longer exists; it is an outcome, not a flaky poll.
       if (error instanceof MessageGone) return { status: 'deleted' };
@@ -344,47 +352,4 @@ export const waitForReply = async (opts: {
     await opts.sleep(POLL_MS);
   }
   return { status: 'unanswered' };
-};
-
-export const REGION = 'ca-central-1';
-export const FUNCTION_NAME = 'hey';
-/** A bare name resolves in the caller's own account. A sender in another account (a Hadrian box, whose
- *  role is granted on the Lambda) must name the full ARN: HEY_FUNCTION=arn:aws:lambda:ca-central-1:…:function:hey */
-export const functionName = (env: NodeJS.ProcessEnv = process.env): string => env.HEY_FUNCTION ?? FUNCTION_NAME;
-/** One network call, and the Lambda itself is capped at 10s. */
-const INVOKE_TIMEOUT_MS = 15_000;
-
-const errorPayloadShape = z.object({ errorMessage: z.string() });
-
-/** The error payload is read leniently: a timeout arrives as plain text, not JSON. */
-export const invokeResult = (functionError: string | undefined, payload: Uint8Array | undefined): unknown => {
-  if (payload === undefined || payload.length === 0) throw new Error('the hey lambda returned an empty response');
-  const text = new TextDecoder().decode(payload);
-  if (functionError === undefined) return JSON.parse(text);
-  try {
-    const parsed = errorPayloadShape.safeParse(JSON.parse(text));
-    throw new Error(parsed.success ? parsed.data.errorMessage : text);
-  } catch (error) {
-    if (error instanceof SyntaxError) throw new Error(text);
-    throw error;
-  }
-};
-
-/**
- * The default credential chain and nothing else: the Mac's default profile, a scoped
- * user's keys in the environment elsewhere. maxAttempts 1 because a retried send is a
- * duplicate message, and a retried read is the wait loop's job.
- */
-export const lambdaInvoke = (): Invoke => {
-  const client = new LambdaClient({
-    region: REGION,
-    maxAttempts: 1,
-    requestHandler: { connectionTimeout: INVOKE_TIMEOUT_MS, requestTimeout: INVOKE_TIMEOUT_MS },
-  });
-  return async (payload) => {
-    const out = await client.send(
-      new InvokeCommand({ FunctionName: functionName(), Payload: new TextEncoder().encode(JSON.stringify(payload)) }),
-    );
-    return invokeResult(out.FunctionError, out.Payload);
-  };
 };

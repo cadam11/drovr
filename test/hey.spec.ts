@@ -5,8 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   commandOf,
-  functionName,
-  invokeResult,
   MessageGone,
   parseArgs,
   parseChoices,
@@ -25,9 +23,9 @@ import {
   UsageError,
   waitForReply,
   wantsHelp,
-  type Invoke,
+  whoami,
+  type Call,
 } from '../src/hey.ts';
-import type { MessageRow } from '../lambda/hey/handler.ts';
 
 const defaults = { to: 'craig', from: null, host: 'mac', cwd: '/Users/cadam/code/drovr' };
 
@@ -68,9 +66,9 @@ test('args: blank text, missing text, missing --to, an unknown flag and a bad --
 
 test('config: a missing file is empty, a malformed one is an error, a good one supplies defaults', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hey-'));
-  assert.deepEqual(readConfig(join(dir, 'missing.json')), { to: null, from: null });
+  assert.deepEqual(readConfig(join(dir, 'missing.json')), { to: null, from: null, endpoint: 'https://hey.drovr.app/mcp' });
   writeFileSync(join(dir, 'good.json'), '{"to":"craig"}');
-  assert.deepEqual(readConfig(join(dir, 'good.json')), { to: 'craig', from: null });
+  assert.deepEqual(readConfig(join(dir, 'good.json')), { to: 'craig', from: null, endpoint: 'https://hey.drovr.app/mcp' });
   writeFileSync(join(dir, 'bad.json'), '{"to":5}');
   assert.throws(() => readConfig(join(dir, 'bad.json')), /bad.json/);
   writeFileSync(join(dir, 'broken.json'), '{to: craig}');
@@ -84,23 +82,20 @@ test('--help anywhere asks for usage instead of a send', () => {
   assert.equal(wantsHelp(['hi']), false);
 });
 
-const row = { pk: 'sub', sk: 'msg#01A', createdAt: 'c', from: 'f', host: 'h', cwd: 'c', text: 't', expiresAt: 1 };
+const row = { id: '01A', text: 't', waitUntil: null, reply: null, repliedAt: null };
 
-test('send and readMessage validate what the lambda returns', async () => {
-  const sent: Record<string, unknown>[] = [];
-  const invoke: Invoke = async (payload) => {
-    sent.push(payload);
-    return payload.action === 'send'
-      ? { id: '01A', pk: 'sub', createdAt: 'c', waitUntil: null, pushed: false, reason: 'no devices registered' }
-      : row;
+test('send and readMessage call the tools and validate what comes back', async () => {
+  const calls: [string, Record<string, unknown>][] = [];
+  const call: Call = async (tool, args) => {
+    calls.push([tool, args]);
+    return tool === 'send' ? { id: '01A', createdAt: 'c', waitUntil: null, pushed: false, quiet: false, reason: 'no devices registered' } : row;
   };
-  const response = await send(invoke, { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null, multi: false });
+  const response = await send(call, { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null, multi: false });
   assert.equal(response.id, '01A');
-  assert.deepEqual(sent[0], { action: 'send', to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't' });
-  assert.equal((await readMessage(invoke, 'sub', '01A')).text, 't');
-  await assert.rejects(() =>
-    send(async () => ({ nope: true }), { to: 'c', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null, multi: false }),
-  );
+  assert.deepEqual(calls[0], ['send', { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't' }]);
+  assert.equal((await readMessage(call, '01A')).text, 't');
+  assert.deepEqual(calls[1], ['read', { id: '01A' }]);
+  await assert.rejects(() => send(async () => ({ nope: true }), { to: 'c', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: null, choices: null, multi: false }));
 });
 
 const clock = (start: number) => {
@@ -152,26 +147,6 @@ test('wait: five consecutive failed polls end the wait as failed, and a success 
   assert.equal(errors.length, 6);
 });
 
-const bytes = (text: string) => new TextEncoder().encode(text);
-
-test('invokeResult: a clean payload is parsed, a FunctionError carries the lambda message', () => {
-  assert.deepEqual(invokeResult(undefined, bytes('{"id":"01A"}')), { id: '01A' });
-  assert.throws(
-    () => invokeResult('Unhandled', bytes('{"errorType":"HeyError","errorMessage":"no user with the handle \\"x\\""}')),
-    /no user with the handle "x"/,
-  );
-});
-
-test('invokeResult: a FunctionError with a payload that is not JSON still names the failure', () => {
-  assert.throws(() => invokeResult('Unhandled', bytes('Task timed out after 10.00 seconds')), /Task timed out/);
-  assert.throws(() => invokeResult(undefined, undefined), /empty/);
-});
-
-test('functionName is the bare name at home and the full ARN when HEY_FUNCTION names one (cross-account sender)', () => {
-  assert.equal(functionName({}), 'hey');
-  assert.equal(functionName({ HEY_FUNCTION: 'arn:aws:lambda:ca-central-1:000000000000:function:hey' }), 'arn:aws:lambda:ca-central-1:000000000000:function:hey');
-});
-
 test('commandOf: a known first word is the command, anything else is a send', () => {
   assert.deepEqual(commandOf(['profile', '--from', 'sunnyt']), { command: 'profile', rest: ['--from', 'sunnyt'] });
   assert.deepEqual(commandOf(['prefs']), { command: 'prefs', rest: [] });
@@ -197,40 +172,39 @@ test('args: --choices rides with --wait and is refused without it', () => {
   assert.throws(() => parseArgs(['--choices', 'yes,no', 'merge it?'], defaults), /--choices needs --wait/);
 });
 
-test('send carries choices only when given, and reads quiet with a default for an older lambda', async () => {
-  const sent: Record<string, unknown>[] = [];
-  const invoke: Invoke = async (payload) => {
-    sent.push(payload);
-    return { id: '01A', pk: 'sub', createdAt: 'c', waitUntil: 'w', pushed: true, quiet: true };
+test('send carries choices only when given, and reads quiet from the tool', async () => {
+  const calls: [string, Record<string, unknown>][] = [];
+  const call: Call = async (tool, args) => {
+    calls.push([tool, args]);
+    return { id: '01A', createdAt: 'c', waitUntil: 'w', pushed: true, quiet: true, reason: null };
   };
   const input = { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['yes', 'no'], multi: false };
-  const response = await send(invoke, input);
+  const response = await send(call, input);
   assert.equal(response.quiet, true);
-  assert.deepEqual(sent[0], { action: 'send', to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['yes', 'no'] });
-  await send(invoke, { ...input, choices: null });
-  assert.equal('choices' in sent[1]!, false);
-  const older = await send(async () => ({ id: '01A', pk: 'sub', createdAt: 'c', waitUntil: null, pushed: false, reason: 'no devices registered' }), { ...input, waitSeconds: null, choices: null });
-  assert.equal(older.quiet, false);
+  assert.deepEqual(calls[0], ['send', { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['yes', 'no'] }]);
+  await send(call, { ...input, choices: null });
+  assert.equal('choices' in calls[1]![1], false);
+  assert.equal('multi' in calls[1]![1], false);
 });
 
-test('readPrefs asks the prefs action and refuses a shape with unknown keys', async () => {
-  const asked: Record<string, unknown>[] = [];
-  const prefs = await readPrefs(async (payload) => {
-    asked.push(payload);
-    return { quietHours: null, away: true };
+test('readPrefs calls the prefs tool and refuses a shape with unknown keys', async () => {
+  const asked: [string, Record<string, unknown>][] = [];
+  const prefs = await readPrefs(async (tool, args) => {
+    asked.push([tool, args]);
+    return { prefs: { quietHours: null, away: true } };
   }, 'craig');
   assert.deepEqual(prefs, { quietHours: null, away: true });
-  assert.deepEqual(asked[0], { action: 'prefs', to: 'craig' });
-  await assert.rejects(() => readPrefs(async () => ({ quietHours: null, away: true, theme: 'dark' }), 'craig'));
+  assert.deepEqual(asked[0], ['prefs', { to: 'craig' }]);
+  await assert.rejects(() => readPrefs(async () => ({ prefs: { quietHours: null, away: true, theme: 'dark' } }), 'craig'));
 });
 
 test('setProfile sends only the fields given and parses the profile back', async () => {
-  const sent: Record<string, unknown>[] = [];
-  const profile = await setProfile(async (payload) => {
-    sent.push(payload);
-    return { from: 'sunnyt', icon: '🦾', summary: null, color: null, updatedAt: '2026-10-16T00:00:00.000Z' };
+  const sent: [string, Record<string, unknown>][] = [];
+  const profile = await setProfile(async (tool, args) => {
+    sent.push([tool, args]);
+    return { profile: { from: 'sunnyt', icon: '🦾', summary: null, color: null, updatedAt: '2026-10-16T00:00:00.000Z' } };
   }, { to: 'craig', from: 'sunnyt', icon: '🦾' });
-  assert.deepEqual(sent[0], { action: 'profile', to: 'craig', from: 'sunnyt', icon: '🦾' });
+  assert.deepEqual(sent[0], ['profile', { to: 'craig', from: 'sunnyt', icon: '🦾' }]);
   assert.equal(profile.icon, '🦾');
   assert.equal(profile.summary, null);
 });
@@ -258,15 +232,15 @@ test('prefs args: --to or the default, nothing else', () => {
   assert.throws(() => parsePrefsArgs(['extra'], { to: 'craig' }), UsageError);
 });
 
-test('readMessage turns the lambda\'s not_found into MessageGone; any other failure stays as it was', async () => {
-  await assert.rejects(() => readMessage(async () => { throw new Error('no message 01A'); }, 'sub', '01A'), MessageGone);
-  await assert.rejects(() => readMessage(async () => { throw new Error('Task timed out'); }, 'sub', '01A'), /Task timed out/);
+test('readMessage turns the tool\'s not_found into MessageGone; any other failure stays as it was', async () => {
+  await assert.rejects(() => readMessage(async () => { throw new Error('no message 01A'); }, '01A'), MessageGone);
+  await assert.rejects(() => readMessage(async () => { throw new Error('Task timed out'); }, '01A'), /Task timed out/);
 });
 
 test('wait: a message deleted on the phone ends the wait as deleted, not failed, however many polls remain', async () => {
   const { nowMs, sleep } = clock(0);
   let polls = 0;
-  const read = async (): Promise<MessageRow> => {
+  const read = async (): Promise<typeof row> => {
     polls += 1;
     if (polls < 3) return row;
     throw new MessageGone('01A');
@@ -281,33 +255,33 @@ test('args: --multi rides with --choices and is refused without it; send carries
   assert.equal(parsed.multi, true);
   assert.equal(parseArgs(['--wait', '5m', '--choices', 'a,b', 'x'], defaults).multi, false);
   assert.throws(() => parseArgs(['--wait', '5m', '--multi', 'x'], defaults), /--multi needs --choices/);
-  const sent: Record<string, unknown>[] = [];
-  const invoke: Invoke = async (payload) => {
-    sent.push(payload);
-    return { id: '01A', pk: 'sub', createdAt: 'c', waitUntil: 'w', pushed: true, quiet: false };
+  const calls: [string, Record<string, unknown>][] = [];
+  const call: Call = async (tool, args) => {
+    calls.push([tool, args]);
+    return { id: '01A', createdAt: 'c', waitUntil: 'w', pushed: true, quiet: false, reason: null };
   };
   const input = { to: 'craig', from: 'f', host: 'h', cwd: 'c', text: 't', waitSeconds: 300, choices: ['a', 'b'], multi: true };
-  await send(invoke, input);
-  assert.equal(sent[0]!.multi, true);
-  await send(invoke, { ...input, multi: false });
-  assert.equal('multi' in sent[1]!, false);
+  await send(call, input);
+  assert.equal(calls[0]![1].multi, true);
+  await send(call, { ...input, multi: false });
+  assert.equal('multi' in calls[1]![1], false);
 });
 
-test('putStatus sends the status action and validates the ack; readStatuses validates the rows', async () => {
-  const sent: Record<string, unknown>[] = [];
-  const ack = { pk: 'sub', sk: 'status#drovr@mac', at: '2026-10-16T18:40:00.000Z', expiresAt: 1_760_000_000 };
-  const statusRow = { ...ack, host: 'mac', payload: '{"mode":"normal"}' };
-  const invoke: Invoke = async (payload) => {
-    sent.push(payload);
-    return payload.action === 'status' ? ack : [statusRow];
+test('putStatus calls the putStatus tool and validates the ack; readStatuses validates the rows', async () => {
+  const sent: [string, Record<string, unknown>][] = [];
+  const ack = { sk: 'status#drovr@mac', at: '2026-10-16T18:40:00.000Z', expiresAt: 1_760_000_000 };
+  const statusRow = { pk: 'sub', ...ack, host: 'mac', payload: '{"mode":"normal"}' };
+  const call: Call = async (tool, args) => {
+    sent.push([tool, args]);
+    return tool === 'putStatus' ? ack : { status: [statusRow] };
   };
   const input = { to: 'craig', host: 'mac', at: '2026-10-16T18:40:00.000Z', payload: '{"mode":"normal"}' };
-  assert.deepEqual(await putStatus(invoke, input), ack);
-  assert.deepEqual(sent[0], { action: 'status', ...input });
-  assert.deepEqual(await readStatuses(invoke, 'craig'), [statusRow]);
-  assert.deepEqual(sent[1], { action: 'readStatus', to: 'craig' });
+  assert.deepEqual(await putStatus(call, input), ack);
+  assert.deepEqual(sent[0], ['putStatus', { ...input }]);
+  assert.deepEqual(await readStatuses(call, 'craig'), [statusRow]);
+  assert.deepEqual(sent[1], ['status', { to: 'craig' }]);
   await assert.rejects(() => putStatus(async () => ({ ok: true }), input));
-  await assert.rejects(() => readStatuses(async () => [{ sk: 'msg#x' }], 'craig'));
+  await assert.rejects(() => readStatuses(async () => ({ status: [{ sk: 'msg#x' }] }), 'craig'));
 });
 
 test('hey status: --to and --json, the HEY_TO default, and no stray words', () => {
@@ -329,4 +303,18 @@ test('describeStatusRow is one line: host, age, mode, fundable, binding, program
   assert.equal(line, 'drovr@mac  2026-10-16T18:40:00.000Z (3m ago)  normal · 1.35 cycles fundable · session binding · 3 programs');
   const off = { ...row, payload: JSON.stringify({ mode: 'off', capacity: null, programs: [] }) };
   assert.equal(describeStatusRow(off, Date.parse('2026-10-16T18:40:10.000Z')), 'drovr@mac  2026-10-16T18:40:00.000Z (0m ago)  off · no capacity figure · 0 programs');
+});
+
+test('config: endpoint defaults to hey.drovr.app, is read when set, and must be https', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hey-'));
+  assert.equal(readConfig(join(dir, 'missing.json')).endpoint, 'https://hey.drovr.app/mcp');
+  writeFileSync(join(dir, 'other.json'), '{"to":"craig","endpoint":"https://hey.example.org/mcp"}');
+  assert.equal(readConfig(join(dir, 'other.json')).endpoint, 'https://hey.example.org/mcp');
+  writeFileSync(join(dir, 'plain.json'), '{"endpoint":"http://hey.example.org/mcp"}');
+  assert.throws(() => readConfig(join(dir, 'plain.json')), /plain\.json/);
+});
+
+test('whoami calls the tool and validates the three fields', async () => {
+  assert.deepEqual(await whoami(async () => ({ email: 'owner@example.com', handle: 'craig', sub: 's' })), { email: 'owner@example.com', handle: 'craig', sub: 's' });
+  await assert.rejects(() => whoami(async () => ({ email: 'x' })));
 });

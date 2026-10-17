@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { lambdaInvoke, putStatus, readPrefs, send, type Invoke } from './hey.ts';
+import { defaultCaller, putStatus, readPrefs, send, type Call } from './hey.ts';
 import { ensureDirs, paths } from './paths.ts';
 
 export type SendResult = {
@@ -38,7 +38,7 @@ export const textCraig = async (to: Recipient, message: string, from: string): P
     return { sent: false, messageId: null, via: 'hey', reason };
   }
   try {
-    const result = await send(lambdaInvoke(), {
+    const result = await send(defaultCaller(), {
       to: to.notifyTo,
       from,
       host: hostname(),
@@ -68,7 +68,7 @@ export type PublishResult = { sent: boolean; reason: string | null };
 export const publishStatus = async (
   to: Recipient,
   input: { host: string; at: string; payload: string },
-  invoke: Invoke = lambdaInvoke(),
+  invoke: Call = defaultCaller(),
 ): Promise<PublishResult> => {
   if (to.notifyTo === null) return { sent: false, reason: 'notifyTo is null in control.json' };
   try {
@@ -103,7 +103,7 @@ export type PhonePrefs = { away: boolean; warning: string | null };
 export const phonePrefs = async (to: Recipient): Promise<PhonePrefs> => {
   if (to.notifyTo === null) return { away: false, warning: null };
   try {
-    const prefs = await readPrefs(lambdaInvoke(), to.notifyTo);
+    const prefs = await readPrefs(defaultCaller(), to.notifyTo);
     return { away: prefs.away, warning: null };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
