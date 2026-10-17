@@ -14,6 +14,7 @@ type AccountInput = {
   rateLimitedUntil?: number | null;
   /** One of the values teamclaude actually emits: 'active' | 'error' | 'exhausted' | 'throttled'. */
   status?: string;
+  switchThreshold?: number | null;
 };
 
 export const account = (input: AccountInput) => ({
@@ -35,6 +36,7 @@ export const account = (input: AccountInput) => ({
   usage: { lastUsed: null },
   rateLimitedUntil: input.rateLimitedUntil ?? null,
   pausedUntil: null,
+  switchThreshold: input.switchThreshold ?? null,
 });
 
 /**
@@ -48,6 +50,8 @@ export const status = (
 ): TeamclaudeStatus => ({
   currentAccount: accounts[0]?.name ?? null,
   accounts,
+  switchThreshold: null,
+  switchThresholds: null,
   routes:
     ineligible === undefined
       ? []

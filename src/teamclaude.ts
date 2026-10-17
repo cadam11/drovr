@@ -69,6 +69,8 @@ const accountShape = z.object({
   usage: z.object({ lastUsed: z.string().nullable().default(null) }).default({ lastUsed: null }),
   rateLimitedUntil: epochMs,
   pausedUntil: epochMs,
+  /** This account's own switch threshold (teamclaude #409); null means the fleet's applies. */
+  switchThreshold: z.number().nullable().default(null),
 });
 
 /**
@@ -86,10 +88,29 @@ const statusShape = z.object({
   currentAccount: z.string().nullable(),
   accounts: z.array(accountShape),
   routes: z.array(routeShape).default([]),
+  /** The fleet switch threshold, and its per-bucket table (keyed unified5h/unified7d/unified7dFable) when set. */
+  switchThreshold: z.number().nullable().default(null),
+  switchThresholds: z.record(z.string(), z.number()).nullable().default(null),
 });
 
 export type TeamclaudeStatus = z.infer<typeof statusShape>;
 export type TeamclaudeAccount = z.infer<typeof accountShape>;
+
+const THRESHOLD_KEYS = { session: 'unified5h', general: 'unified7d', fable: 'unified7dFable' } as const;
+
+/**
+ * The used fraction at which teamclaude's rotation stops routing to an account, per bucket,
+ * resolved as its own `thresholdFor(bucket, account)` does: the account's own threshold, else
+ * the fleet's per-bucket table, else the fleet number. Null when teamclaude reports none.
+ */
+export const switchThresholds = (
+  status: TeamclaudeStatus,
+  account: TeamclaudeAccount,
+): Record<'session' | 'general' | 'fable', number | null> => {
+  const resolve = (bucket: keyof typeof THRESHOLD_KEYS): number | null =>
+    account.switchThreshold ?? status.switchThresholds?.[THRESHOLD_KEYS[bucket]] ?? status.switchThreshold;
+  return { session: resolve('session'), general: resolve('general'), fable: resolve('fable') };
+};
 
 /**
  * The runner is always Fable, so an account the fable route marks ineligible will

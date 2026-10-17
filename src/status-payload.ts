@@ -5,7 +5,7 @@ import { contributingAccounts, cyclesFundableFrom, poolContext, type Decision, t
 import { chargeForRunning, estimateCycleCost, inFlight, snapshot, type CycleRecord } from './ledger.ts';
 import { describeService, serviceHealth, type ServiceState } from './service.ts';
 import { accountsOf } from './state.ts';
-import type { TeamclaudeStatus } from './teamclaude.ts';
+import { switchThresholds, type TeamclaudeStatus } from './teamclaude.ts';
 
 /** One program's verdict as its caller computed it, with its lock holder. No I/O happens here. */
 export type Evaluation = { program: Program; decision: Decision; pid: number | null };
@@ -89,9 +89,12 @@ const fundingPayload = (funding: Funding) => ({
 const accountsPayload = (status: TeamclaudeStatus, pool: ReturnType<typeof poolFrom> | null) =>
   accountsOf(status).map((entry) => {
     const headroom = pool?.perAccount.find((a) => a.name === entry.name) ?? null;
+    const account = status.accounts.find((a) => a.name === entry.name);
     return {
       ...entry,
       headroom: headroom === null ? null : roundCost(headroom),
+      // The tick on each bar: where rotation stops routing here. Absent from an older teamclaude.
+      switchThresholds: account === undefined ? null : switchThresholds(status, account),
     };
   });
 
@@ -164,7 +167,8 @@ export const buildStatusPayload = (input: StatusInput) => {
     accounts: accountsPayload(status, pool),
     accountsUnits:
       'per teamclaude account: each bucket’s used fraction of its own quota and its next reset; ' +
-      'headroom is what the pool counts for it under the current ceilings, null when it is not usable',
+      'headroom is what the pool counts for it under the current ceilings, null when it is not usable; ' +
+      'switchThresholds is the used fraction per bucket at which teamclaude stops routing to the account',
     concurrencyCap: control.maxConcurrentCycles,
     programs: evaluations.map(({ program, decision, pid }) => ({
       name: program.name,

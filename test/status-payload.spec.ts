@@ -149,3 +149,13 @@ test('accounts still list with mode off, with no headroom to report', () => {
   assert.equal(payload.accounts.length, 3);
   assert.ok(payload.accounts.every((entry) => entry.headroom === null));
 });
+
+test('each account carries the switch threshold per bucket: its own, else the fleet table, else the fleet number', () => {
+  const fleet = { ...status([account({ name: 'a' }), account({ name: 'b' })]), switchThreshold: 0.98, switchThresholds: { unified7d: 0.9 } };
+  const own = { ...fleet, accounts: fleet.accounts.map((entry) => (entry.name === 'b' ? { ...entry, switchThreshold: 0.8 } : entry)) };
+  const payload = build({ status: own });
+  assert.deepEqual(payload.accounts[0]?.switchThresholds, { session: 0.98, general: 0.9, fable: 0.98 });
+  assert.deepEqual(payload.accounts[1]?.switchThresholds, { session: 0.8, general: 0.8, fable: 0.8 });
+  // The fixtures carry none, as a teamclaude that predates the field would.
+  assert.deepEqual(build().accounts[0]?.switchThresholds, { session: null, general: null, fable: null });
+});
