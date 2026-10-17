@@ -331,11 +331,13 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **A status row the phone could not decode, in the wild.** `StatusRow.decode` names the missing
   field and the card shows it (`DrovrMissingCard`), proven against a renamed key in the suite; no
   real payload has yet broken the shape.
-- **A generic status card from a live writer.** Plan 12 landed 2026-10-17: the Lambda keys rows by
-  program, `hey status put` validates and sends, the app decodes and draws. Task 10 of its plan is
-  the Hadrian box piping `teamclaude status --json | hey status put --program hadrian --teamclaude -`
-  and Craig's phone showing the card beside drovr's; until that ran, every generic path is proven
-  only against fixtures. (Task 10 rewrites this entry from what it saw.)
+- **A generic status card on the phone.** Plan 12 landed 2026-10-17 and its wire half ran live the
+  same afternoon: the Hadrian box piped `teamclaude status --json | hey status put --program hadrian
+  --host craig --teamclaude -` and a `lines`-only payload, both acked, both read back on the Mac by
+  `hey status` with the extra fields stripped, and a row written past the CLI's guard read back as
+  `? · 0 lines` without failing the list (spec amendment "Plan 12", observed). What has not been seen
+  is the phone: CA-iPhone was unreachable, so the generic card beside drovr's, the error card, and
+  the stale marker are proven only in the Simulator and the suite. Install the device build and look.
 - **Two hosts' drovr cards.** One row per host is proven in `handler.spec.ts`; only the Mac publishes
   drovr's row today.
 - **The publish failing without failing the tick, live.** `publishStatus` returns a reason and
