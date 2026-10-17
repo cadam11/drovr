@@ -245,6 +245,25 @@ Written and type-checked, never seen to fire. Unproven, not done:
   since the app's UpdateItem sets both at once.
 - **A read mark written from a second phone.** Read marks are `read#<from>` rows on the server
   so two phones agree; one phone exists.
+- **drovr's admission under the phone's Away.** `applyAwayMode` is tested and `drovr status`
+  read `away (phone)` live on 2026-10-16 while control.json stayed `normal`; no tick has yet
+  admitted a cycle that `normal` would have refused.
+- **A profile seeded by a real cycle start.** `seedSenderProfile` ran by hand for drovr on
+  2026-10-16 (🦾, #737373, marker written, second run silent); the call from `runInOrca` has not
+  fired on a tick-launched cycle.
+- **A `profile#` row with an image icon drawn on the phone.** Every seeded profile so far is an
+  emoji or a colour; `AsyncImage` and the data-URL path are exercised only by `ProfileIcon.parse`.
+- **A quiet-hours banner seen silent on the phone.** The Lambda set `interruption-level: passive`
+  and the Mac printed the quiet note on 2026-10-16; whether the locked phone stayed dark and
+  silent was not confirmed by eye.
+- **A multi-choice reply from the phone.** `--multi` is tested end to end in the suites
+  (`multiReply`, the Lambda's `multi` row, `--multi` args) but check 9 (`--choices "a,b,c"
+  --multi` → tap a and c → Send → `a, c`) has not run on the device.
+- **The message-count badge on the phone.** `unreadBadge` and `unreadCount` count messages in
+  the suites; check 10 (two unread in one thread → badge 2) has not run on the device.
+- **Full-width swipes and the growing compose field on the device.** Proven in the Simulator
+  (`testSwipeTogglesReadAndDeleteRemovesTheThread`, `testComposeGrowsWithALongDraftAndTheChipsStayPut`);
+  the build carrying them (b0950ee) is compiled but was not installed before Craig stepped away.
 
 ## Notifications
 
