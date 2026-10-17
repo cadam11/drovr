@@ -192,6 +192,10 @@ files in the same commit, or the table fails.
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
+- **The Go `hey` refreshing a session on the Mac.** The Mac swapped its `hey` symlink for the Go
+  binary on 2026-10-17 and `hey whoami` answered on the existing credentials file; the tick's Node
+  caller and the Go binary now share that file, so the first hour boundary either refreshes under
+  both (the 60 s grace) or signs one of them out. Not yet seen.
 - **The Go `hey` on a box.** Built and conformance-tested against the Node CLI on the Mac
   (2026-10-17: 65 offline rows byte-identical bar the Go-only `version`; 10 live rows through the
   real shim — send, `--wait 10s` exit 2, prefs, profile, status, whoami, another handle refused —
@@ -417,10 +421,11 @@ payload bytes in its unit tests against zod's output — no row yet compares a r
 is the first other writer (spec amendment "Plan 12").
 
 `hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
-The `hey` command on the Mac is `src/hey-cli.ts` (`package.json` `bin`; `src/hey.ts` the
-library, `src/hey-http.ts` the caller and the credentials file). Every other machine runs the
-**Go port** in `cli/hey/` — one static binary, standard library only, byte-compatible with the
-Node CLI and tested against it (`pnpm conform:cli`; the Node CLI is the oracle). Install on a
+Every machine, the Mac included (since 2026-10-17), runs the **Go port** in `cli/hey/` — one
+static binary, standard library only, installed at `/opt/homebrew/bin/hey` on the Mac. `src/hey-cli.ts`
+is the **oracle**, not a command: it is no longer in `package.json` `bin`, it exists so `pnpm
+conform:cli` can compare the Go binary against it byte for byte (`src/hey.ts` the library,
+`src/hey-http.ts` the caller and the credentials file, which drovr's tick still uses in-process). Install on a
 box: `curl -fsSL https://drovr.app/cli/hey_linux_amd64.tar.gz | tar xz && sudo install hey
 /usr/local/bin/hey && rm hey && hey version && hey login` (`hey_linux_arm64`, `hey_darwin_arm64`
 likewise; `https://drovr.app/cli/manifest.json` carries the version and sha256s), then

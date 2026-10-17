@@ -4,8 +4,7 @@
   "description": "Capacity-aware supervisor for long-horizon autonomous delivery loops",
   "type": "module",
   "bin": {
-    "drovr": "./src/cli.ts",
-    "hey": "./src/hey-cli.ts"
+    "drovr": "./src/cli.ts"
   },
   "engines": {
     "node": ">=24.0.0"
