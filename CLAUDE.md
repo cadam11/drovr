@@ -139,6 +139,12 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `watch.ts` | A failed refresh must not end the session. Every draw ran `.catch(die)`, so one throw out of `collectState` — teamclaude's proxy missing its own 5s status budget is enough — restored the terminal and exited a live watch. `drawFailed` keeps the last good frame and puts the reason on the message line; only the first frame, which has nothing to keep, is still fatal. |
 | `tick.ts` | A tick that **throws** is as much an outage as one that overruns, and only the second had a watchdog. `runTick` wraps `tick()` from outside so the lock is released before a 15s hey send, and rethrows so the exit code still fails. The episode marker is cleared beside `stampTick` and nowhere else: a tick that returns early on a busy lock has completed nothing and must not end someone else's episode. |
 | `keys.ts` | One writer of `control.json` now means **one code path, not one process**. `mutate` is called from the launchd tick, from `drovr watch` and from the CLI, and neither of the latter two takes the tick lock. The staged write-and-rename protects readers from a torn file; it does not order concurrent writers. The window is milliseconds and a lost update costs a re-pressed key, so do not build a lock for it — but do not claim single-writer serialization either. |
+| `hey-http.ts` | A `401` is retried **once after one refresh**, and nothing else is retried. The shim answers 401 before any tool runs, so the retry cannot duplicate a send; a 502 or a timeout after the POST might have delivered, so it is one line and exit 1. `toolCaller` is the only place this rule lives; a caller that loops on it is a duplicate-message machine. |
+| `hey-http.ts` | The credentials file is written through a **rename**, 0600, and two writers inside the shim's 60 s grace get the **same** pair — which is what lets a `hey --wait` poll and the tick refresh at the same hour boundary without one of them being signed out. Do not "fix" a refresh race with a lock file; the grace is the design. |
+| `hey-mcp/device.ts` | `GET /mcp/device?user_code=…` **prefills and spends nothing**; only the POST spends. A link preview, a mail scanner or a prefetch would otherwise burn the code before Craig sees the page (aice's rule, kept). |
+| `hey-mcp/device.ts` | The user-code budget is a **global per-minute counter** bumped before the lookup, not a per-device try count: before the code resolves there is no device to count against. `increment` is DynamoDB `ADD`, atomic; the memory store mirrors it. |
+| `hey-mcp/tools.ts` | `to` on a tool is a **self-check**, never a recipient: it must equal the session's handle and every tool still addresses the session. It exists so a box with the wrong `HEY_TO` is told so instead of silently sending to whoever signed in. |
+| `nudge.ts` | `publishStatus` builds its default caller **inside** the try: `defaultCaller()` reads `~/.config/hey.json`, and a malformed file in a default-parameter position threw before the guard, out of the tick. |
 | `profile.ts` | A sender profile is **decoration**, so both ends read it leniently — `profileFromRepo` yields nothing for a repo shape it does not know and `ProfileIcon.parse` yields nil for an icon it cannot draw — while the Lambda validates it strictly on the way in. A strict reader here would fail an inbox load over a tile. The seed runs **after** `startCycleAgent`, never before: two orca calls and an invoke are bounded, but a late launch is the wrong price for an avatar. |
 | `tick.ts` | The phone's Away is applied with `applyAwayMode` to the `Control` every `decide({` caller builds and is **never written** to control.json: a pass that wrote it would make the toggle sticky after Craig turned it off. `off` is not overridden — it is a stop, not a ceiling. `state.ts` reads it in the probe half and caches it with the quota probe, or every `watch` frame would pay a 15s-bounded Lambda call. |
 | `handler.ts` | A `prefs` row the Lambda cannot parse reads as the defaults with a log line and the send goes out **loud**; a newer app writing a key this Lambda does not know is exactly the case, and a failed send over a setting would be worse than a sound. The app's decoder is strict the other way for the same reason: a row it cannot write back whole is one it must not overwrite. |
@@ -252,6 +258,23 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **A load error from a half-answered row in the wild.** `MessageRow.decode` and the Lambda's
   `messageShape` refuse a row with `reply` but no `repliedAt`; only the suite has produced one,
   since the app's UpdateItem sets both at once.
+- **A lock-screen answer through the new transport.** Plan 9's live `hey --wait 2m --choices yes,no`
+  expired untapped (2026-10-17, exit 2 as designed); a `--wait` closed by a reply over the HTTPS
+  caller is proven only in the suite.
+- **A `slow_down` from the real shim steering the CLI's interval.** Task 4 saw the shim answer
+  `slow_down` to curl; the CLI's widening of its interval is proven only in the suite.
+- **A device code expiring under a waiting `hey login`.** Nobody has left one for 15 minutes.
+- **The 30-a-minute user-code budget tripping live.** The 429 page is proven in the suite.
+- **Two processes refreshing the same credentials file at once.** The grace is proven in plan 7's
+  suite and the rename in this one; the collision has not happened live.
+- **A box other than the Mac signed in with `hey login`.** The relliq dev box and the Hadrian box
+  are the first candidates.
+- **The hey Lambda's removal (plan 9, Task 12).** Gated on the Hadrian box signing in; it had not
+  been handed the CLI when plan 9 finished (2026-10-17), so `infra/senders.tf` keeps the Hadrian
+  permission and `infra/lambda.tf` the function. To finish: on the Hadrian box, install the command
+  and run `hey login` (`docs/hey-mcp.md`, "Install on a box"), then `hey --from "hey plan 9" --wait
+  2h --choices "yes,not yet" "plan 9: has the Hadrian box run hey login and sent once?"` → `yes` →
+  plan `2026-10-17-hey-device-login.md` Task 12 steps 2–5 (5 destroys, no Cognito change).
 - **A read mark written from a second phone.** Read marks are `read#<from>` rows on the server
   so two phones agree; one phone exists.
 - **drovr's admission under the phone's Away.** `applyAwayMode` is tested and `drovr status`
@@ -309,8 +332,9 @@ Written and type-checked, never seen to fire. Unproven, not done:
 
 ## Notifications
 
-Every alert goes through **hey**, drovr's own channel: `textCraig` in `nudge.ts` calls the
-hey Lambda in `ca-central-1` on the default AWS profile, which writes a row to the `hey` table
+Every alert goes through **hey**, drovr's own channel: `textCraig` in `nudge.ts` calls
+`https://hey.drovr.app/mcp` as the user who ran `hey login` on this Mac
+(`~/.config/hey/credentials.json`, read from the tick's `HOME`), and the shim writes a row to the `hey` table
 and publishes to every `device#` row the recipient's phones have registered, through the SNS
 platform applications `APNS/hey` and `APNS_SANDBOX/hey` (hey design,
 `docs/superpowers/specs/2026-10-15-notify-app-design.md`). The iOS app is `ios/Hey/`, a Debug
@@ -336,22 +360,25 @@ text. A send is never retried — a retried send is a duplicate message.
 
 hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
 `docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
-in with Craig's own emailed code. Every tool runs as the signed-in user through the same `handle()`
-the `hey` Lambda runs, so there is one send path with two front doors — IAM for the CLI, OAuth
-for claude.ai. Craig, 2026-10-17: local sessions (Claude Code, Codex) keep using the `hey` CLI;
-the connector is not added to them.
+in with Craig's own emailed code. Every tool runs as the signed-in user through the same `handle()`,
+so there is one send path and one front door: the `hey` command, drovr's tick and claude.ai all
+hold a session from the same sign-in — the command and the tick through `hey login` (RFC 8628
+device flow), claude.ai through its connector. There is no IAM sender, no AWS SDK in the CLI and
+no AWS call in drovr since plan 9. Craig, 2026-10-17: local sessions (Claude Code, Codex) keep
+using the `hey` CLI; the connector is not added to them.
 
 The tick also publishes its state there: at the end of every completed pass, after the usage
 sample and before `stampTick`, `publishStatus` sends the JSON `drovr status --json` prints
 (one builder, `src/status-payload.ts`) as the row `status#drovr@<host>`, 24 h TTL, overwritten
-each tick. Same rules as every send — bounded by the invoke's 15 s, logged and swallowed, off
+each tick. Same rules as every send — bounded by the call's 15 s, logged and swallowed, off
 when `control.notifyTo` is null — and the same position as the usage sample, because it is a
 window onto the tick and must never be a gate in it. `hey status --json` reads it back; the Hey
 app draws its drovr card from it, stale after two tick intervals.
 
 `hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
-The `hey` command lives in `src/hey-cli.ts` and is bundled by `pnpm build:hey` into `dist/hey`
-for machines without this checkout.
+The `hey` command lives in `src/hey-cli.ts` (`src/hey.ts` the library, `src/hey-http.ts` the
+caller and the credentials file) and is bundled by `pnpm build:hey` into `dist/hey` for machines
+without this checkout; a box signs in with `hey login` (`docs/hey-mcp.md`, "Install on a box").
 
 The infrastructure is the Tofu root in `infra/`, state in S3 (`drovr-tfstate-000000000000`,
 created once by `infra/bootstrap`, whose own state is local and gitignored). `pnpm build:lambda`
@@ -429,8 +456,10 @@ anywhere; do not create one unprompted, but say so if the subject arises.
   an Orca worktree are refused with the `orca repo add --path <cwd>` that fixes it.
 - **teamclaude** — read-only, via `teamclaude status --json`, plus `teamclaude run` as the launch
   command of every cycle.
-- **hey** — the Lambda `hey` in `ca-central-1`, through `src/hey.ts`'s `lambdaInvoke`; the only
-  AWS call drovr makes, for alerts (`send`) and the once-a-tick status row (`status`). Sign-in is Cognito pool "hey" (passkey, email code), custom domain
+- **hey** — **HTTPS to `https://hey.drovr.app/mcp`** through `src/hey-http.ts` — one JSON-RPC
+  `tools/call` per alert (`send`), prefs read (`prefs`), profile seed (`profile`) and the
+  once-a-tick status row (`putStatus`), as the user in `~/.config/hey/credentials.json`. **drovr
+  makes no AWS call.** Sign-in is Cognito pool "hey" (passkey, email code), custom domain
   auth.drovr.app; devices get credentials from identity pool "hey" under role hey-device, confined
   to their own partition by dynamodb:LeadingKeys.
   The MCP front door is Lambda `hey-mcp` behind CloudFront `hey.drovr.app` (its own distribution;
