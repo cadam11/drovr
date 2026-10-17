@@ -117,3 +117,35 @@ test('a mode the phone switched to away is named as such, with the stored mode',
   assert.match(payload.modeMeaning, /away is the phone's toggle for this pass, the stored mode is normal/);
   assert.equal(build().modeFromPhone, false);
 });
+
+test('accounts carry the TUI account lines: used fractions, resets, route flags, and headroom for a usable one', () => {
+  const accounts = status(
+    [
+      account({ name: 'a@x.io', fable: 0.4, general: 0.4, session: 0.1 }),
+      account({ name: 'b@x.io', fable: 0.1, general: 0.1, session: 0.0, disabled: true }),
+    ],
+    ['b@x.io'],
+    'a@x.io',
+  );
+  const payload = build({ status: accounts });
+  assert.deepEqual(payload.accounts.map((entry) => entry.name), ['a@x.io', 'b@x.io']);
+  const [a, b] = payload.accounts;
+  assert.equal(a?.fableTarget, true);
+  assert.equal(a?.fableEligible, true);
+  assert.equal(a?.disabled, false);
+  assert.equal(a?.buckets.session.usedFraction, 0.1);
+  assert.equal(a?.buckets.session.resetsAt, new Date(NOW + 2 * HOUR).toISOString());
+  // The same ceilings the pool was built from: normal is weekly 0.55 / session 0.40 by default.
+  assert.deepEqual(a?.headroom, { fable: 0.15, general: 0.15, session: 0.3 });
+  assert.equal(b?.disabled, true);
+  assert.equal(b?.fableEligible, false);
+  // Not usable, so not in the pool: headroom is null, never 0 — 0 would read as spent.
+  assert.equal(b?.headroom, null);
+  assert.match(payload.accountsUnits, /used fraction/);
+});
+
+test('accounts still list with mode off, with no headroom to report', () => {
+  const payload = build({ control: control({ mode: 'off', programs: [{ name: 'demo', cwd: '/tmp/demo' }] }) });
+  assert.equal(payload.accounts.length, 3);
+  assert.ok(payload.accounts.every((entry) => entry.headroom === null));
+});

@@ -122,7 +122,8 @@ const isOverdue = (service: StateInput['service'], now: number): boolean => {
   return now - service.lastTickAt > service.intervalSeconds * 1000 * OVERDUE_INTERVALS;
 };
 
-const accountsOf = (status: TeamclaudeStatus): DrovrState['accounts'] => {
+/** The ACCOUNTS block of `drovr watch`, one entry per teamclaude account; the status payload shares it. */
+export const accountsOf = (status: TeamclaudeStatus): DrovrState['accounts'] => {
   const eligible = fableEligible(status);
   const target = status.routes.find((route) => route.name === 'fable')?.target ?? null;
   return status.accounts.map((account) => ({

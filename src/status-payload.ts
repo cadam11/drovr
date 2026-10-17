@@ -4,6 +4,7 @@ import { ceilingsFor, effectivePriority, isPaused, type Control, type Program } 
 import { contributingAccounts, cyclesFundableFrom, poolContext, type Decision, type Funding } from './decide.ts';
 import { chargeForRunning, estimateCycleCost, inFlight, snapshot, type CycleRecord } from './ledger.ts';
 import { describeService, serviceHealth, type ServiceState } from './service.ts';
+import { accountsOf } from './state.ts';
 import type { TeamclaudeStatus } from './teamclaude.ts';
 
 /** One program's verdict as its caller computed it, with its lock holder. No I/O happens here. */
@@ -80,6 +81,20 @@ const fundingPayload = (funding: Funding) => ({
     'accounts of each account’s own tightest bucket, never the min of the pool sums',
 });
 
+/**
+ * The ACCOUNTS block of `drovr watch`, per account, with the headroom the pool was built from.
+ * Headroom is null for an account the pool left out (disabled, throttled, or mode off): null
+ * reads as "not in the pool", where 0 would read as spent.
+ */
+const accountsPayload = (status: TeamclaudeStatus, pool: ReturnType<typeof poolFrom> | null) =>
+  accountsOf(status).map((entry) => {
+    const headroom = pool?.perAccount.find((a) => a.name === entry.name) ?? null;
+    return {
+      ...entry,
+      headroom: headroom === null ? null : roundCost(headroom),
+    };
+  });
+
 /** The five stacked segments `drovr watch` draws, so a remote bar cannot disagree with the TUI's. */
 const allocationPayload = (segments: Record<BucketName, Allocation>) => ({
   ...segments,
@@ -146,6 +161,10 @@ export const buildStatusPayload = (input: StatusInput) => {
       startedAt: cycle.startedAt,
       kind: cycle.kind,
     })),
+    accounts: accountsPayload(status, pool),
+    accountsUnits:
+      'per teamclaude account: each bucket’s used fraction of its own quota and its next reset; ' +
+      'headroom is what the pool counts for it under the current ceilings, null when it is not usable',
     concurrencyCap: control.maxConcurrentCycles,
     programs: evaluations.map(({ program, decision, pid }) => ({
       name: program.name,
