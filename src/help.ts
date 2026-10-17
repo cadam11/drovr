@@ -222,10 +222,9 @@ export const COMMANDS: Command[] = [
     summary: 'alert Craig now through hey, or send a test to prove the alert path works',
     details: [
       'With no message, sends a canned test naming the host and time. With one, sends that text.',
-      'Sends to the hey handle in control.json notifyTo, through the hey lambda in ca-central-1,',
-      'on the DEFAULT aws profile deliberately — the named profiles are SSO-backed and expire,',
-      'which is the state an unattended overnight supervisor finds them in.',
-      'The lambda returning is the row existing; the app shows it on its next push or refresh.',
+      'Sends to the hey handle in control.json notifyTo over HTTPS to hey.drovr.app, signed in as',
+      'whoever ran `hey login` on this machine (the launchd tick reads the same ~/.config/hey/credentials.json).',
+      'The call returning is the row existing; the app shows it on its next push or refresh.',
       'A send is never retried: a retried send is a duplicate message. Failure is one line on',
       'stderr and exit 1. For a reply, use the hey command directly: hey --wait 30m "text".',
       'Write it to be read on a lock screen: what happened, where, what it needs, in one line.',

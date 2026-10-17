@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { hostname } from 'node:os';
+import { hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { defaultCaller, putStatus, readPrefs, send, type Call } from './hey.ts';
+import { NotSignedIn } from './hey-http.ts';
 import { ensureDirs, paths } from './paths.ts';
 
 export type SendResult = {
@@ -20,16 +21,16 @@ export type Recipient = { notifyTo: string | null };
 /** The `from` label the app groups a thread by: the program, or drovr itself on this machine. */
 export const alertFrom = (program: string | null, host: string): string => program ?? `drovr on ${host}`;
 
-const credentialHint = (detail: string): string =>
-  /credential|expired|security token|AccessDenied/i.test(detail) ? ' Check the default profile with: aws sts get-caller-identity' : '';
+/** The tick runs as Craig under launchd, so its HOME is his: the sign-in is the same file a terminal writes. */
+const signInHint = (error: unknown): string => (error instanceof NotSignedIn ? ` — run hey login in a terminal as ${userInfo().username}, so the tick's HOME has the credentials file` : '');
 
 /**
- * The one place drovr alerts Craig, through the same hey lambda the CLI uses. `from` is
- * required rather than defaulted for the reason `originationNumber` once was: a caller that
- * forgets it would file every alert under one anonymous thread.
+ * The one place drovr alerts Craig, through the same HTTPS caller and credentials file the hey
+ * command uses. `from` is required rather than defaulted for the reason `originationNumber`
+ * once was: a caller that forgets it would file every alert under one anonymous thread.
  *
- * Best-effort by design: an unreachable lambda must never take down a tick or a cycle, so
- * failure is logged and reported rather than thrown. Bounded by the invoke's own 15s.
+ * Best-effort by design: an unreachable shim must never take down a tick or a cycle, so
+ * failure is logged and reported rather than thrown. Bounded by the call's own 15 s.
  */
 export const textCraig = async (to: Recipient, message: string, from: string): Promise<SendResult> => {
   if (to.notifyTo === null) {
@@ -52,7 +53,7 @@ export const textCraig = async (to: Recipient, message: string, from: string): P
     return { sent: true, messageId: result.id, via: 'hey', reason: null };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    console.error(`could not send through hey: ${detail}${credentialHint(detail)}`);
+    console.error(`could not send through hey: ${detail}${signInHint(error)}`);
     return { sent: false, messageId: null, via: 'hey', reason: detail };
   }
 };
@@ -68,15 +69,16 @@ export type PublishResult = { sent: boolean; reason: string | null };
 export const publishStatus = async (
   to: Recipient,
   input: { host: string; at: string; payload: string },
-  invoke: Call = defaultCaller(),
+  call: Call | null = null,
 ): Promise<PublishResult> => {
   if (to.notifyTo === null) return { sent: false, reason: 'notifyTo is null in control.json' };
   try {
-    await putStatus(invoke, { to: to.notifyTo, ...input });
+    // Built inside the guard: a malformed ~/.config/hey.json must be a reason here, not a throw into the tick.
+    await putStatus(call ?? defaultCaller(), { to: to.notifyTo, ...input });
     return { sent: true, reason: null };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    console.error(`could not publish status through hey: ${detail}${credentialHint(detail)}`);
+    console.error(`could not publish status through hey: ${detail}${signInHint(error)}`);
     return { sent: false, reason: detail };
   }
 };
@@ -96,7 +98,7 @@ const alreadyNudged = (program: string, askedAt: number): boolean => {
 export type PhonePrefs = { away: boolean; warning: string | null };
 
 /**
- * One bounded read per pass (the invoke's own 15s), never a thrown error: a phone that cannot
+ * One bounded read per pass (the call's own 15 s), never a thrown error: a phone that cannot
  * be asked means the pass runs on the stored mode, and the warning is the caller's to place —
  * stderr under launchd, the frame in `drovr watch`. No handle is no phone, which is not a warning.
  */

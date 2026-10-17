@@ -89,7 +89,7 @@ const seededPath = (program: string): string => join(paths().programState(progra
 
 /**
  * Once per program, after its terminal is up and never before: an avatar is not worth a late
- * launch. Two orca calls and one invoke, each bounded by its own helper. Every failure is a log
+ * launch. Two orca calls and one hey call, each bounded by its own helper. Every failure is a log
  * line and a retry at the next cycle start; a success — including "nothing to seed" — writes the
  * marker, and `hey profile` is how the profile changes from then on.
  */
