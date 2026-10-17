@@ -190,11 +190,13 @@ files in the same commit, or the table fails.
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
-- **The Go `hey` sending from a box.** Built and conformance-tested against the Node CLI on the
-  Mac (65 offline rows byte-identical bar the Go-only `version`, 2026-10-17), published at
-  `https://drovr.app/cli/`; the live rows (send, `--wait 10s`, prefs, profile, status, whoami
-  through the real shim) had not yet been run when the plan ended, and no box has installed it, so
-  no `hey login` or send has gone through the binary anywhere.
+- **The Go `hey` on a box.** Built and conformance-tested against the Node CLI on the Mac
+  (2026-10-17: 65 offline rows byte-identical bar the Go-only `version`; 10 live rows through the
+  real shim — send, `--wait 10s` exit 2, prefs, profile, status, whoami, another handle refused —
+  identical after id/instant/clock normalisation), published at `https://drovr.app/cli/`. No box
+  has installed it, so no `hey login`, no refresh (the live run started with a fresh token, so the
+  harness's credentials write-back never fired) and no send has gone through the binary anywhere
+  but the Mac.
 
 - **A full ask → answer → auto-resume round trip.** Both halves have been seen separately.
 - **`headless` runner mode** — a fallback, exercised once early, untouched since the interactive
