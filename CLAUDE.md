@@ -159,6 +159,12 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `infra/mcp.tf` | A NONE-auth Function URL needs **two** statements since October 2025: the `lambda:InvokeFunctionUrl` one the provider adds **and** `lambda:InvokeFunction` conditioned on `lambda:InvokedViaFunctionUrl`, or every request is a 403 `AccessDeniedException` with the policy visibly present (measured 2026-10-17; aice's aice-ops hit the same 403 and gave up on NONE). Provider 5.100 cannot express that condition (`invoked_via_function_url` is 6.x), so `terraform_data.hey_mcp_invoke_via_url` writes it through the CLI. |
 | `infra/mcp.tf` | The Function URL **remaps** `WWW-Authenticate` to `x-amzn-remapped-www-authenticate` on the way out, and a CloudFront Function cannot put it back: "CloudFront doesn't invoke edge functions for viewer response events when the origin returns HTTP status code 400 or higher", and the header rides on a 401. `lambda/hey-mcp-edge/` is a Lambda@Edge **origin-response** (run for every status) that copies it back; without it clients only find the metadata through the well-known fallback. |
 | `infra/mcp.tf` | Dropping an edge function's association and deleting the function in one apply fails `FunctionInUse`: Tofu orders the delete before the distribution update. Two commits (association first), or `-target` the distribution first — measured 2026-10-17 removing the CloudFront Function above. |
+| `cli/hey/help.go` | `help --json` must be the Node document byte for byte, and Go's `encoding/json` differs from `JSON.stringify` in three ways that each change the bytes: it sorts map keys (so every object is a struct in the TS literal's field order — the JSON-RPC envelope included), it HTML-escapes `<>&` by default (so everything goes through `marshalJSON` with `SetEscapeHTML(false)`), and it has no notion of JavaScript's integer-key ordering (so `exitCodes` is declared `0, 1, 2, 130`, not the `0, 2, 1, 130` the TS literal writes). `pnpm conform:cli` catches all three; `go test` catches the last two. |
+| `cli/hey/args.go` | Choice length is JavaScript's `.length`, UTF-16 units, through `jsLength` — the handler's zod `.max(24)` measures the same way, so a rune count would pass a twelve-emoji choice the server then refuses as `bad_request` after a round trip. |
+| `cli/hey/main.go` | Ctrl-C is a cancelled context, not a process exit: `fail` checks `ctx.Err()` before anything else, or an interrupted call prints `context canceled` and exits 1 where the Node CLI dies silently with 130. |
+| `cli/hey/conformance_test.go` | **Offline rows must not be able to send.** Measured 2026-10-17: the plan's bash-shaped comparison loop, run under zsh, kept `"help nope"` as one argument — not a command name, so a send by contract — and both CLIs delivered 22 rows each to Craig's phone from the real signed-in `HOME`. Offline HOMEs hold no credentials file and point `endpoint` at `https://127.0.0.1:9/mcp`, and any offline row whose output matches `sent <id> to` fails the table on either side. Never compare the two CLIs from a real `HOME`; in zsh an unquoted `$args` does not word-split (`${=args}` does). |
+| `infra/cli.tf` | The five `aws_s3_object` sources are required on purpose. A `fileset`/`fileexists` guard would turn a checkout without `dist/cli/` into a plan that proposes deleting the published binaries, which an executor told to expect "1 to change" might wave through. Failing loudly costs a `pnpm build:cli`. |
+| `scripts/release-hey.sh` | The archives must be deterministic or every `tofu plan` re-uploads them: version from `VERSION` (never the commit), `touch -t` on the binary, `--uid 0 --gid 0 --uname '' --gname ''`, `gzip -n`. Build twice and diff the sums; a toolchain upgrade legitimately changes the bytes once. |
 
 ## The CLI is read by agents
 
@@ -176,9 +182,19 @@ Two rules for anything the CLI prints:
 
 Never document a flag before implementing it — a help page that lies is worse than a missing one.
 
+`cli/hey/help.go` is `src/hey-help.ts` ported data for data, and `pnpm conform:cli` compares
+every help page and `help --json` byte for byte. A change to the Node registry lands in both
+files in the same commit, or the table fails.
+
 ## Not yet observed working
 
 Written and type-checked, never seen to fire. Unproven, not done:
+
+- **The Go `hey` sending from a box.** Built and conformance-tested against the Node CLI on the
+  Mac (65 offline rows byte-identical bar the Go-only `version`, 2026-10-17), published at
+  `https://drovr.app/cli/`; the live rows (send, `--wait 10s`, prefs, profile, status, whoami
+  through the real shim) had not yet been run when the plan ended, and no box has installed it, so
+  no `hey login` or send has gone through the binary anywhere.
 
 - **A full ask → answer → auto-resume round trip.** Both halves have been seen separately.
 - **`headless` runner mode** — a fallback, exercised once early, untouched since the interactive
@@ -379,13 +395,23 @@ window onto the tick and must never be a gate in it. `hey status --json` reads i
 app draws its drovr card from it, stale after two tick intervals.
 
 `hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
-The `hey` command lives in `src/hey-cli.ts` (`src/hey.ts` the library, `src/hey-http.ts` the
-caller and the credentials file) and is bundled by `pnpm build:hey` into `dist/hey` for machines
-without this checkout; a box signs in with `hey login` (`docs/hey-mcp.md`, "Install on a box").
+The `hey` command on the Mac is `src/hey-cli.ts` (`package.json` `bin`; `src/hey.ts` the
+library, `src/hey-http.ts` the caller and the credentials file). Every other machine runs the
+**Go port** in `cli/hey/` — one static binary, standard library only, byte-compatible with the
+Node CLI and tested against it (`pnpm conform:cli`; the Node CLI is the oracle). Install on a
+box: `curl -fsSL https://drovr.app/cli/hey_linux_amd64.tar.gz | tar xz && sudo install hey
+/usr/local/bin/hey && rm hey && hey version && hey login` (`hey_linux_arm64`, `hey_darwin_arm64`
+likewise; `https://drovr.app/cli/manifest.json` carries the version and sha256s), then
+`HEY_TO=craig` (`docs/hey-mcp.md`, "Install on a box"). Release: bump `cli/hey/VERSION`,
+`pnpm build:cli`, `tofu apply` (`infra/cli.tf`). `hey version` exists only in the Go binary and
+is kept out of `hey help` so the list matches.
 
 The infrastructure is the Tofu root in `infra/`, state in S3 (`drovr-tfstate-000000000000`,
 created once by `infra/bootstrap`, whose own state is local and gitignored). `pnpm build:lambda`
-must run before any `tofu plan` there: the function's zip is built from a gitignored bundle.
+and `pnpm build:cli` must run before any `tofu plan` there: the function's zip and the CLI
+archives are built from gitignored bundles (`infra/cli.tf`'s five sources are required, like the
+Lambda's `archive_file`: without `dist/cli/` the plan fails naming the file instead of proposing
+to delete the published binaries).
 
 ## drovr is also a program
 
@@ -449,6 +475,9 @@ anywhere; do not create one unprompted, but say so if the subject arises.
 - `node --test test/*.spec.ts`. Test pure functions; no mocks or spies. The `keys.spec.ts` suite
   uses real temp files because those functions write Craig's live config.
 - `pnpm check-types` is the gate. Editor diagnostics lag behind edits — trust `tsc`.
+- `cli/hey/` is Go 1.26, one flat `package main`, standard library only, no cobra (the usage
+  strings are the contract). `pnpm test:cli` is its gate: `gofmt -l` empty, `go vet`,
+  `go test ./...`, `staticcheck` when installed. `version` is the only package-level variable.
 - Comments explain *why*, never *what*. Most functions should not have one.
 
 ## Interfaces to other tools
