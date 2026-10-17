@@ -3,6 +3,7 @@ node_modules/
 dist/
 lambda/hey/dist/
 lambda/hey-mcp/dist/
+lambda/hey-mcp-edge/dist/
 ios/Hey/Hey.xcodeproj/
 ios/Hey/Hey/Info.plist
 ios/Hey/build/
