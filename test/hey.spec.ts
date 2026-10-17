@@ -278,7 +278,7 @@ test('putStatus calls the putStatus tool and validates the ack; readStatuses val
   const input = { to: 'craig', host: 'mac', at: '2026-10-16T18:40:00.000Z', payload: '{"mode":"normal"}' };
   assert.deepEqual(await putStatus(call, input), ack);
   assert.deepEqual(sent[0], ['putStatus', { ...input }]);
-  assert.deepEqual(await readStatuses(call, 'craig'), [statusRow]);
+  assert.deepEqual(await readStatuses(call, 'craig'), [{ ...statusRow, program: 'drovr' }]);
   assert.deepEqual(sent[1], ['status', { to: 'craig' }]);
   await assert.rejects(() => putStatus(async () => ({ ok: true }), input));
   await assert.rejects(() => readStatuses(async () => ({ status: [{ sk: 'msg#x' }] }), 'craig'));
@@ -298,7 +298,7 @@ test('describeStatusRow is one line: host, age, mode, fundable, binding, program
     capacity: { cyclesFundable: 1.3456, bindingBucket: 'session' },
     programs: [{ name: 'a' }, { name: 'b' }, { name: 'c' }],
   });
-  const row = { pk: 'sub', sk: 'status#drovr@mac', host: 'mac', at: '2026-10-16T18:40:00.000Z', payload, expiresAt: 1 };
+  const row = { pk: 'sub', sk: 'status#drovr@mac', program: 'drovr', host: 'mac', at: '2026-10-16T18:40:00.000Z', payload, expiresAt: 1 };
   const line = describeStatusRow(row, Date.parse('2026-10-16T18:43:30.000Z'));
   assert.equal(line, 'drovr@mac  2026-10-16T18:40:00.000Z (3m ago)  normal · 1.35 cycles fundable · session binding · 3 programs');
   const off = { ...row, payload: JSON.stringify({ mode: 'off', capacity: null, programs: [] }) };
