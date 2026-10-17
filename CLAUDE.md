@@ -322,10 +322,11 @@ Slack app and no SMS any more: a failed send is a `console.error` line and an ex
 text. A send is never retried — a retried send is a duplicate message.
 
 hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
-`docs/hey-mcp.md`): claude.ai, Claude Code and Codex connect with no AWS credentials and sign in
-with Craig's own emailed code. Every tool runs as the signed-in user through the same `handle()`
+`docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
+in with Craig's own emailed code. Every tool runs as the signed-in user through the same `handle()`
 the `hey` Lambda runs, so there is one send path with two front doors — IAM for the CLI, OAuth
-for agents.
+for claude.ai. Craig, 2026-10-17: local sessions (Claude Code, Codex) keep using the `hey` CLI;
+the connector is not added to them.
 
 The tick also publishes its state there: at the end of every completed pass, after the usage
 sample and before `stampTick`, `publishStatus` sends the JSON `drovr status --json` prints
