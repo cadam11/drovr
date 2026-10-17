@@ -146,6 +146,8 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `hey-mcp/device.ts` | The user-code budget is a **global per-minute counter** bumped before the lookup, not a per-device try count: before the code resolves there is no device to count against. `increment` is DynamoDB `ADD`, atomic; the memory store mirrors it. |
 | `hey-mcp/tools.ts` | `to` on a tool is a **self-check**, never a recipient: it must equal the session's handle and every tool still addresses the session. It exists so a box with the wrong `HEY_TO` is told so instead of silently sending to whoever signed in. |
 | `nudge.ts` | `publishStatus` builds its default caller **inside** the try: `defaultCaller()` reads `~/.config/hey.json`, and a malformed file in a default-parameter position threw before the guard, out of the tick. |
+| `status-accounts.ts` | `src/status-accounts.ts` imports only `zod` and `teamclaude.ts`. It is the account shape the CLI's `hey status put` validates and builds; importing `state.ts` from it (where `accountsOf` used to live) would drag orca, exec and the whole supervisor into a command meant to run where none of them exist. `state.ts` imports *it*, never the reverse. |
+| `hey.ts` | `genericStatusShape` **strips** unknown keys on purpose — Hadrian pipes the one object it also writes to SSM, carrying `at`, `box` and `tickets` — and refuses a *known* key of the wrong shape with its path. Do not make it `.strict()` to "catch typos": the writer's extra fields are the contract, and a typo in a known field is already refused. |
 | `profile.ts` | A sender profile is **decoration**, so both ends read it leniently — `profileFromRepo` yields nothing for a repo shape it does not know and `ProfileIcon.parse` yields nil for an icon it cannot draw — while the Lambda validates it strictly on the way in. A strict reader here would fail an inbox load over a tile. The seed runs **after** `startCycleAgent`, never before: two orca calls and an invoke are bounded, but a late launch is the wrong price for an avatar. |
 | `tick.ts` | The phone's Away is applied with `applyAwayMode` to the `Control` every `decide({` caller builds and is **never written** to control.json: a pass that wrote it would make the toggle sticky after Craig turned it off. `off` is not overridden — it is a stop, not a ceiling. `state.ts` reads it in the probe half and caches it with the quota probe, or every `watch` frame would pay a 15 s-bounded hey call. |
 | `handler.ts` | A `prefs` row the Lambda cannot parse reads as the defaults with a log line and the send goes out **loud**; a newer app writing a key this Lambda does not know is exactly the case, and a failed send over a setting would be worse than a sound. The app's decoder is strict the other way for the same reason: a row it cannot write back whole is one it must not overwrite. |
@@ -329,8 +331,13 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **A status row the phone could not decode, in the wild.** `StatusRow.decode` names the missing
   field and the card shows it (`DrovrMissingCard`), proven against a renamed key in the suite; no
   real payload has yet broken the shape.
-- **Two hosts' cards.** One row per host is proven in `handler.spec.ts`; only the Mac publishes
-  today. The Hadrian box's `hey` is a sender of alerts, not yet of a status row.
+- **A generic status card from a live writer.** Plan 12 landed 2026-10-17: the Lambda keys rows by
+  program, `hey status put` validates and sends, the app decodes and draws. Task 10 of its plan is
+  the Hadrian box piping `teamclaude status --json | hey status put --program hadrian --teamclaude -`
+  and Craig's phone showing the card beside drovr's; until that ran, every generic path is proven
+  only against fixtures. (Task 10 rewrites this entry from what it saw.)
+- **Two hosts' drovr cards.** One row per host is proven in `handler.spec.ts`; only the Mac publishes
+  drovr's row today.
 - **The publish failing without failing the tick, live.** `publishStatus` returns a reason and
   `stampTick` runs regardless (Task 3's tests); no real invoke has failed since it landed.
 - **`away (phone)` on the card, from a tick that ran under it.** The mode line reads plan 5's
@@ -394,6 +401,16 @@ each tick. Same rules as every send — bounded by the call's 15 s, logged and s
 when `control.notifyTo` is null — and the same position as the usage sample, because it is a
 window onto the tick and must never be a gate in it. `hey status --json` reads it back; the Hey
 app draws its drovr card from it, stale after two tick intervals.
+
+The row is not drovr's alone since plan 12: any program signed in with `hey login` writes its own
+with `hey status put --program <name> -` (stdin JSON `{title, intervalSeconds?, accounts?, lines?,
+note?}`, unknown fields stripped) or `teamclaude status --json | hey status put --program <name>
+--teamclaude -`, and the app shows it as a card beside drovr's, keyed `program@host`. The account
+shape on the wire is one module, `src/status-accounts.ts`, shared by drovr's payload builder and the
+CLI; `headroom` is drovr's pool figure and is optional there. The Lambda keys the row
+`status#<program>@<host>` and defaults a missing `program` to `drovr`, so the tick's call never
+changed. The Go CLI (`cli/hey/status_put.go`) carries the same command, byte for byte against the
+Node one in 18 conformance rows. The Hadrian box is the first other writer (spec amendment "Plan 12").
 
 `hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
 The `hey` command on the Mac is `src/hey-cli.ts` (`package.json` `bin`; `src/hey.ts` the
