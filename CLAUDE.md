@@ -411,8 +411,10 @@ note?}`, unknown fields stripped) or `teamclaude status --json | hey status put 
 shape on the wire is one module, `src/status-accounts.ts`, shared by drovr's payload builder and the
 CLI; `headroom` is drovr's pool figure and is optional there. The Lambda keys the row
 `status#<program>@<host>` and defaults a missing `program` to `drovr`, so the tick's call never
-changed. The Go CLI (`cli/hey/status_put.go`) carries the same command, byte for byte against the
-Node one in 18 conformance rows. The Hadrian box is the first other writer (spec amendment "Plan 12").
+changed. The Go CLI (`cli/hey/status_put.go`) carries the same command: its pre-send behaviour (help,
+usage and shape errors, not signed in) byte for byte against the Node one in 18 conformance rows, the
+payload bytes in its unit tests against zod's output — no row yet compares a real ack. The Hadrian box
+is the first other writer (spec amendment "Plan 12").
 
 `hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
 The `hey` command on the Mac is `src/hey-cli.ts` (`package.json` `bin`; `src/hey.ts` the

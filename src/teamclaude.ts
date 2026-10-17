@@ -84,7 +84,7 @@ const routeShape = z.object({
   target: z.string().nullable().default(null),
 });
 
-const statusShape = z.object({
+export const statusShape = z.object({
   currentAccount: z.string().nullable(),
   accounts: z.array(accountShape),
   routes: z.array(routeShape).default([]),

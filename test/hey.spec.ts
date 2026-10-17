@@ -375,7 +375,11 @@ test('buildGenericPayload --teamclaude: a recorded teamclaude status becomes acc
     buckets: { session: { usedFraction: 0.4, resetsAt: '2026-08-24T18:30:00.000Z' }, general: { usedFraction: 0.5, resetsAt: '2026-08-26T21:00:00.000Z' }, fable: { usedFraction: 0.6, resetsAt: '2026-08-26T21:00:00.000Z' } },
     switchThresholds: { session: 0.95, general: 0.95, fable: 0.95 },
   });
-  assert.throws(() => buildGenericPayload({ program: 'hadrian', host: 'craig', stdin: '{"accounts": 1}', teamclaude: true }), /teamclaude status did not match/);
+  // One stderr line naming the path, like the plain branch and the Go port — never zod's multi-line issues dump (review 2026-10-17).
+  assert.throws(
+    () => buildGenericPayload({ program: 'hadrian', host: 'craig', stdin: '{"accounts": 1}', teamclaude: true }),
+    (error: unknown) => error instanceof Error && !(error instanceof UsageError) && error.message === 'teamclaude status did not match expected shape: currentAccount: Required',
+  );
 });
 
 test('Review Focus 2: parseStatusPutArgs needs --program and the trailing -, refuses drovr by name, defaults host and to', () => {

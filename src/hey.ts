@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { NOT_FOUND_PREFIX, prefsShape, PROGRAM_PATTERN, statusRowShape, type Prefs, type Profile, type StatusRow } from '../lambda/hey/handler.ts';
 import { credentialsPath, DEFAULT_ENDPOINT, toolCaller } from './hey-http.ts';
 import { accountsFromTeamclaude, statusAccountShape } from './status-accounts.ts';
-import { parseStatus } from './teamclaude.ts';
+import { statusShape as teamclaudeStatusShape } from './teamclaude.ts';
 
 export const POLL_MS = 5_000;
 /** Consecutive, not total: a flaky network that still answers is not a lost wait. */
@@ -283,16 +283,21 @@ const parseStdinObject = (stdin: string): Record<string, unknown> => {
 export const buildGenericPayload = (input: { program: string; host: string; stdin: string; teamclaude: boolean }): string => {
   const title = `${input.program}@${input.host}`;
   if (input.teamclaude) {
-    const accounts = accountsFromTeamclaude(parseStatus(parseStdinObject(input.stdin)));
-    return JSON.stringify(genericStatusShape.parse({ title, accounts }));
+    // Not parseStatus: its message is zod's whole issues array, and a box's log wants one line naming the path.
+    const status = teamclaudeStatusShape.safeParse(parseStdinObject(input.stdin));
+    if (!status.success) throw new Error(`teamclaude status did not match expected shape: ${firstIssue(status.error)}`);
+    return JSON.stringify(genericStatusShape.parse({ title, accounts: accountsFromTeamclaude(status.data) }));
   }
   const object = parseStdinObject(input.stdin);
   const parsed = genericStatusShape.safeParse({ title, ...object });
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    throw new UsageError(`payload ${issue?.path.join('.') || 'is invalid'}: ${issue?.message ?? 'invalid'}`);
-  }
+  if (!parsed.success) throw new UsageError(`payload ${firstIssue(parsed.error)}`);
   return JSON.stringify(parsed.data);
+};
+
+/** `<path>: <message>` for the first issue, in shape order — the one line a log wants. */
+const firstIssue = (error: z.ZodError): string => {
+  const issue = error.issues[0];
+  return `${issue?.path.join('.') || 'is invalid'}: ${issue?.message ?? 'invalid'}`;
 };
 
 export type StatusPutArgs = { to: string; program: string; host: string; teamclaude: boolean };
