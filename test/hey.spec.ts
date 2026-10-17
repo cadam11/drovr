@@ -318,3 +318,9 @@ test('whoami calls the tool and validates the three fields', async () => {
   assert.deepEqual(await whoami(async () => ({ email: 'owner@example.com', handle: 'craig', sub: 's' })), { email: 'owner@example.com', handle: 'craig', sub: 's' });
   await assert.rejects(() => whoami(async () => ({ email: 'x' })));
 });
+
+test('commandOf: login, logout and whoami are commands, not messages', () => {
+  assert.deepEqual(commandOf(['login']), { command: 'login', rest: [] });
+  assert.deepEqual(commandOf(['logout']), { command: 'logout', rest: [] });
+  assert.deepEqual(commandOf(['whoami', '--json']), { command: 'whoami', rest: ['--json'] });
+});

@@ -14,7 +14,7 @@ export class UsageError extends Error {}
 
 export const USAGE =
   'usage: hey [send] [--to <handle>] [--from <label>] [--host <host>] [--cwd <dir>] [--wait <dur>] [--choices a,b] [--json] <text>\n' +
-  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey status [--json]   |   hey help [command]\n' +
+  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey status [--json]   |   hey login | logout | whoami   |   hey help [command]\n' +
   '       --multi with --choices lets several answers be picked; the reply is them joined by ", "';
 
 export const parseDuration = (text: string): number => {
@@ -26,7 +26,7 @@ export const parseDuration = (text: string): number => {
   return seconds;
 };
 
-export const COMMAND_NAMES = ['send', 'profile', 'prefs', 'status', 'guide', 'help'] as const;
+export const COMMAND_NAMES = ['send', 'profile', 'prefs', 'status', 'login', 'logout', 'whoami', 'guide', 'help'] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
 /** The first word is a command only when it names one; everything else is the message it always was. */
