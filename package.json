@@ -13,7 +13,7 @@
   "scripts": {
     "test": "node --test test/*.spec.ts lambda/hey/*.spec.ts lambda/hey-mcp/*.spec.ts lambda/hey-mcp-edge/*.spec.ts",
     "check-types": "tsc --noEmit",
-    "build:lambda": "esbuild lambda/hey/index.ts --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=lambda/hey/dist/index.mjs && esbuild lambda/hey-mcp/index.ts --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=lambda/hey-mcp/dist/index.mjs && esbuild lambda/hey-mcp-edge/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=lambda/hey-mcp-edge/dist/index.js",
+    "build:lambda": "esbuild lambda/hey-mcp/index.ts --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=lambda/hey-mcp/dist/index.mjs && esbuild lambda/hey-mcp-edge/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=lambda/hey-mcp-edge/dist/index.js",
     "build:cli": "scripts/release-hey.sh",
     "test:cli": "cd cli/hey && test -z \"$(gofmt -l .)\" && go vet ./... && go test ./... && if command -v staticcheck >/dev/null; then staticcheck ./...; fi",
     "conform:cli": "scripts/conform-hey.sh"

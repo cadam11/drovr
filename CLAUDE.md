@@ -290,12 +290,11 @@ Written and type-checked, never seen to fire. Unproven, not done:
   are the first candidates. **The relliq dev box is dark since Task 11's apply (2026-10-17):** its
   `hey-relliq-devbox` key is destroyed, so anything there that sent through hey fails until someone
   runs `hey login` on it (`docs/hey-mcp.md`, "Install on a box").
-- **The hey Lambda's removal (plan 9, Task 12).** Gated on the Hadrian box signing in; it had not
-  been handed the CLI when plan 9 finished (2026-10-17), so `infra/senders.tf` keeps the Hadrian
-  permission and `infra/lambda.tf` the function. To finish: on the Hadrian box, install the command
-  and run `hey login` (`docs/hey-mcp.md`, "Install on a box"), then `hey --from "hey plan 9" --wait
-  2h --choices "yes,not yet" "plan 9: has the Hadrian box run hey login and sent once?"` → `yes` →
-  plan `2026-10-17-hey-device-login.md` Task 12 steps 2–5 (5 destroys, no Cognito change).
+- **The hey Lambda is gone (plan 9, Task 12, done 2026-10-17 inside plan 12).** The Hadrian box had
+  signed in and sent through `hey login`, so `infra/senders.tf`, `infra/lambda.tf` and
+  `lambda/hey/index.ts` were removed (5 destroys, no Cognito change); `lambda/hey/handler.ts` and
+  `aws.ts` stay as the library `hey-mcp` runs in-process. Nothing may invoke a Lambda named `hey`
+  again: every sender holds a session from `hey login`.
 - **A read mark written from a second phone.** Read marks are `read#<from>` rows on the server
   so two phones agree; one phone exists.
 - **drovr's admission under the phone's Away.** `applyAwayMode` is tested and `drovr status`
