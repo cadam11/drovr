@@ -1,7 +1,7 @@
 import type { Pool } from './capacity.ts';
-import type { CycleCost } from './ledger.ts';
+import { spentSince, type CycleCost, type CycleRecord } from './ledger.ts';
 import type { TeamclaudeStatus } from './teamclaude.ts';
-import { isUsable } from './capacity.ts';
+import { hoursToWeeklyReset, isUsable } from './capacity.ts';
 
 export type BucketName = 'fable' | 'general' | 'session';
 
@@ -68,4 +68,44 @@ export const allocationFor = (input: {
     programsAvailable: headroom - programsReserved,
     yoursReserved: Math.max(0, total - used - headroom),
   };
+};
+
+export const BUCKETS: BucketName[] = ['fable', 'general', 'session'];
+
+/** allocationFor's division/multiplication over quota fractions is the biggest source of float noise in a payload. */
+const roundAllocation = (allocation: Allocation): Allocation => ({
+  bucket: allocation.bucket,
+  total: Number(allocation.total.toFixed(4)),
+  yoursSpent: Number(allocation.yoursSpent.toFixed(4)),
+  programsSpent: Number(allocation.programsSpent.toFixed(4)),
+  programsReserved: Number(allocation.programsReserved.toFixed(4)),
+  programsAvailable: Number(allocation.programsAvailable.toFixed(4)),
+  yoursReserved: Number(allocation.yoursReserved.toFixed(4)),
+});
+
+/**
+ * The three stacked bars `drovr watch` draws, rounded, over the current weekly window.
+ * One function for every payload (state.ts, status-payload.ts) so a remote bar cannot
+ * disagree with the TUI's.
+ */
+export const allocationSegments = (input: {
+  status: TeamclaudeStatus;
+  pool: Pool;
+  cycles: CycleRecord[];
+  runningCycles: number;
+  cycleCost: CycleCost;
+  now: number;
+}): Record<BucketName, Allocation> => {
+  const hoursLeft = hoursToWeeklyReset(input.status, input.now);
+  const windowStart = hoursLeft === null ? input.now : input.now - (168 - hoursLeft) * 3_600_000;
+  const spent = spentSince(input.cycles, windowStart);
+  return Object.fromEntries(
+    BUCKETS.map((bucket) => [
+      bucket,
+      roundAllocation(allocationFor({
+        status: input.status, pool: input.pool, bucket,
+        spentByPrograms: spent[bucket], runningCycles: input.runningCycles, cycleCost: input.cycleCost, now: input.now,
+      })),
+    ]),
+  ) as Record<BucketName, Allocation>;
 };

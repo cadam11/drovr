@@ -1,10 +1,10 @@
-import { allocationFor, type Allocation, type BucketName } from './allocation.ts';
+import { allocationSegments, BUCKETS, type Allocation, type BucketName } from './allocation.ts';
 import { hoursToWeeklyReset, poolFrom } from './capacity.ts';
 import { applyAwayMode, byPriority, ceilingsFor, effectivePriority, readControl, type Control } from './control.ts';
 import { contributingAccounts, cyclesFundableFrom, decide, poolContext, type Verdict } from './decide.ts';
 import {
   chargeForRunning, estimateCycleCost, inFlight, lastDecisionAt, readTickStamp, readCycles,
-  snapshot, spentSince, type CycleRecord,
+  snapshot, type CycleRecord,
 } from './ledger.ts';
 import { aiceBaseUrl, readPreview, runnerIsPresent } from './orca.ts';
 import { phonePrefs, type PhonePrefs } from './nudge.ts';
@@ -14,22 +14,10 @@ import type { Preview } from './preview.ts';
 import { serviceState } from './service.ts';
 import { fableEligible, readStatus, type TeamclaudeStatus } from './teamclaude.ts';
 
-const BUCKETS: BucketName[] = ['fable', 'general', 'session'];
 const OVERDUE_INTERVALS = 3;
 
 /** Rounded at the edge so the JSON carries meanings, not float noise. */
 const r = (value: number, places = 4): number => Number(value.toFixed(places));
-
-/** allocationFor's division/multiplication over quota fractions is the biggest source of float noise in the payload. */
-const roundAllocation = (allocation: Allocation): Allocation => ({
-  bucket: allocation.bucket,
-  total: r(allocation.total),
-  yoursSpent: r(allocation.yoursSpent),
-  programsSpent: r(allocation.programsSpent),
-  programsReserved: r(allocation.programsReserved),
-  programsAvailable: r(allocation.programsAvailable),
-  yoursReserved: r(allocation.yoursReserved),
-});
 
 export type ProgramState = {
   name: string;
@@ -243,18 +231,7 @@ export const buildState = (input: StateInput): DrovrState => {
   // that reads as free capacity.
   const funding = cyclesFundableFrom(pool, cost, chargeForRunning(inFlightCycles, snapshot(pool), cost));
   const hoursLeft = hoursToWeeklyReset(status, now);
-  const windowStart = hoursLeft === null ? now : now - (168 - hoursLeft) * 3_600_000;
-  const spent = spentSince(cycles, windowStart);
-
-  const allocation = Object.fromEntries(
-    BUCKETS.map((bucket) => [bucket, roundAllocation(allocationFor({
-      status, pool, bucket,
-      spentByPrograms: spent[bucket],
-      runningCycles: running,
-      cycleCost: cost,
-      now,
-    }))]),
-  ) as Record<BucketName, Allocation>;
+  const allocation = allocationSegments({ status, pool, cycles, runningCycles: running, cycleCost: cost, now });
 
   return {
     schemaVersion: 1,

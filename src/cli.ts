@@ -41,6 +41,7 @@ import {
   serviceHealth,
   serviceState,
 } from './service.ts';
+import { buildStatusPayload } from './status-payload.ts';
 import { readStatus } from './teamclaude.ts';
 import { inFlightCycles, launchDetached, runProgramCycle, runTick } from './tick.ts';
 import { watch } from './watch.ts';
@@ -144,47 +145,6 @@ const evaluateAll = async (input: {
 /** Float noise (0.5700000000000001) is technically accurate and unreadable. */
 const round = (value: number): number => Math.round(value * 10_000) / 10_000;
 
-const iso = (at: number | null): string | null => (at === null ? null : new Date(at).toISOString());
-
-const roundCost = (cost: { fable: number; general: number; session: number }) => ({
-  fable: round(cost.fable),
-  general: round(cost.general),
-  session: round(cost.session),
-});
-
-/** Epoch millis are unreadable in a document someone has to interpret; timestamps go out as ISO. */
-const poolPayload = (pool: ReturnType<typeof poolFrom>) => ({
-  ...roundCost(pool),
-  usableAccounts: pool.usableAccounts,
-  resetAt: {
-    fable: iso(pool.resetAt.fable),
-    general: iso(pool.resetAt.general),
-    session: iso(pool.resetAt.session),
-  },
-  earliestRecoveryAt: iso(pool.earliestRecoveryAt),
-  units: 'account-fractions of headroom; one usable account contributes at most 1.0',
-});
-
-/**
- * The pool's per-bucket sums cannot be divided by cost to get this: an account is
- * spendable only where it has room in all three buckets at once, so capacity is summed
- * per account, each contributing only what its own tightest bucket allows.
- */
-const fundingPayload = (funding: Funding) => ({
-  cyclesFundable: roundFinite(funding.cycles),
-  bindingBucket: funding.binding,
-  fundingAccounts: contributingAccounts(funding),
-  perAccount: funding.accounts.map((account) => ({
-    name: account.name,
-    cyclesFundable: roundFinite(account.cycles),
-    bindingBucket: account.binding,
-    routableForFable: account.routable,
-  })),
-  units:
-    'whole delivery cycles, net of cycles already in flight; the total is the sum over ' +
-    'accounts of each account\u2019s own tightest bucket, never the min of the pool sums',
-});
-
 const statusPayload = async () => {
   const stored = readControl(p.control);
   const phone = await phonePrefs(stored);
@@ -193,71 +153,15 @@ const statusPayload = async () => {
   const status = await readStatus();
   const cycles = readCycles(p.cycles);
   const now = Date.now();
-  const ceilings = ceilingsFor(control);
-  const state = serviceState();
   // The heartbeat is the liveness signal; the decision log is the fallback for an
   // install that predates it, so an upgrade does not read as 'no tick has ever run'.
-  const lastTick = readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions);
-  // control.maxCycleHours, never inFlight's own 24h default: decide() and buildState both
-  // cut off there, and a 13h-old cycle with no end record would otherwise have this payload
-  // reserving a cycle the per-program verdicts printed from it do not.
-  const running = inFlight(cycles, now, control.maxCycleHours);
-  const pool = ceilings === null ? null : poolFrom(status, ceilings, now);
-  const cost = estimateCycleCost(cycles, control.seedCycleCost);
-
-  return {
-    service: {
-      health: serviceHealth(state, lastTick, now),
-      explanation: describeService(state, lastTick, now, tickLockHolder()),
-      lastTickAt: iso(lastTick),
-    },
-    mode: control.mode,
-    modeFromPhone: control.mode !== stored.mode,
-    modeMeaning:
-      control.mode === 'off'
-        ? 'no cycles will start'
-        : `programs may use up to ${round((control.ceilings[control.mode]?.weekly ?? 0) * 100)}% of each account's weekly quota; the rest stays available to Craig` +
-          (control.mode !== stored.mode ? `; away is the phone's toggle for this pass, the stored mode is ${stored.mode}` : ''),
-    pausedUntil: control.pauseUntil,
-    // isPaused, not a bare presence check on pausedUntil: a lapsed timestamp is not a
-    // pause, and --json has no renderer downstream to apply that guard itself.
-    paused: isPaused(control, now),
-    pool: pool === null ? null : poolPayload(pool),
-    capacity: pool === null ? null : fundingPayload(cyclesFundableFrom(pool, cost, running.length)),
-    estimatedCycleCost: {
-      ...roundCost(cost),
-      units: 'account-fractions consumed by one typical delivery cycle',
-    },
-    inFlight: running.map((cycle) => ({
-      program: cycle.program,
-      startedAt: cycle.startedAt,
-      kind: cycle.kind,
-    })),
-    concurrencyCap: control.maxConcurrentCycles,
-    programs: (await evaluateAll({ control, status, cycles, now })).map(({ program, decision, pid }) => ({
-      name: program.name,
-      cwd: program.cwd,
-      host: program.host,
-      enabled: program.enabled,
-      priority: program.priority,
-      effectivePriority: effectivePriority(program, now, control.deadlineHorizonDays),
-      deadline: program.deadline,
-      verdict: decision.verdict,
-      verdictMeaning: VERDICT_MEANING[decision.verdict],
-      reason: decision.reason,
-      // Pool-level context, identical across programs in this array — kept separate so a
-      // consumer showing several programs is not handed the same sentence N times.
-      poolNote: decision.note,
-      bindingBucket: decision.binding,
-      cyclesFundable: decision.cyclesFundable === null ? null : round(decision.cyclesFundable),
-      recoversAt: iso(decision.earliestRecoveryAt),
-      runningPid: pid,
-    })),
-  };
+  const lastTickAt = readTickStamp(p.lastTick) ?? lastDecisionAt(p.decisions);
+  return buildStatusPayload({
+    control, storedMode: stored.mode, status, cycles, now,
+    evaluations: await evaluateAll({ control, status, cycles, now }),
+    service: { state: serviceState(), lastTickAt, lockHolder: tickLockHolder() },
+  });
 };
-
-/** Non-finite only when every bucket's estimated cost is zero, which JSON cannot carry. */
-const roundFinite = (value: number): number | null => (Number.isFinite(value) ? round(value) : null);
 
 const describeFunding = (funding: Funding): string => {
   const perAccount = funding.accounts
@@ -273,12 +177,6 @@ const describeFunding = (funding: Funding): string => {
     ? ''
     : ` from ${carrying} of ${funding.accounts.length} accounts`;
   return `${funding.cycles.toFixed(2)} cycles fundable${spread}, ${funding.binding} binding — ${perAccount}`;
-};
-
-const VERDICT_MEANING: Record<string, string> = {
-  GO: 'a cycle would launch on the next tick',
-  WAIT: 'transient — a later tick will retry, no action needed',
-  STOP: 'needs a human: mode is off, or this program produced no yield for several cycles',
 };
 
 const showStatus = async (): Promise<void> => {
