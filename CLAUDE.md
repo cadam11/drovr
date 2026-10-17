@@ -144,6 +144,14 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `handler.ts` | A `prefs` row the Lambda cannot parse reads as the defaults with a log line and the send goes out **loud**; a newer app writing a key this Lambda does not know is exactly the case, and a failed send over a setting would be worse than a sound. The app's decoder is strict the other way for the same reason: a row it cannot write back whole is one it must not overwrite. |
 | `ConversationsView.swift` | A swipe button with `role: .destructive` makes SwiftUI's `List` animate the row away **before the action runs**. Put a confirmation between the swipe and the delete and the row stays while the List already counted it gone; when the real removal lands, the collection view asserts "Invalid Number Of Items In Section" and the app dies — measured 2026-10-16, three runs. Deferred destructive actions are red by `.tint(.red)` and no role. |
 | `AppModel.swift` | Optimistic removal's rollback is a **reload**, not a saved copy: a thread delete that fails halfway has already removed some rows from the table, so restoring the old array would show rows the table no longer holds. `deleteThread` reloads on failure and the list is whatever the table says; the error rides the load banner. |
+| `hey-mcp/session.ts` | A refresh token presented twice inside 60 s must get the **same** successor pair. claude.ai double-submits refreshes at the hour boundary; strict revoke-on-replay logged users out every hour in aice. Only a replay after the window is theft. |
+| `hey-mcp/oauth.ts` | Trust a redirect URI **parsed**, never by string prefix: `https://claude.ai.evil.example/…` and `https://claude.ai@evil.example/…` both start with the trusted string. Registration is open by construction (that is what DCR is); `isTrustedRedirectUri` at `/authorize` is the whole gate, and an untrusted URI gets an HTML 400, never a redirect. |
+| `hey-mcp/router.ts` | The SDK's streamable transport 406s a POST whose `Accept` lacks `text/event-stream`, even in JSON-response mode where no stream is ever opened. Widen the header before `handleRequest`, or a strict client never sees a tools list. |
+| `hey-mcp/tools.ts` | `wait` is bounded three ways — the poll count, `MAX_WAIT_SECONDS = 50`, and the message's own `waitUntil` — because the Lambda has 55 s and CloudFront's origin read timeout is 60 s, its ceiling without a quota ticket. A `wait` that outlives either is a 504 the agent reads as a lost message. |
+| `hey-mcp/http.ts` | No `form-action` in the login page's CSP. Chrome and Safari apply it to the **redirect that answers a form POST**, and the code form's answer is a 302 to the client's own callback (`http://127.0.0.1:<port>/…` or claude.ai), which `'self'` blocks: the Lambda minted the code and the session, the browser never followed, and back/reload showed "expired or already used". Measured 2026-10-17, twice, before the cause was found. |
+| `infra/mcp.tf` | A NONE-auth Function URL needs **two** statements since October 2025: the `lambda:InvokeFunctionUrl` one the provider adds **and** `lambda:InvokeFunction` conditioned on `lambda:InvokedViaFunctionUrl`, or every request is a 403 `AccessDeniedException` with the policy visibly present (measured 2026-10-17; aice's aice-ops hit the same 403 and gave up on NONE). Provider 5.100 cannot express that condition (`invoked_via_function_url` is 6.x), so `terraform_data.hey_mcp_invoke_via_url` writes it through the CLI. |
+| `infra/mcp.tf` | The Function URL **remaps** `WWW-Authenticate` to `x-amzn-remapped-www-authenticate` on the way out, and a CloudFront Function cannot put it back: "CloudFront doesn't invoke edge functions for viewer response events when the origin returns HTTP status code 400 or higher", and the header rides on a 401. `lambda/hey-mcp-edge/` is a Lambda@Edge **origin-response** (run for every status) that copies it back; without it clients only find the metadata through the well-known fallback. |
+| `infra/mcp.tf` | Dropping an edge function's association and deleting the function in one apply fails `FunctionInUse`: Tofu orders the delete before the distribution update. Two commits (association first), or `-target` the distribution first — measured 2026-10-17 removing the CloudFront Function above. |
 
 ## The CLI is read by agents
 
@@ -285,6 +293,19 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **`away (phone)` on the card, from a tick that ran under it.** The mode line reads plan 5's
   `AppModel.prefs.away` the moment the toggle flips; the published row saying `mode: "away"` on
   the next tick (plan 5's `applyAwayMode`) has not yet been seen to follow it on the phone.
+- **A hey-mcp session refreshing its Cognito token.** The `REFRESH_TOKEN_AUTH` call fires only
+  once a session is an hour old; proven in the suite against a canned Cognito, not yet seen live.
+- **A Cognito refusal revoking a hey-mcp session.** Disabling the Cognito user should 401 every
+  connector within the hour; nobody has disabled it. The throttle-is-a-502 branch beside it is
+  equally unseen live.
+- **A wrong email code re-offering the form, live.** Cognito's acceptance of a second
+  `EMAIL_OTP` answer on the same session after `CodeMismatchException` is what the page assumes;
+  only the right-code path has run against the real pool.
+- **A `wait` spanning two tool calls.** `listening: true` followed by a second `wait` that
+  returns the reply has run only in the suite; the live `wait` lapsed unanswered.
+- **The losing side of a refresh race.** Two concurrent live refreshes returned one pair, but
+  which request lost — and that it deleted its unreturned pair — is proven only by reasoning,
+  not by a test or a log line.
 
 ## Notifications
 
@@ -312,6 +333,13 @@ null disables alerts and leaves the log line. The `from` label is the program fo
 and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
 Slack app and no SMS any more: a failed send is a `console.error` line and an exit code, never a
 text. A send is never retried — a retried send is a duplicate message.
+
+hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
+`docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
+in with Craig's own emailed code. Every tool runs as the signed-in user through the same `handle()`
+the `hey` Lambda runs, so there is one send path with two front doors — IAM for the CLI, OAuth
+for claude.ai. Craig, 2026-10-17: local sessions (Claude Code, Codex) keep using the `hey` CLI;
+the connector is not added to them.
 
 The tick also publishes its state there: at the end of every completed pass, after the usage
 sample and before `stampTick`, `publishStatus` sends the JSON `drovr status --json` prints
@@ -405,6 +433,10 @@ anywhere; do not create one unprompted, but say so if the subject arises.
   AWS call drovr makes, for alerts (`send`) and the once-a-tick status row (`status`). Sign-in is Cognito pool "hey" (passkey, email code), custom domain
   auth.drovr.app; devices get credentials from identity pool "hey" under role hey-device, confined
   to their own partition by dynamodb:LeadingKeys.
+  The MCP front door is Lambda `hey-mcp` behind CloudFront `hey.drovr.app` (its own distribution;
+  nothing cached, nothing invalidated), its own OAuth 2.1 shim ported from aice, sessions under
+  `pk = mcp` in the same table, and Cognito's `USER_AUTH`/`EMAIL_OTP` on the `hey-ios` client over
+  the public `cognito-idp` endpoint — the only Cognito API drovr's code calls.
   APNs goes through SNS platform applications `APNS/hey` and `APNS_SANDBOX/hey` (token key from
   the Apple developer portal, reaching Tofu as `TF_VAR_apns_key_id` and `TF_VAR_apns_p8` from the
   dotenvx-encrypted, committed `infra/.env` — every plan and apply is
