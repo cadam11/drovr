@@ -14,7 +14,7 @@ export class UsageError extends Error {}
 
 export const USAGE =
   'usage: hey [send] [--to <handle>] [--from <label>] [--host <host>] [--cwd <dir>] [--wait <dur>] [--choices a,b] [--json] <text>\n' +
-  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey help [command]\n' +
+  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey status [--json]   |   hey help [command]\n' +
   '       --multi with --choices lets several answers be picked; the reply is them joined by ", "';
 
 export const parseDuration = (text: string): number => {
@@ -26,7 +26,7 @@ export const parseDuration = (text: string): number => {
   return seconds;
 };
 
-export const COMMAND_NAMES = ['send', 'profile', 'prefs', 'guide', 'help'] as const;
+export const COMMAND_NAMES = ['send', 'profile', 'prefs', 'status', 'guide', 'help'] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
 /** The first word is a command only when it names one; everything else is the message it always was. */
@@ -210,6 +210,48 @@ export const putStatus = async (invoke: Invoke, input: StatusInput): Promise<Sta
 
 export const readStatuses = async (invoke: Invoke, to: string): Promise<StatusRow[]> =>
   z.array(statusRowShape).parse(await invoke({ action: 'readStatus', to }));
+
+/** `hey status` takes no text and no wait; anything but --to and --json is a usage error. */
+export const parseStatusArgs = (argv: string[], defaults: { to: string | null }): { to: string; json: boolean } => {
+  let to = defaults.to;
+  let json = false;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
+    if (arg === '--to') {
+      const value = argv[i + 1];
+      if (value === undefined) throw new UsageError('--to needs a value');
+      to = value;
+      i += 1;
+      continue;
+    }
+    throw new UsageError(`hey status takes --to and --json only, not "${arg}"`);
+  }
+  if (to === null) throw noRecipient();
+  return { to, json };
+};
+
+/** Read leniently: this is a summary line over a payload drovr owns, and a missing field costs a word, not the line. */
+const statusSummaryShape = z.object({
+  mode: z.string().optional(),
+  capacity: z.object({ cyclesFundable: z.number().nullable(), bindingBucket: z.string() }).nullable().optional(),
+  programs: z.array(z.unknown()).optional(),
+});
+
+export const describeStatusRow = (row: StatusRow, nowMs: number): string => {
+  const parsed = statusSummaryShape.safeParse(JSON.parse(row.payload));
+  const summary = parsed.success ? parsed.data : {};
+  const ageMinutes = Math.max(0, Math.floor((nowMs - Date.parse(row.at)) / 60_000));
+  const capacity = summary.capacity ?? null;
+  const funding =
+    capacity === null || capacity.cyclesFundable === null
+      ? 'no capacity figure'
+      : `${capacity.cyclesFundable.toFixed(2)} cycles fundable · ${capacity.bindingBucket} binding`;
+  return `drovr@${row.host}  ${row.at} (${ageMinutes}m ago)  ${summary.mode ?? '?'} · ${funding} · ${summary.programs?.length ?? 0} programs`;
+};
 
 const profileShape = z.object({
   from: z.string(),

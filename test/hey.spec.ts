@@ -13,6 +13,8 @@ import {
   parseDuration,
   parsePrefsArgs,
   parseProfileArgs,
+  parseStatusArgs,
+  describeStatusRow,
   putStatus,
   readStatuses,
   readConfig,
@@ -306,4 +308,25 @@ test('putStatus sends the status action and validates the ack; readStatuses vali
   assert.deepEqual(sent[1], { action: 'readStatus', to: 'craig' });
   await assert.rejects(() => putStatus(async () => ({ ok: true }), input));
   await assert.rejects(() => readStatuses(async () => [{ sk: 'msg#x' }], 'craig'));
+});
+
+test('hey status: --to and --json, the HEY_TO default, and no stray words', () => {
+  assert.deepEqual(parseStatusArgs(['--to', 'craig', '--json'], { to: null }), { to: 'craig', json: true });
+  assert.deepEqual(parseStatusArgs([], { to: 'craig' }), { to: 'craig', json: false });
+  assert.throws(() => parseStatusArgs([], { to: null }), UsageError);
+  assert.throws(() => parseStatusArgs(['extra'], { to: 'craig' }), UsageError);
+  assert.throws(() => parseStatusArgs(['--wait', '1m'], { to: 'craig' }), UsageError);
+});
+
+test('describeStatusRow is one line: host, age, mode, fundable, binding, program count', () => {
+  const payload = JSON.stringify({
+    mode: 'normal',
+    capacity: { cyclesFundable: 1.3456, bindingBucket: 'session' },
+    programs: [{ name: 'a' }, { name: 'b' }, { name: 'c' }],
+  });
+  const row = { pk: 'sub', sk: 'status#drovr@mac', host: 'mac', at: '2026-10-16T18:40:00.000Z', payload, expiresAt: 1 };
+  const line = describeStatusRow(row, Date.parse('2026-10-16T18:43:30.000Z'));
+  assert.equal(line, 'drovr@mac  2026-10-16T18:40:00.000Z (3m ago)  normal · 1.35 cycles fundable · session binding · 3 programs');
+  const off = { ...row, payload: JSON.stringify({ mode: 'off', capacity: null, programs: [] }) };
+  assert.equal(describeStatusRow(off, Date.parse('2026-10-16T18:40:10.000Z')), 'drovr@mac  2026-10-16T18:40:00.000Z (0m ago)  off · no capacity figure · 0 programs');
 });

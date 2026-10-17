@@ -3,18 +3,22 @@ import { existsSync, openSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appendRecord, inFlight, lastCycleReported, latestEnds, readCycles, snapshot, stampTick, type CycleRecord } from './ledger.ts';
+import {
+  appendRecord, inFlight, lastCycleReported, latestEnds, readCycles, readTickStamp, snapshot, stampTick, type CycleRecord,
+} from './ledger.ts';
 import { decide, fullReason, type Decision } from './decide.ts';
 import { isOnboarding, readReport, reportSource, resumeCycle, runCycle, type CycleReport } from './cycle.ts';
 import { PaneBusy, releaseLeftover, runnerIsPresent } from './orca.ts';
 import { readAsks } from './asks.ts';
-import { alertFrom, nudgeIfNeglected, phonePrefs, textCraig } from './nudge.ts';
+import { alertFrom, nudgeIfNeglected, phonePrefs, publishStatus, textCraig } from './nudge.ts';
 import { unansweredAsks } from './ledger.ts';
 
 import { poolFrom } from './capacity.ts';
 import { applyAwayMode, byPriority, ceilingsFor, readControl, type Control, type Program } from './control.ts';
 import { acquire, heldBy, holder, release } from './lock.ts';
 import { ensureDirs, paths } from './paths.ts';
+import { serviceState } from './service.ts';
+import { buildStatusPayload, type Evaluation } from './status-payload.ts';
 import { readStatus, type TeamclaudeStatus } from './teamclaude.ts';
 import { appendSample, sampleUsage } from './usage.ts';
 import { closingMessage } from './transcript.ts';
@@ -367,6 +371,27 @@ export const runTick = async (): Promise<void> => {
   }
 };
 
+/**
+ * The payload lists every configured program in priority order. The pass only evaluates
+ * enabled ones; a disabled program's verdict is still worth publishing (STOP, "disabled")
+ * and decide() answers it without I/O — its runner is left unknown, as state.ts does.
+ */
+const everyEvaluation = (input: {
+  control: Control;
+  status: TeamclaudeStatus;
+  cycles: CycleRecord[];
+  now: number;
+  evaluated: Map<string, Evaluation>;
+}): Evaluation[] =>
+  byPriority(input.control.programs, input.now, input.control.deadlineHorizonDays).map(
+    (program) =>
+      input.evaluated.get(program.name) ?? {
+        program,
+        decision: decide({ status: input.status, control: input.control, cycles: input.cycles, program: program.name, now: input.now }),
+        pid: holder(paths().programLock(program.name)),
+      },
+  );
+
 export const tick = async (): Promise<void> => {
   const p = paths();
   ensureDirs();
@@ -422,6 +447,7 @@ export const tick = async (): Promise<void> => {
     // cap and capacity reservations would not apply until the next tick, and every
     // program would be admitted at once.
     const launched: CycleRecord[] = [];
+    const evaluated = new Map<string, Evaluation>();
 
     for (const program of byPriority(control.programs, now, control.deadlineHorizonDays).filter(
       (entry) => entry.enabled,
@@ -462,6 +488,7 @@ export const tick = async (): Promise<void> => {
         ...(runnerPresent === undefined ? {} : { runnerPresent }),
       });
       logDecision(program.name, decision, now);
+      evaluated.set(program.name, { program, decision, pid: holder(p.programLock(program.name)) });
       console.log(`${program.name}: ${decision.verdict} — ${fullReason(decision)}`);
 
       if (decision.verdict !== 'GO' || decision.pool === null) continue;
@@ -493,6 +520,27 @@ export const tick = async (): Promise<void> => {
       appendSample(p.usage, sampleUsage(status, now));
     } catch (error) {
       console.error(`usage sample not recorded: ${explain(error)}. Admission is unaffected.`);
+    }
+
+    // The same JSON `drovr status --json` prints, as one row on hey for the phone's drovr card.
+    // Same rules as the usage sample: last in the pass, after admission, bounded by the
+    // invoke's 15s, logged and swallowed — the card is a window onto the tick, never a gate
+    // in it. The cycles include this pass's launches, so a just-admitted program is in flight.
+    // publishStatus never throws; the try is for buildStatusPayload and serviceState().
+    try {
+      const cycles = [...readCycles(p.cycles), ...launched];
+      const payload = buildStatusPayload({
+        control, storedMode: stored.mode, status, cycles, now: Date.now(),
+        evaluations: everyEvaluation({ control, status, cycles, now, evaluated }),
+        // lockHolder null: this process holds the tick lock, and "a tick is evaluating" is
+        // true of every publish, so it would carry no information.
+        service: { state: serviceState(), lastTickAt: readTickStamp(p.lastTick), lockHolder: null },
+      });
+      const text = JSON.stringify(payload);
+      const published = await publishStatus(control, { host: hostname(), at: payload.generatedAt, payload: text });
+      if (published.sent) console.log(`status published to hey (${text.length} bytes)`);
+    } catch (error) {
+      console.error(`status not published: ${explain(error)}. Admission is unaffected.`);
     }
 
     // A completed pass, whether or not any program was enabled to decide about. Clearing

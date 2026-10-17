@@ -61,6 +61,8 @@ export const AGENT_NOTES = {
     'run-cycle blocks for hours. Use tick, which detaches, or read cycles.jsonl to follow progress.',
     'control.json can change under you between ticks — the TUI and the CLI both write it. ' +
       'Re-read it rather than caching a copy.',
+    'drovr status --json is also what the tick publishes to hey each pass: read it there with ' +
+      '`hey status --json` when you are not on the Mac. It is a window onto the tick, never a gate.',
   ],
 };
 
@@ -81,6 +83,9 @@ export const COMMANDS: Command[] = [
       'all three buckets on whichever account served the request, so an account is spendable only',
       'where it has room in all three at once: capacity is the sum over accounts of each',
       'account\u2019s own tightest bucket, and can be zero while every pool figure looks healthy.',
+      'The same JSON is published to hey at the end of every completed tick, as the row the Hey app',
+      'draws its drovr card from; `hey status --json` reads it back. control.notifyTo null turns that',
+      'off together with every alert.',
     ],
     flags: [
       {
