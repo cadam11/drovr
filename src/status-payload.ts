@@ -4,8 +4,8 @@ import { ceilingsFor, effectivePriority, isPaused, type Control, type Program } 
 import { contributingAccounts, cyclesFundableFrom, poolContext, type Decision, type Funding } from './decide.ts';
 import { chargeForRunning, estimateCycleCost, inFlight, snapshot, type CycleRecord } from './ledger.ts';
 import { describeService, serviceHealth, type ServiceState } from './service.ts';
-import { accountsOf } from './state.ts';
-import { switchThresholds, type TeamclaudeStatus } from './teamclaude.ts';
+import { accountsFromTeamclaude, type StatusAccount } from './status-accounts.ts';
+import type { TeamclaudeStatus } from './teamclaude.ts';
 
 /** One program's verdict as its caller computed it, with its lock holder. No I/O happens here. */
 export type Evaluation = { program: Program; decision: Decision; pid: number | null };
@@ -82,20 +82,14 @@ const fundingPayload = (funding: Funding) => ({
 });
 
 /**
- * The ACCOUNTS block of `drovr watch`, per account, with the headroom the pool was built from.
- * Headroom is null for an account the pool left out (disabled, throttled, or mode off): null
- * reads as "not in the pool", where 0 would read as spent.
+ * The shared account lines plus the headroom the pool was built from. Headroom is null for an
+ * account the pool left out (disabled, throttled, or mode off): null reads as "not in the
+ * pool", where 0 would read as spent, and absent would read as "this writer has no pool".
  */
-const accountsPayload = (status: TeamclaudeStatus, pool: ReturnType<typeof poolFrom> | null) =>
-  accountsOf(status).map((entry) => {
+const accountsPayload = (status: TeamclaudeStatus, pool: ReturnType<typeof poolFrom> | null): StatusAccount[] =>
+  accountsFromTeamclaude(status).map((entry) => {
     const headroom = pool?.perAccount.find((a) => a.name === entry.name) ?? null;
-    const account = status.accounts.find((a) => a.name === entry.name);
-    return {
-      ...entry,
-      headroom: headroom === null ? null : roundCost(headroom),
-      // The tick on each bar: where rotation stops routing here. Absent from an older teamclaude.
-      switchThresholds: account === undefined ? null : switchThresholds(status, account),
-    };
+    return { ...entry, headroom: headroom === null ? null : roundCost(headroom) };
   });
 
 /** The five stacked segments `drovr watch` draws, so a remote bar cannot disagree with the TUI's. */
