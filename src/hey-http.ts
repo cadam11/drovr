@@ -156,3 +156,93 @@ export const toolCaller =
     if (second.ok) return second.value;
     throw new SignInExpired('the refreshed token was refused');
   };
+
+// ─── Device login (RFC 8628, the client side) ─────────────────────────────────
+
+export const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+/** Caps the server's expires_in so the loop is bounded even against a server that claims a code lives for days. */
+export const MAX_DEVICE_LIFETIME_SEC = 30 * 60;
+export const SLOW_DOWN_STEP_MS = 5_000;
+export const MAX_POLL_INTERVAL_MS = 60_000;
+
+const deviceShape = z.object({
+  device_code: z.string().min(1),
+  user_code: z.string().min(1),
+  verification_uri: z.string().url(),
+  verification_uri_complete: z.string().url(),
+  expires_in: z.number().int().positive(),
+  interval: z.number().int().positive().default(5),
+});
+export type DeviceAuthorization = z.infer<typeof deviceShape>;
+
+export const startDeviceLogin = async (http: Http, issuer: string): Promise<DeviceAuthorization> => {
+  const res = await http(`${issuer}/mcp/device_authorization`, {
+    method: 'POST',
+    headers: FORM,
+    body: new URLSearchParams({ client_id: DEVICE_CLIENT_ID }).toString(),
+    signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+  });
+  const { text, body } = await readJson(res, 'device authorization');
+  if (!res.ok) throw new Error(`device authorization at ${issuer} answered ${res.status}: ${text.slice(0, 200)}`);
+  const parsed = deviceShape.safeParse(body);
+  if (!parsed.success) throw new Error(`device authorization answer is missing ${parsed.error.issues[0]?.path.join('.') ?? 'a field'}`);
+  return parsed.data;
+};
+
+export type DevicePoll = { outcome: 'signed-in'; credentials: Credentials } | { outcome: 'denied' } | { outcome: 'expired' };
+type PollAnswer = { kind: 'tokens'; credentials: Credentials } | { kind: 'pending' } | { kind: 'slow_down' } | { kind: 'denied' } | { kind: 'expired' };
+
+const pollOnce = async (http: Http, issuer: string, deviceCode: string, nowMs: () => number): Promise<PollAnswer> => {
+  const res = await http(`${issuer}/mcp/token`, {
+    method: 'POST',
+    headers: FORM,
+    body: new URLSearchParams({ grant_type: DEVICE_GRANT, device_code: deviceCode, client_id: DEVICE_CLIENT_ID }).toString(),
+    signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+  });
+  const { text, body } = await readJson(res, 'device token poll');
+  if (res.ok) {
+    const tokens = tokenResponseShape.parse(body);
+    return { kind: 'tokens', credentials: { access: tokens.access_token, refresh: tokens.refresh_token, expiresAt: new Date(nowMs() + tokens.expires_in * 1000).toISOString(), issuer } };
+  }
+  const refusal = oauthErrorShape.safeParse(body);
+  if (!refusal.success) throw new Error(`device token poll answered ${res.status}: ${text.slice(0, 200)}`);
+  const code = refusal.data.error;
+  if (code === 'authorization_pending') return { kind: 'pending' };
+  if (code === 'slow_down') return { kind: 'slow_down' };
+  if (code === 'access_denied') return { kind: 'denied' };
+  if (code === 'expired_token') return { kind: 'expired' };
+  throw new Error(`device token poll refused: ${code} ${refusal.data.error_description ?? ''}`.trim());
+};
+
+/**
+ * Bounded three ways: the deadline (expires_in, clamped), a poll count sized for the smallest
+ * interval, and the 60 s cap on how far slow_down can stretch the interval. Sleeps before every
+ * poll, as RFC 8628 §3.5 says, so the first poll is never inside the server's interval.
+ */
+export const pollDeviceLogin = async (opts: { http: Http; issuer: string; device: DeviceAuthorization; sleep: (ms: number) => Promise<void>; nowMs: () => number }): Promise<DevicePoll> => {
+  const lifetimeMs = Math.min(opts.device.expires_in, MAX_DEVICE_LIFETIME_SEC) * 1000;
+  const deadline = opts.nowMs() + lifetimeMs;
+  let intervalMs = opts.device.interval * 1000;
+  const maxPolls = Math.ceil(lifetimeMs / intervalMs) + 1;
+  for (let poll = 0; poll < maxPolls; poll += 1) {
+    if (opts.nowMs() + intervalMs > deadline) return { outcome: 'expired' };
+    await opts.sleep(intervalMs);
+    const answer = await pollOnce(opts.http, opts.issuer, opts.device.device_code, opts.nowMs);
+    if (answer.kind === 'tokens') return { outcome: 'signed-in', credentials: answer.credentials };
+    if (answer.kind === 'denied') return { outcome: 'denied' };
+    if (answer.kind === 'expired') return { outcome: 'expired' };
+    if (answer.kind === 'slow_down') intervalMs = Math.min(intervalMs + SLOW_DOWN_STEP_MS, MAX_POLL_INTERVAL_MS);
+  }
+  return { outcome: 'expired' };
+};
+
+/** RFC 7009 with the refresh token: the shim revokes the whole session for either token (plan 7). */
+export const revokeCredentials = async (http: Http, creds: Credentials): Promise<void> => {
+  const res = await http(`${creds.issuer}/mcp/revoke`, {
+    method: 'POST',
+    headers: FORM,
+    body: new URLSearchParams({ token: creds.refresh }).toString(),
+    signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`revoke at ${creds.issuer} answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+};

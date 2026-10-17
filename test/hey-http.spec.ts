@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   CALL_TIMEOUT_MS, callToolOnce, credentialsPath, deleteCredentials, issuerOf, NotSignedIn, readCredentials, refreshCredentials,
-  SignInExpired, toolCaller, writeCredentials, type Credentials, type Http,
+  MAX_DEVICE_LIFETIME_SEC, pollDeviceLogin, revokeCredentials, SignInExpired, startDeviceLogin, toolCaller, writeCredentials, type Credentials, type DeviceAuthorization, type Http,
 } from '../src/hey-http.ts';
 
 const T0 = Date.parse('2026-10-17T12:00:00.000Z');
@@ -149,4 +149,80 @@ test('every request carries a timeout signal of CALL_TIMEOUT_MS', async () => {
   await callToolOnce(http, ENDPOINT, 'a', 'prefs', {});
   assert.ok(signal instanceof AbortSignal);
   assert.equal(CALL_TIMEOUT_MS, 15_000);
+});
+
+const device = (over: Partial<DeviceAuthorization> = {}): DeviceAuthorization => ({
+  device_code: 'dc1', user_code: 'BCDF-GHJK', verification_uri: 'https://hey.drovr.app/mcp/device',
+  verification_uri_complete: 'https://hey.drovr.app/mcp/device?user_code=BCDF-GHJK', expires_in: 900, interval: 5, ...over,
+});
+const pending = { status: 400, body: { error: 'authorization_pending', error_description: 'the code has not been approved yet' } };
+const slowDown = { status: 400, body: { error: 'slow_down', error_description: 'poll at most every 10 seconds' } };
+/** A clock the fake sleep advances; every sleep is recorded so the pacing can be asserted. */
+const clock = () => {
+  let now = T0;
+  const sleeps: number[] = [];
+  return { nowMs: () => now, sleeps, sleep: async (ms: number) => { sleeps.push(ms); now += ms; } };
+};
+
+test('startDeviceLogin posts client_id=hey-cli to the issuer and validates the answer; a missing field is an error naming it', async () => {
+  const http = fakeHttp([{ status: 200, body: device() }]);
+  assert.deepEqual(await startDeviceLogin(http, 'https://hey.drovr.app'), device());
+  assert.equal(http.seen[0]!.url, 'https://hey.drovr.app/mcp/device_authorization');
+  assert.equal(new URLSearchParams(http.seen[0]!.body).get('client_id'), 'hey-cli');
+  const { interval: _dropped, ...noInterval } = device();
+  assert.equal((await startDeviceLogin(fakeHttp([{ status: 200, body: noInterval }]), 'https://hey.drovr.app')).interval, 5, 'RFC 8628 default');
+  await assert.rejects(() => startDeviceLogin(fakeHttp([{ status: 200, body: { device_code: 'x' } }]), 'https://hey.drovr.app'), /user_code/);
+  await assert.rejects(() => startDeviceLogin(fakeHttp([{ status: 401, body: { error: 'invalid_client' } }]), 'https://hey.drovr.app'), /invalid_client/);
+});
+
+test('pollDeviceLogin: pending, pending, tokens — sleeps the interval before each poll and returns credentials for the issuer', async () => {
+  const c = clock();
+  const http = fakeHttp([pending, pending, tokens(1)]);
+  const out = await pollDeviceLogin({ http, issuer: 'https://hey.drovr.app', device: device(), sleep: c.sleep, nowMs: c.nowMs });
+  assert.equal(out.outcome, 'signed-in');
+  if (out.outcome !== 'signed-in') return;
+  assert.equal(out.credentials.access, 'acc1');
+  assert.equal(out.credentials.issuer, 'https://hey.drovr.app');
+  assert.equal(out.credentials.expiresAt, new Date(T0 + 15_000 + 3_600_000).toISOString());
+  assert.deepEqual(c.sleeps, [5_000, 5_000, 5_000]);
+  assert.equal(new URLSearchParams(http.seen[0]!.body).get('grant_type'), 'urn:ietf:params:oauth:grant-type:device_code');
+  assert.equal(new URLSearchParams(http.seen[0]!.body).get('device_code'), 'dc1');
+});
+
+test('Review Focus 4: pollDeviceLogin: pending forever ends as expired at the deadline, bounded by the poll count', async () => {
+  const c = clock();
+  const forever = (async () => new Response(JSON.stringify(pending.body), { status: 400 })) as Http;
+  const out = await pollDeviceLogin({ http: forever, issuer: 'https://hey.drovr.app', device: device({ expires_in: 60 }), sleep: c.sleep, nowMs: c.nowMs });
+  assert.deepEqual(out, { outcome: 'expired' });
+  assert.ok(c.sleeps.length <= 13, `polled ${c.sleeps.length} times in a 60 s window`);
+  assert.ok(c.nowMs() - T0 <= 60_000);
+  const long = await pollDeviceLogin({ http: forever, issuer: 'https://hey.drovr.app', device: device({ expires_in: 86_400 }), sleep: c.sleep, nowMs: c.nowMs });
+  assert.deepEqual(long, { outcome: 'expired' });
+  assert.ok(c.nowMs() - T0 <= 60_000 + MAX_DEVICE_LIFETIME_SEC * 1000, 'a server claiming a day is clamped to 30 minutes');
+});
+
+test('Review Focus 4: pollDeviceLogin: slow_down widens the interval by 5 s each time, capped at 60 s, and still ends at the deadline', async () => {
+  const c = clock();
+  const slow = (async () => new Response(JSON.stringify(slowDown.body), { status: 400 })) as Http;
+  const out = await pollDeviceLogin({ http: slow, issuer: 'https://hey.drovr.app', device: device({ expires_in: 300 }), sleep: c.sleep, nowMs: c.nowMs });
+  assert.deepEqual(out, { outcome: 'expired' });
+  assert.deepEqual(c.sleeps.slice(0, 4), [5_000, 10_000, 15_000, 20_000]);
+  assert.ok(Math.max(...c.sleeps) <= 60_000);
+});
+
+test('pollDeviceLogin: access_denied and expired_token are outcomes; any other error is thrown with the shim\'s text', async () => {
+  const c = clock();
+  const args = (http: Http) => ({ http, issuer: 'https://hey.drovr.app', device: device(), sleep: c.sleep, nowMs: c.nowMs });
+  assert.deepEqual(await pollDeviceLogin(args(fakeHttp([{ status: 400, body: { error: 'access_denied' } }]))), { outcome: 'denied' });
+  assert.deepEqual(await pollDeviceLogin(args(fakeHttp([{ status: 400, body: { error: 'expired_token' } }]))), { outcome: 'expired' });
+  await assert.rejects(() => pollDeviceLogin(args(fakeHttp([{ status: 400, body: { error: 'invalid_grant', error_description: 'device code is invalid' } }]))), /invalid_grant device code is invalid/);
+  await assert.rejects(() => pollDeviceLogin(args(fakeHttp([{ status: 502, body: 'upstream' }]))), /502/);
+});
+
+test('revokeCredentials posts the refresh token to the issuer\'s revoke endpoint; a non-2xx is thrown', async () => {
+  const http = fakeHttp([{ status: 200, body: {} }]);
+  await revokeCredentials(http, creds());
+  assert.equal(http.seen[0]!.url, 'https://hey.drovr.app/mcp/revoke');
+  assert.equal(new URLSearchParams(http.seen[0]!.body).get('token'), 'ref1');
+  await assert.rejects(() => revokeCredentials(fakeHttp([{ status: 500, body: 'boom' }]), creds()), /500/);
 });
