@@ -132,6 +132,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `usage.ts` | It records and reads; it feeds **no gate**. teamclaude reports total usage and the ledger reports drovr's, so Craig's share is the difference — but only at the instant it is taken, because both are fractions of a window that resets, and nothing reconstructs it afterwards. Hence a sample per tick. An admission decision that moved with his measured behaviour would be a feedback loop nobody asked for. |
 | `usage.ts` | The log is bounded by **bytes**, not age: a tick fires on a schedule that can change, so a line-count bound would drift with it. Pruning keeps the newest half — the recent behaviour is the part the reserve question is about — and stages the rewrite through a rename so a reader never catches a half-pruned log. |
 | `tick.ts` | The usage sample is logged-and-swallowed on purpose, and it is the last thing a pass does. A full disk must cost the measurement, never the tick; admission has already happened by then. This is the one place in the file where swallowing is right. |
+| `tick.ts` | The status publish sits beside the usage sample, after admission, for the same reason: a window onto the tick must not be able to close it. It takes the decisions the pass already made and fills in disabled programs with the pure `decide()` — never a second orca probe, which would bill `IDLE_PROBE_MS` per program a second time inside the lock. `lockHolder` is `null` there on purpose: the publisher *is* the holder, so "a tick is evaluating" would be true of every row. |
 | `teamclaude.ts` | A field that is only ever **exercised as null** has an untested type, and it gets its first real value at the worst possible moment. `rateLimitedUntil` and `pausedUntil` are null on every healthy status and non-null only while an account is actually throttled — so `z.number()` met its first real value on 2026-09-14, refused the whole payload, and killed five consecutive ticks (17:38 to 18:18, a one-hour hole in decisions.jsonl) while admission mattered most. `epochMs` coerces number-or-string and reads an unparseable instant as null. Coerce, never merely widen: `capacity.ts` compares these against `now`, and a string left as a string compares false and marks a throttled account **usable** — the direction that reads as free capacity. |
 | `state.ts` | `collectState`'s `probeMaxAgeMs` defaults to **0 — fresh** and only `drovr watch` passes anything else. The tick and `drovr status` must never reuse a probe: quota a few seconds old is admission deciding against room that is already gone. The cheap half (control.json, cycles, locks, service) is re-read on every call whatever the window, which is what lets a keystroke that writes control.json show its effect in the very next frame — a repaint of the last state would have left a stale mode line under `m`. |
 | `state.ts` | The subprocess half of a frame is the whole cost of it: 0.03ms to render, 2366ms to probe, measured 2026-09-17. `runnerIsPresent` exists because `agentStateFrom`'s tui-idle probe bills its full `IDLE_PROBE_MS` on a *working* claude, and both callers that ask only "is anything there" throw that distinction away. `cycle.ts` genuinely needs idle/working/blocked; nothing else does. |
@@ -267,6 +268,23 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **Full-width swipes and the growing compose field on the device.** Proven in the Simulator
   (`testSwipeTogglesReadAndDeleteRemovesTheThread`, `testComposeGrowsWithALongDraftAndTheChipsStayPut`);
   the build carrying them (b0950ee) is compiled but was not installed before Craig stepped away.
+- **The drovr card drawn from the live row on the phone.** The Mac's tick publishes
+  (`status published to hey (8156 bytes)`, 2026-10-17) and `hey status` reads it back; the card
+  is proven on the fixture in the Simulator, but the phone was unreachable when plan 6 landed, so
+  no device has yet drawn the real row or opened the sheet on it.
+- **The status row surviving a drovr outage into `stale`.** `cardFreshness` is proven in the
+  suite; no tick has yet stopped for twenty minutes under a signed-in phone, so the orange
+  `stale · Nm` has been seen only from the `-stale-drovr` seed.
+- **A status row the phone could not decode, in the wild.** `StatusRow.decode` names the missing
+  field and the card shows it (`DrovrMissingCard`), proven against a renamed key in the suite; no
+  real payload has yet broken the shape.
+- **Two hosts' cards.** One row per host is proven in `handler.spec.ts`; only the Mac publishes
+  today. The Hadrian box's `hey` is a sender of alerts, not yet of a status row.
+- **The publish failing without failing the tick, live.** `publishStatus` returns a reason and
+  `stampTick` runs regardless (Task 3's tests); no real invoke has failed since it landed.
+- **`away (phone)` on the card, from a tick that ran under it.** The mode line reads plan 5's
+  `AppModel.prefs.away` the moment the toggle flips; the published row saying `mode: "away"` on
+  the next tick (plan 5's `applyAwayMode`) has not yet been seen to follow it on the phone.
 
 ## Notifications
 
@@ -294,6 +312,14 @@ null disables alerts and leaves the log line. The `from` label is the program fo
 and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
 Slack app and no SMS any more: a failed send is a `console.error` line and an exit code, never a
 text. A send is never retried — a retried send is a duplicate message.
+
+The tick also publishes its state there: at the end of every completed pass, after the usage
+sample and before `stampTick`, `publishStatus` sends the JSON `drovr status --json` prints
+(one builder, `src/status-payload.ts`) as the row `status#drovr@<host>`, 24 h TTL, overwritten
+each tick. Same rules as every send — bounded by the invoke's 15 s, logged and swallowed, off
+when `control.notifyTo` is null — and the same position as the usage sample, because it is a
+window onto the tick and must never be a gate in it. `hey status --json` reads it back; the Hey
+app draws its drovr card from it, stale after two tick intervals.
 
 `hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
 The `hey` command lives in `src/hey-cli.ts` and is bundled by `pnpm build:hey` into `dist/hey`
@@ -341,6 +367,16 @@ Before adding a publisher back, price it: a publish costs three invalidated Clou
 whatever it contains, billed per path past 1,000 a month, and on a tick cadence that is real
 money. **A publisher is a billing decision, not a feature decision.**
 
+**The one publisher since, priced:** from 2026-10-16 the tick sends `drovr status --json` to hey
+as one row (`status#drovr@<host>`, `src/status-payload.ts` → `publishStatus` in `nudge.ts`) for
+the Hey app's drovr card. One Lambda invoke and one PutItem per tick, nothing cached and nothing
+invalidated: at a 10-minute tick that is about 4,300 invokes a month inside the Lambda free tier
+and, for a payload of a few KB (8 KB measured with 13 programs), a few thousand DynamoDB write
+units — cents, and under a dollar a month however the payload grows inside its 64 KB bound. The
+removed aice publisher cost $22-26 a *day*. It stays acceptable only on those terms: one row,
+overwritten, no fan-out, no second surface. A web page reading that row would be a new billing
+decision, not a free extension.
+
 ## The repo is local-only
 
 There is no git remote, so losing the disk loses drovr. Craig has not asked for it to be pushed
@@ -366,7 +402,7 @@ anywhere; do not create one unprompted, but say so if the subject arises.
 - **teamclaude** — read-only, via `teamclaude status --json`, plus `teamclaude run` as the launch
   command of every cycle.
 - **hey** — the Lambda `hey` in `ca-central-1`, through `src/hey.ts`'s `lambdaInvoke`; the only
-  AWS call drovr makes. Sign-in is Cognito pool "hey" (passkey, email code), custom domain
+  AWS call drovr makes, for alerts (`send`) and the once-a-tick status row (`status`). Sign-in is Cognito pool "hey" (passkey, email code), custom domain
   auth.drovr.app; devices get credentials from identity pool "hey" under role hey-device, confined
   to their own partition by dynamodb:LeadingKeys.
   APNs goes through SNS platform applications `APNS/hey` and `APNS_SANDBOX/hey` (token key from
