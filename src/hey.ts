@@ -15,8 +15,8 @@ const MAX_WAIT_SECONDS = 86_400;
 export class UsageError extends Error {}
 
 export const USAGE =
-  'usage: hey [send] [--to <handle>] [--from <label>] [--host <host>] [--cwd <dir>] [--wait <dur>] [--choices a,b] [--json] <text>\n' +
-  '       hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey status [--json]   |   hey status put --program <name> [--host <host>] [--teamclaude] -   |   hey login | logout | whoami   |   hey help [command]\n' +
+  'usage: hey [send] [--to <handle>] [--from <label>] [--host <host>] [--cwd <dir>] [--wait <dur>] [--choices a,b] [--detach] [--json] <text>\n' +
+  '       hey wait <id> [--wait <dur>] [--json]   |   hey profile --from <label> [--icon <icon>] [--summary <text>] [--color #rrggbb]   |   hey prefs   |   hey status [--json]   |   hey status put --program <name> [--host <host>] [--teamclaude] -   |   hey login | logout | whoami   |   hey help [command]\n' +
   '       --multi with --choices lets several answers be picked; the reply is them joined by ", "';
 
 export const parseDuration = (text: string): number => {
@@ -28,7 +28,7 @@ export const parseDuration = (text: string): number => {
   return seconds;
 };
 
-export const COMMAND_NAMES = ['send', 'profile', 'prefs', 'status', 'login', 'logout', 'whoami', 'guide', 'help'] as const;
+export const COMMAND_NAMES = ['send', 'wait', 'profile', 'prefs', 'status', 'login', 'logout', 'whoami', 'guide', 'help'] as const;
 export type CommandName = (typeof COMMAND_NAMES)[number];
 
 /** The first word is a command only when it names one; everything else is the message it always was. */
@@ -61,6 +61,7 @@ export type Parsed = {
   waitSeconds: number | null;
   choices: string[] | null;
   multi: boolean;
+  detach: boolean;
   json: boolean;
 };
 
@@ -76,6 +77,7 @@ export const parseArgs = (
   const values: Partial<Record<(typeof VALUE_FLAGS)[number], string>> = {};
   let json = false;
   let multi = false;
+  let detach = false;
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
@@ -85,6 +87,10 @@ export const parseArgs = (
     }
     if (arg === '--multi') {
       multi = true;
+      continue;
+    }
+    if (arg === '--detach') {
+      detach = true;
       continue;
     }
     const flag = VALUE_FLAGS.find((known) => known === arg);
@@ -109,6 +115,7 @@ export const parseArgs = (
   const choices = values['--choices'] === undefined ? null : parseChoices(values['--choices']);
   if (choices !== null && waitSeconds === null) throw new UsageError('--choices needs --wait: nobody would read the answer');
   if (multi && choices === null) throw new UsageError('--multi needs --choices: there is nothing to pick several of');
+  if (detach && waitSeconds === null) throw new UsageError('--detach needs --wait: without a window nothing listens for the reply');
   return {
     to,
     from: values['--from'] ?? defaults.from ?? `${host}:${cwd}`,
@@ -118,6 +125,7 @@ export const parseArgs = (
     waitSeconds,
     choices,
     multi,
+    detach,
     json,
   };
 };
@@ -193,7 +201,7 @@ export class MessageGone extends Error {
 }
 
 /** The `read` tool's shape (tools.ts `publicMessage`): absent becomes null there, so "answered" is `reply !== null` here. */
-export const publicMessageShape = z.object({ id: z.string().min(1), text: z.string(), waitUntil: z.string().nullable(), reply: z.string().nullable(), repliedAt: z.string().nullable() });
+export const publicMessageShape = z.object({ id: z.string().min(1), from: z.string(), text: z.string(), createdAt: z.string(), waitUntil: z.string().nullable(), reply: z.string().nullable(), repliedAt: z.string().nullable() });
 export type PublicMessage = z.infer<typeof publicMessageShape>;
 
 export const readMessage = async (call: Call, id: string): Promise<PublicMessage> => {
@@ -445,4 +453,100 @@ export const waitForReply = async (opts: {
     await opts.sleep(POLL_MS);
   }
   return { status: 'unanswered' };
+};
+
+/** A send's id is the handler's ULID; anything else cannot name a message, so it is refused before a call. */
+const MESSAGE_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+export type WaitArgs = { id: string; sliceSeconds: number | null; json: boolean };
+
+/** `hey wait <id> [--wait <dur>] [--json]`: --wait bounds this call, not the message's own window. */
+export const parseWaitArgs = (argv: string[]): WaitArgs => {
+  let json = false;
+  let slice: string | undefined;
+  const positional: string[] = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
+    if (arg === '--wait') {
+      slice = argv[i + 1];
+      if (slice === undefined) throw new UsageError('--wait needs a value');
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--')) throw new UsageError(`unknown flag ${arg}`);
+    positional.push(arg);
+  }
+  if (positional.length !== 1) throw new UsageError('hey wait takes exactly one message id: the "id" hey --json printed');
+  const id = positional[0]!;
+  if (!MESSAGE_ID.test(id)) throw new UsageError(`"${id}" is not a message id: hey --json prints it as "id", 26 characters`);
+  return { id, sliceSeconds: slice === undefined ? null : parseDuration(slice), json };
+};
+
+/** listening: this call's slice ended while the message's own window is still open. */
+export type ResumeOutcome = WaitOutcome | { status: 'listening' };
+export type Resumed = { first: PublicMessage | null; outcome: ResumeOutcome };
+
+/**
+ * A wait on a message sent earlier. The first read finds the window; a tool error there throws
+ * (bad id, not signed in), and later reads are polls with waitForReply's failure budget. The slice
+ * bounds this call only, so "slice ended" and "window closed" stay distinguishable.
+ */
+export const resumeWait = async (opts: {
+  call: Call;
+  id: string;
+  sliceSeconds: number | null;
+  sleep: (ms: number) => Promise<void>;
+  nowMs: () => number;
+  onPollError: (reason: string) => void;
+}): Promise<Resumed> => {
+  let first: PublicMessage;
+  try {
+    first = await readMessage(opts.call, opts.id);
+  } catch (error) {
+    if (error instanceof MessageGone) return { first: null, outcome: { status: 'deleted' } };
+    throw error;
+  }
+  if (first.reply !== null) return { first, outcome: { status: 'replied', reply: first.reply, repliedAt: first.repliedAt ?? '' } };
+  if (first.waitUntil === null) return { first, outcome: { status: 'unanswered' } };
+  const windowEndMs = Date.parse(first.waitUntil);
+  if (Number.isNaN(windowEndMs)) throw new Error(`hey read answered with a waitUntil that is not an instant: ${first.waitUntil}`);
+  const startMs = opts.nowMs();
+  if (windowEndMs <= startMs) return { first, outcome: { status: 'unanswered' } };
+  const sliceEndMs = opts.sliceSeconds === null ? windowEndMs : Math.min(windowEndMs, startMs + opts.sliceSeconds * 1000);
+  // The first read already said "nothing yet"; polling again at once would only repeat it.
+  await opts.sleep(POLL_MS);
+  const outcome = await waitForReply({ read: () => readMessage(opts.call, opts.id), sleep: opts.sleep, nowMs: opts.nowMs, waitUntilMs: sliceEndMs, onPollError: opts.onPollError });
+  if (outcome.status === 'unanswered' && sliceEndMs < windowEndMs) return { first, outcome: { status: 'listening' } };
+  return { first, outcome };
+};
+
+export type WaitReport = { code: 0 | 2; stdout: string | null; stderr: string | null };
+
+/**
+ * What `hey wait` prints for every outcome but `failed` (the caller throws that). --json is the
+ * send --json object; `quiet` is null because the row does not record it, `to` is the configured
+ * handle (null without one) because the read tool does not return it.
+ */
+export const waitReport = (input: Resumed & { id: string; to: string | null; json: boolean; clock: (iso: string) => string }): WaitReport => {
+  const { id, first, outcome } = input;
+  if (outcome.status === 'failed') throw new Error(`gave up polling: ${outcome.reason}`);
+  const replied = outcome.status === 'replied';
+  const code = replied ? 0 : 2;
+  if (input.json) {
+    const line = {
+      id, to: input.to, from: first?.from ?? null, sentAt: first?.createdAt ?? null, waitUntil: first?.waitUntil ?? null, quiet: null,
+      reply: replied ? outcome.reply : null, repliedAt: replied ? outcome.repliedAt : null, status: outcome.status,
+    };
+    return { code, stdout: JSON.stringify(line), stderr: null };
+  }
+  if (replied) return { code, stdout: outcome.reply, stderr: null };
+  if (outcome.status === 'deleted') return { code, stdout: null, stderr: `message ${id} was deleted on the phone; no reply is coming` };
+  const waitUntil = first?.waitUntil ?? null;
+  if (waitUntil === null) return { code, stdout: null, stderr: `message ${id} was sent without --wait; no reply is coming` };
+  if (outcome.status === 'listening') return { code, stdout: null, stderr: `still waiting on ${id} until ${input.clock(waitUntil)}` };
+  return { code, stdout: null, stderr: `no reply by ${input.clock(waitUntil)}` };
 };

@@ -53,6 +53,7 @@ test('args: text, --to, --from, --wait, --json, and the defaults', () => {
     waitSeconds: 1800,
     choices: null,
     multi: false,
+    detach: false,
     json: true,
   });
   assert.equal(parseArgs(['--to', 'ann', '--from', 'relliq', '--host', 'devbox', '--cwd', 'relliq', 'hi'], defaults).from, 'relliq');
@@ -85,7 +86,7 @@ test('--help anywhere asks for usage instead of a send', () => {
   assert.equal(wantsHelp(['hi']), false);
 });
 
-const row = { id: '01A', text: 't', waitUntil: null, reply: null, repliedAt: null };
+const row = { id: '01A', from: 'f', text: 't', createdAt: 'c', waitUntil: null, reply: null, repliedAt: null };
 
 test('send and readMessage call the tools and validate what comes back', async () => {
   const calls: [string, Record<string, unknown>][] = [];
