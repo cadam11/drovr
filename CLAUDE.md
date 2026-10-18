@@ -196,9 +196,6 @@ files in the same commit, or the table fails.
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
-- **A per-message mark from the phone.** "Mark unread from here" / "Mark read to here" on a
-  bubble's long-press landed 2026-10-17, proven in the suites and on the Simulator (the middle
-  bubble's menu moved the watermark to it, not to the first); no device has long-pressed a bubble.
 - **The Go `hey` refreshing a session on the Mac.** The Mac swapped its `hey` symlink for the Go
   binary on 2026-10-17 and `hey whoami` answered on the existing credentials file; the tick's Node
   caller and the Go binary now share that file, so the first hour boundary either refreshes under
@@ -362,13 +359,10 @@ Written and type-checked, never seen to fire. Unproven, not done:
   the stale marker are proven only in the Simulator and the suite. Install the device build and look.
 - **Two hosts' drovr cards.** One row per host is proven in `handler.spec.ts`; only the Mac publishes
   drovr's row today.
-- **A status card deleted from the phone.** Landed 2026-10-17 (long-press reveals the corner x
-  for 5 s with a light haptic → the x asks → a confirmation whose button names the card → one
-  DeleteItem on the `status#` row). Craig's first two device builds were pulled on the phone (the
-  wrong card named; an always-visible x) — see the `ConversationsView.swift` trap row — and the
-  reveal version is proven in the Simulator UI suite and against the fake store only; the haptic,
-  the 5 s timeout, the real DeleteItem under the device role and the row coming back on the
-  sender's next put are unseen.
+- **A status card's row coming back on the sender's next put.** The reveal → x → confirm → DeleteItem
+  path ran on Craig's phone 2026-10-17 ("lgtm"; the two `hadrian-test` test rows were deleted under
+  the device role), as did a bubble's "Mark unread from here". Unseen: a live sender rewriting a
+  deleted card on its next put, and the 5 s reveal timeout lapsing untouched.
 - **The publish failing without failing the tick, live.** `publishStatus` returns a reason and
   `stampTick` runs regardless (Task 3's tests); no real invoke has failed since it landed.
 - **`away (phone)` on the card, from a tick that ran under it.** The mode line reads plan 5's
