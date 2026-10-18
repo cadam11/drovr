@@ -94,6 +94,8 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `orca.ts` | The runner must be Fable, but Craig's default model must not change. `--model fable` goes in the launch argv (per session) — never `/model`, a settings file, or an env default. Orca's own claude launcher (`agentCmdOverrides: claude → tcr`) is not used, so its arguments do not matter. |
 | `orca.ts` | `PaneBusy` means precisely "the cycle did not start and nothing is wrong": a leftover still working or blocked, one that would not exit, or a new runner that came up behind a dialog. Recorded as a crash it wrote eight 0.2s cycles into aice-x's ledger, feeding the failure latch and the zero-yield streak for a healthy program. |
 | `orca.ts` | Only send `/exit` to a **settled** agent. A runner keeps working after writing its report; `/exit` typed into that turn is swallowed by it, and the terminal is held forever. Return false instead and let the next tick retry — the release has to be retryable, not one-shot. |
+| `project.yml` | The `HeyMac` target's module is `Hey` (`PRODUCT_MODULE_NAME`), never the target name: `AmplifyAuthSession: Hey.AuthSession`, `Hey.isUnread` and every `@testable import Hey` spell the module, and the first `HeyMacTests` run is what pins it. The bundle id is also the phone's on purpose — the APNs topic is the bundle id, and a second id would mean a second pair of SNS platform applications and a Lambda that picks one per row. |
+| `Theme.swift` | Every dynamic colour goes through `adaptiveColor(light:dark:)`; UIKit's `UIColor { trait in … }` has no macOS body and `Color(.systemBackground)` / `Color(.tertiarySystemFill)` do not exist there. A `UIColor` anywhere outside the `#if canImport(UIKit)` block breaks the Mac build, which is the only place it is caught. |
 | everywhere | A terminal handle is drovr's grip, not an address a human can follow: `term_844e…` names no place and no way to get there, which is the "name the fix, not a reference to it" rule failing in six messages at once. `runnerAddress` resolves it to the tab and the command that opens it (`orca terminal switch --terminal <handle>`); the handle survives only as that command's argument. It is best-effort — orca being unreachable costs the message its address, never the message. |
 | `cycle.ts` | An idle runner with no report is **stalled**, not finished — an interactive session that lost its turn to a 529, or answered Craig and stopped, sits at the prompt forever. The watch loop only ever asked *report yet?* and *agent gone?*, so both held a slot until `maxCycleHours`. Nudge the live session (cheap, keeps its context), bounded, then give up and free the pane. |
 | `cycle.ts` | `maxCycleHours` bounds how long drovr **watches**, not how long a cycle may live — drovr never kills one, so at the deadline the watch exits and the runner keeps going. Recording that as `crash` asserted that a cycle which often *had* delivered produced nothing, and discarded the quota sample of the longest and most expensive cycles there are. It is `abandoned`: a statement about drovr having stopped looking, not about the cycle. |
@@ -387,6 +389,24 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **The losing side of a refresh race.** Two concurrent live refreshes returned one pair, but
   which request lost — and that it deleted its unreturned pair — is proven only by reasoning,
   not by a test or a log line.
+- **Hey on the Mac, live.** Plan 11 landed with the iOS suite green and the same unit suite green
+  on macOS; the window, inspector, menu bar extra and Settings were **not** looked
+  at — the two Mac UI tests are written but have never run (macOS Automation Mode needs Craig's
+  authentication: `sudo automationmodetool enable-automationmode-without-authentication`), and
+  nothing has run against the real pool from the Mac yet. Unobserved, each its own line: a push reaching the Mac (banner, dock badge,
+  menu bar count); a passkey sign-in on the Mac (first run is the email code, like a new phone); a
+  Yes/No answered from a Mac notification closing a `hey --wait`; the menu bar extra opening the
+  window on a thread from a real row; a Mac sign-out leaving the phone's `device#` row in place and
+  the phone still buzzing; a notification clicked on the closed Mac app launching it onto the thread;
+  the first **signed** Mac build: on 2026-10-18 it failed `No Accounts: Add a new account in Accounts
+  settings` / `No profiles for 'app.drovr.hey' were found` because Xcode had no Apple ID signed in,
+  so no macOS development profile has been minted and every Mac run so far was locally signed
+  without the push, associated-domains and keychain-access-groups entitlements. Also unobserved, from
+  the final review: the menu bar count moving while another app is frontmost (a push refreshes
+  through `application(_:didReceiveRemoteNotification:)`); a notification click with the window
+  closed bringing the window up (`PushDelegate.openWindowRequest`, answered by `MenuBarLabel`); the
+  Amplify session surviving a relaunch (data-protection keychain under `keychain-access-groups`); the
+  count drawn beside the menu bar icon at all.
 
 ## Notifications
 
@@ -431,6 +451,8 @@ text. A send is never retried — a retried send is a duplicate message. Every `
 send budget of 30 messages per recipient per clock hour, enforced in the handler (`rate#<from>#<hour>`
 rows, atomic `ADD`, two-hour TTL) before the message row is written, so neither CLI needed new
 logic: the 31st is `HeyError('rate_limited')`, a tool error the CLI prints as one line and exit 1.
+
+**Hey on the Mac** (plan 11, `docs/superpowers/specs/2026-10-18-hey-desktop-app-design.md`): the same project has a `HeyMac` target (`ios/Hey/project.yml`; macOS 26; module `Hey` and bundle id `app.drovr.hey`, both identical to the phone's on purpose), a signed Debug build Craig runs from `/Applications` or the scratchpad (none signed yet: see "Hey on the Mac, live"). One window — threads, the open thread, the status cards in an inspector where the drovr detail is a pane — a menu bar extra with the unread count and the newest five threads that opens the window on a click, and Settings (Cmd-,) on the same `prefs` row. It signs in with the same passkey (the AASA entry covers the Mac: same team, same bundle id), registers its sandbox APNs token on `APNS_SANDBOX/hey` as a second `device#` row, and the Lambda fans out to both devices unchanged. Device rows carry `os` (`ios` / `macos`; absent is the phone's), so a sign-out removes only that platform's rows. Mac-only views live in `ios/Hey/Hey/Mac/`; every other platform conditional is in `Platform.swift`, `Theme.swift`, `HeyApp.swift`, `PushDelegate.swift` and `RootView.swift`. The TUI's keys are not in the Mac app.
 
 hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
 `docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
@@ -579,6 +601,10 @@ anywhere; do not create one unprompted, but say so if the subject arises.
   dependencies are Amplify Swift 2.62.1 (Auth and AWSPluginsCore) and AWS SDK for Swift 1.7.60
   (DynamoDB, SNS; the version Amplify pins), in `ios/Hey/project.yml`. Every `xcodebuild` on it
   needs `-skipPackagePluginValidation` for smithy-swift's code-generator plugin.
+  The Mac target builds and tests **signed** on the host (`-scheme HeyMac -destination
+  'platform=macOS' -allowProvisioningUpdates -allowProvisioningDeviceRegistration`, never
+  `CODE_SIGNING_ALLOWED=NO`): its push entitlement is `com.apple.developer.aps-environment`
+  where iOS says `aps-environment`, which is why they are two targets and not one.
   The device role may also `DeleteItem` on its own partition (sign-out removes the phone's
   `device#` rows first; mark-unread and delete-thread remove `read#` and `msg#` rows). `hey help`,
   `hey help <cmd>`, `hey <cmd> --help`, `hey help --json` and `hey guide` render from

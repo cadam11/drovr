@@ -7,4 +7,6 @@ ios/Hey/Hey.xcodeproj/
 ios/Hey/Hey/Info.plist
 ios/Hey/build/
 ios/Hey/Hey/Hey.entitlements
+ios/Hey/HeyMac/Info.plist
+ios/Hey/HeyMac/HeyMac.entitlements
 cli/hey/hey
