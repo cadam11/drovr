@@ -389,8 +389,8 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **The losing side of a refresh race.** Two concurrent live refreshes returned one pair, but
   which request lost — and that it deleted its unreturned pair — is proven only by reasoning,
   not by a test or a log line.
-- **Hey on the Mac, live.** Plan 11 landed with the suite green on both platforms and the window,
-  unit suite green on macOS; the window, inspector, menu bar extra and Settings were **not** looked
+- **Hey on the Mac, live.** Plan 11 landed with the iOS suite green and the same unit suite green
+  on macOS; the window, inspector, menu bar extra and Settings were **not** looked
   at — the two Mac UI tests are written but have never run (macOS Automation Mode needs Craig's
   authentication: `sudo automationmodetool enable-automationmode-without-authentication`), and
   nothing has run against the real pool from the Mac yet. Unobserved, each its own line: a push reaching the Mac (banner, dock badge,
@@ -401,7 +401,12 @@ Written and type-checked, never seen to fire. Unproven, not done:
   the first **signed** Mac build: on 2026-10-18 it failed `No Accounts: Add a new account in Accounts
   settings` / `No profiles for 'app.drovr.hey' were found` because Xcode had no Apple ID signed in,
   so no macOS development profile has been minted and every Mac run so far was locally signed
-  without the push and associated-domains entitlements.
+  without the push, associated-domains and keychain-access-groups entitlements. Also unobserved, from
+  the final review: the menu bar count moving while another app is frontmost (a push refreshes
+  through `application(_:didReceiveRemoteNotification:)`); a notification click with the window
+  closed bringing the window up (`PushDelegate.openWindowRequest`, answered by `MenuBarLabel`); the
+  Amplify session surviving a relaunch (data-protection keychain under `keychain-access-groups`); the
+  count drawn beside the menu bar icon at all.
 
 ## Notifications
 
@@ -447,7 +452,7 @@ send budget of 30 messages per recipient per clock hour, enforced in the handler
 rows, atomic `ADD`, two-hour TTL) before the message row is written, so neither CLI needed new
 logic: the 31st is `HeyError('rate_limited')`, a tool error the CLI prints as one line and exit 1.
 
-**Hey on the Mac** (plan 11, `docs/superpowers/specs/2026-10-18-hey-desktop-app-design.md`): the same project has a `HeyMac` target (`ios/Hey/project.yml`; macOS 26; module `Hey` and bundle id `app.drovr.hey`, both identical to the phone's on purpose), a signed Debug build Craig runs from `/Applications` or the scratchpad. One window — threads, the open thread, the status cards in an inspector where the drovr detail is a pane — a menu bar extra with the unread count and the newest five threads that opens the window on a click, and Settings (Cmd-,) on the same `prefs` row. It signs in with the same passkey (the AASA entry covers the Mac: same team, same bundle id), registers its sandbox APNs token on `APNS_SANDBOX/hey` as a second `device#` row, and the Lambda fans out to both devices unchanged. Device rows carry `os` (`ios` / `macos`; absent is the phone's), so a sign-out removes only that platform's rows. Mac-only views live in `ios/Hey/Hey/Mac/`; every other platform conditional is in `Platform.swift`, `Theme.swift`, `HeyApp.swift`, `PushDelegate.swift` and `RootView.swift`. The TUI's keys are not in the Mac app.
+**Hey on the Mac** (plan 11, `docs/superpowers/specs/2026-10-18-hey-desktop-app-design.md`): the same project has a `HeyMac` target (`ios/Hey/project.yml`; macOS 26; module `Hey` and bundle id `app.drovr.hey`, both identical to the phone's on purpose), a signed Debug build Craig runs from `/Applications` or the scratchpad (none signed yet: see "Hey on the Mac, live"). One window — threads, the open thread, the status cards in an inspector where the drovr detail is a pane — a menu bar extra with the unread count and the newest five threads that opens the window on a click, and Settings (Cmd-,) on the same `prefs` row. It signs in with the same passkey (the AASA entry covers the Mac: same team, same bundle id), registers its sandbox APNs token on `APNS_SANDBOX/hey` as a second `device#` row, and the Lambda fans out to both devices unchanged. Device rows carry `os` (`ios` / `macos`; absent is the phone's), so a sign-out removes only that platform's rows. Mac-only views live in `ios/Hey/Hey/Mac/`; every other platform conditional is in `Platform.swift`, `Theme.swift`, `HeyApp.swift`, `PushDelegate.swift` and `RootView.swift`. The TUI's keys are not in the Mac app.
 
 hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
 `docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
