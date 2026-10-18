@@ -152,6 +152,7 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `tick.ts` | The phone's Away is applied with `applyAwayMode` to the `Control` every `decide({` caller builds and is **never written** to control.json: a pass that wrote it would make the toggle sticky after Craig turned it off. `off` is not overridden — it is a stop, not a ceiling. `state.ts` reads it in the probe half and caches it with the quota probe, or every `watch` frame would pay a 15 s-bounded hey call. |
 | `handler.ts` | A `prefs` row the Lambda cannot parse reads as the defaults with a log line and the send goes out **loud**; a newer app writing a key this Lambda does not know is exactly the case, and a failed send over a setting would be worse than a sound. The app's decoder is strict the other way for the same reason: a row it cannot write back whole is one it must not overwrite. |
 | `ConversationsView.swift` | A swipe button with `role: .destructive` makes SwiftUI's `List` animate the row away **before the action runs**. Put a confirmation between the swipe and the delete and the row stays while the List already counted it gone; when the real removal lands, the collection view asserts "Invalid Number Of Items In Section" and the app dies — measured 2026-10-16, three runs. Deferred destructive actions are red by `.tint(.red)` and no role. |
+| `ConversationsView.swift` | A `List` hoists `.contextMenu` to the **row's cell**, so two cards in one paged row each carrying their own menu answered every long-press with the first card's actions — measured 2026-10-17 on Craig's phone, where page two's "Delete card" confirmed `drovr@mac`. One menu per row, aimed at `statusPage`; and a confirmation names its subject only through `presenting:` (the button says `Delete <id>`), never from state read while it is up. |
 | `AppModel.swift` | Optimistic removal's rollback is a **reload**, not a saved copy: a thread delete that fails halfway has already removed some rows from the table, so restoring the old array would show rows the table no longer holds. `deleteThread` reloads on failure and the list is whatever the table says; the error rides the load banner. |
 | `hey-mcp/session.ts` | A refresh token presented twice inside 60 s must get the **same** successor pair. claude.ai double-submits refreshes at the hour boundary; strict revoke-on-replay logged users out every hour in aice. Only a replay after the window is theft. |
 | `hey-mcp/oauth.ts` | Trust a redirect URI **parsed**, never by string prefix: `https://claude.ai.evil.example/…` and `https://claude.ai@evil.example/…` both start with the trusted string. Registration is open by construction (that is what DCR is); `isTrustedRedirectUri` at `/authorize` is the whole gate, and an untrusted URI gets an HTML 400, never a redirect. |
@@ -344,6 +345,12 @@ Written and type-checked, never seen to fire. Unproven, not done:
   the stale marker are proven only in the Simulator and the suite. Install the device build and look.
 - **Two hosts' drovr cards.** One row per host is proven in `handler.spec.ts`; only the Mac publishes
   drovr's row today.
+- **A status card deleted from the phone.** Landed 2026-10-17 (the corner `xmark` or the row's
+  long-press menu → a confirmation whose button names the card → one DeleteItem on the `status#`
+  row). Craig's first device build offered to delete the wrong card — see the `ConversationsView.swift`
+  trap row — and the rebuilt version is proven in the Simulator UI suite and against the fake store
+  only; the real DeleteItem under the device role and the row coming back on the sender's next put
+  are unseen.
 - **The publish failing without failing the tick, live.** `publishStatus` returns a reason and
   `stampTick` runs regardless (Task 3's tests); no real invoke has failed since it landed.
 - **`away (phone)` on the card, from a tick that ran under it.** The mode line reads plan 5's
@@ -383,8 +390,9 @@ The Lambda reads `prefs` on every send — quiet hours make the push passive, no
 drovr reads it once per tick: `away` runs the pass on the `away` ceiling without touching
 control.json. A waiting send may offer `--choices`; exactly yes/no is answerable from the lock
 screen, anything else is chips in the thread. The phone can mark a thread unread (deletes its
-`read#` row) and delete a thread (its `msg#` rows and `read#` row, never `profile#`); a `hey
---wait` whose message was deleted ends with one line and exit 2, like no reply.
+`read#` row), delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
+status card from its corner button or the row's long-press menu (its one `status#` row), which a
+live sender rewrites on its next put; a `hey --wait` whose message was deleted ends with one line and exit 2, like no reply.
 `control.notifyTo` is the handle;
 null disables alerts and leaves the log line. The `from` label is the program for a cycle alert
 and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
