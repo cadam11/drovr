@@ -153,6 +153,9 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `handler.ts` | A `prefs` row the Lambda cannot parse reads as the defaults with a log line and the send goes out **loud**; a newer app writing a key this Lambda does not know is exactly the case, and a failed send over a setting would be worse than a sound. The app's decoder is strict the other way for the same reason: a row it cannot write back whole is one it must not overwrite. |
 | `ConversationsView.swift` | A swipe button with `role: .destructive` makes SwiftUI's `List` animate the row away **before the action runs**. Put a confirmation between the swipe and the delete and the row stays while the List already counted it gone; when the real removal lands, the collection view asserts "Invalid Number Of Items In Section" and the app dies — measured 2026-10-16, three runs. Deferred destructive actions are red by `.tint(.red)` and no role. |
 | `AppModel.swift` | Optimistic removal's rollback is a **reload**, not a saved copy: a thread delete that fails halfway has already removed some rows from the table, so restoring the old array would show rows the table no longer holds. `deleteThread` reloads on failure and the list is whatever the table says; the error rides the load banner. |
+| `AppModel.swift` | A refresh is **page 1 merged**, never `rows = page`. With older pages loaded, assigning page 1 drops them (the list shrinks back to 50 on every pull) and appending it doubles every row a refresh re-reads; `mergeRows` keys by `sk`, incoming wins. The cursor is set by the fill and moved only by `loadOlder` — a refresh that moved it would skip the rows between the old page 1 and the kept pages. And the three-day fill runs **once**, when `pagesLoaded == 0`: a refresh that re-ran it would pay three Queries on every pull and push. Predicted by plan 10's tests, not yet bitten live. |
+| `LoadOlderRow.swift` | **Tap only.** A one-message thread or a short list shows the paging row at once, so an `onAppear` auto-load would chain page after page to the cap on open — a 1000-row window by the back door, when the three-day fill has already decided what the window is. |
+| `DynamoInboxStore.swift` | `ExclusiveStartKey` is the table's **full key** `{pk, sk}` rebuilt from the `sk` cursor, never `LastEvaluatedKey` handed back whole across the seam: `Model/` must not import the SDK, and the row behind the cursor may be gone by the next page (delete thread, TTL) — the position still holds because it is a key, not a row. DynamoDB sends a `LastEvaluatedKey` whenever the limit was hit, even with nothing older, so a trailing **empty page is normal** and must read as exhausted, not as an error; the fake mirrors it (`next` iff the page is full). |
 | `hey-mcp/session.ts` | A refresh token presented twice inside 60 s must get the **same** successor pair. claude.ai double-submits refreshes at the hour boundary; strict revoke-on-replay logged users out every hour in aice. Only a replay after the window is theft. |
 | `hey-mcp/oauth.ts` | Trust a redirect URI **parsed**, never by string prefix: `https://claude.ai.evil.example/…` and `https://claude.ai@evil.example/…` both start with the trusted string. Registration is open by construction (that is what DCR is); `isTrustedRedirectUri` at `/authorize` is the whole gate, and an untrusted URI gets an HTML 400, never a redirect. |
 | `hey-mcp/router.ts` | The SDK's streamable transport 406s a POST whose `Accept` lacks `text/event-stream`, even in JSON-response mode where no stream is ever opened. Widen the header before `handleRequest`, or a strict client never sees a tools list. |
@@ -325,6 +328,13 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **Full-width swipes and the growing compose field on the device.** Proven in the Simulator
   (`testSwipeTogglesReadAndDeleteRemovesTheThread`, `testComposeGrowsWithALongDraftAndTheChipsStayPut`);
   the build carrying them (b0950ee) is compiled but was not installed before Craig stepped away.
+- **Paging on the device.** The three-day first-load fill, "Load older" on the list and in a
+  thread, the hint for a page with nothing from that sender, the merge on a pull with older pages
+  loaded, a push tap paging to an old message and the cap note are proven in the Simulator
+  (`PagingTests`, `AppModelTests`, `SeedTests`, the two `-backlog` UI tests) and never on the
+  phone, whose partition has yet to hold 51 rows; `DynamoInboxStore`'s `ExclusiveStartKey` round
+  trip has run only against `MessageRow`'s unit tests, never against DynamoDB. The device build
+  is in the plan 10 scratchpad for the coordinator to install.
 - **The drovr card drawn from the live row on the phone.** The Mac's tick publishes
   (`status published to hey (8156 bytes)`, 2026-10-17) and `hey status` reads it back; the card
   is proven on the fixture in the Simulator, but the phone was unreachable when plan 6 landed, so
@@ -372,7 +382,13 @@ and publishes to every `device#` row the recipient's phones have registered, thr
 platform applications `APNS/hey` and `APNS_SANDBOX/hey` (hey design,
 `docs/superpowers/specs/2026-10-15-notify-app-design.md`). The iOS app is `ios/Hey/`, a Debug
 build on Craig's phone until TestFlight (see "Not yet observed"); it reads its own partition
-straight from DynamoDB with identity-pool credentials and never calls the Lambda. Read state is
+straight from DynamoDB with identity-pool credentials and never calls the Lambda. Its window
+(plan 10) is the newest `msg#` rows paged 50 at a time on the one partition-wide Query, the cursor
+being the last `sk` carried as `ExclusiveStartKey` (`Model/Paging.swift`): the first load fills
+the last `Paging.firstLoadDays` = 3 days or 50 rows, whichever is more, "Load older" pages on
+tap, a refresh re-reads page 1 only and merges by `sk`, and `Paging.maxRows` = 1000 caps a
+session. Unread counts are of loaded rows, so unread older than the window is not counted; the
+Lambda's badge on a push is the authoritative number. Read state is
 the app's `read#<from>` rows, which is how the Lambda can put the unread-**message** count on
 each push as `aps.badge` (Craig, 2026-10-16: messages, not threads; a thread's dot is still per
 thread); the app sets the same number itself whenever its unread set changes.
