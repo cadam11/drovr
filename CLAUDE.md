@@ -391,7 +391,9 @@ Written and type-checked, never seen to fire. Unproven, not done:
   not by a test or a log line.
 - **Hey on the Mac, live.** Plan 11 landed with the iOS suite green and the same unit suite green
   on macOS. The two Mac UI tests ran on 2026-10-18 once Craig added his Apple ID to Xcode and
-  ran `sudo automationmodetool enable-automationmode-without-authentication` (both pass; the
+  ran `sudo automationmodetool enable-automationmode-without-authentication` — a persistent CI
+  setting that lets any local process drive the screen, so it is enabled for the 20 s the Mac UI
+  tests take and `disable-automationmode-without-authentication` right after (both pass; the
   first needed two Mac-only accommodations: the split view remembers a collapsed sidebar across
   launches of the bundle id, so the test clicks "Show Sidebar" when it is there, and the compose
   field and Send report not hittable under their glass, so they are clicked by coordinate). The
