@@ -462,6 +462,10 @@ payload bytes in its unit tests against zod's output — no row yet compares a r
 is the first other writer (spec amendment "Plan 12").
 
 `hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
+`hey --wait 1h --detach --json "text"` opens the window and returns the id at once, and
+`hey wait <id> [--wait 9m]` resumes the wait without sending again — slices for a shell that kills
+a command at 10 minutes (Claude Code's Bash tool); a slice that ends while the message still
+listens says `still waiting on <id> until <HH:MM>`, exit 2, distinct from `no reply by`.
 Every machine, the Mac included (since 2026-10-17), runs the **Go port** in `cli/hey/` — one
 static binary, standard library only, installed at `/opt/homebrew/bin/hey` on the Mac. `src/hey-cli.ts`
 is the **oracle**, not a command: it is no longer in `package.json` `bin`, it exists so `pnpm
