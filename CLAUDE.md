@@ -330,6 +330,12 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **A refused lock-screen answer announcing itself.** `announceRefusal` posts a local notification
   when a yes/no action lands after the lapse; `refusalNotice` is tested, the post is not, and no
   device has shown it.
+- **The New divider on the device.** A thread opened with unread bubbles draws a "New" rule above
+  the first of them and lifts the bubbles under it with the list's unread wash until the reader
+  leaves (Craig, 2026-10-17: read and unread bubbles in a thread "aren't distinct, that feels just
+  a little jarring"). Proven in the Simulator (`testOpeningAThreadShowsANewDividerAboveTheUnreadBubbles`)
+  and the suites; whether the opening scroll lands the divider in view on a long thread, and whether
+  the lift reads as "new" without shouting on the phone's own screen, has not been seen on a device.
 - **Full-width swipes and the growing compose field on the device.** Proven in the Simulator
   (`testSwipeTogglesReadAndDeleteRemovesTheThread`, `testComposeGrowsWithALongDraftAndTheChipsStayPut`);
   the build carrying them (b0950ee) is compiled but was not installed before Craig stepped away.
@@ -361,7 +367,7 @@ Written and type-checked, never seen to fire. Unproven, not done:
   drovr's row today.
 - **A status card's row coming back on the sender's next put.** The reveal → x → confirm → DeleteItem
   path ran on Craig's phone 2026-10-17 ("lgtm"; the two `hadrian-test` test rows were deleted under
-  the device role), as did a bubble's "Mark unread from here". Unseen: a live sender rewriting a
+  the device role), as did a bubble's "Mark unread" (then labelled "Mark unread from here"). Unseen: a live sender rewriting a
   deleted card on its next put, and the 5 s reveal timeout lapsing untouched.
 - **The publish failing without failing the tick, live.** `publishStatus` returns a reason and
   `stampTick` runs regardless (Task 3's tests); no real invoke has failed since it landed.
@@ -408,9 +414,13 @@ The Lambda reads `prefs` on every send — quiet hours make the push passive, no
 drovr reads it once per tick: `away` runs the pass on the `away` ceiling without touching
 control.json. A waiting send may offer `--choices`; exactly yes/no is answerable from the lock
 screen, anything else is chips in the thread. The phone can mark a thread unread (deletes its
-`read#` row) or, from a bubble's long-press, unread from that message on / read up to it — the same
-`read#` watermark moved (`readAt` one millisecond before the pressed message, or its own instant),
-and an open thread's auto-read is held until the reader leaves it; delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
+`read#` row) or, from a bubble's long-press, "Mark unread" from that message on / "Mark read" up to
+it — the same `read#` watermark moved (`readAt` one millisecond before the pressed message, or its
+own instant), and an open thread's auto-read is held until the reader leaves it. An open thread
+draws a "New" divider above the first bubble newer than the watermark it was opened with
+(`AppModel.openedWithWatermark`, recorded by the auto-read before it moves the mark, following a
+hand-set one, cleared when the thread is left) and lifts the bubbles under it with the list's unread
+wash; nothing about when the auto-read fires or the badge changes; delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
 status card — a long-press reveals its corner x for 5 s, the x asks, the confirm names the card
 (its one `status#` row, which a live sender rewrites on its next put); a `hey --wait` whose message was deleted ends with one line and exit 2, like no reply.
 `control.notifyTo` is the handle;
