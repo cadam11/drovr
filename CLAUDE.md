@@ -196,6 +196,9 @@ files in the same commit, or the table fails.
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
+- **A per-message mark from the phone.** "Mark unread from here" / "Mark read to here" on a
+  bubble's long-press landed 2026-10-17, proven in the suites and on the Simulator (the middle
+  bubble's menu moved the watermark to it, not to the first); no device has long-pressed a bubble.
 - **The Go `hey` refreshing a session on the Mac.** The Mac swapped its `hey` symlink for the Go
   binary on 2026-10-17 and `hey whoami` answered on the existing credentials file; the tick's Node
   caller and the Go binary now share that file, so the first hour boundary either refreshes under
@@ -410,7 +413,9 @@ The Lambda reads `prefs` on every send — quiet hours make the push passive, no
 drovr reads it once per tick: `away` runs the pass on the `away` ceiling without touching
 control.json. A waiting send may offer `--choices`; exactly yes/no is answerable from the lock
 screen, anything else is chips in the thread. The phone can mark a thread unread (deletes its
-`read#` row), delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
+`read#` row) or, from a bubble's long-press, unread from that message on / read up to it — the same
+`read#` watermark moved (`readAt` one millisecond before the pressed message, or its own instant),
+and an open thread's auto-read is held until the reader leaves it; delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
 status card from its corner button or the row's long-press menu (its one `status#` row), which a
 live sender rewrites on its next put; a `hey --wait` whose message was deleted ends with one line and exit 2, like no reply.
 `control.notifyTo` is the handle;
