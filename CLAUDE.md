@@ -196,6 +196,9 @@ files in the same commit, or the table fails.
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
+- **A per-message mark from the phone.** "Mark unread from here" / "Mark read to here" on a
+  bubble's long-press landed 2026-10-17, proven in the suites and on the Simulator (the middle
+  bubble's menu moved the watermark to it, not to the first); no device has long-pressed a bubble.
 - **The Go `hey` refreshing a session on the Mac.** The Mac swapped its `hey` symlink for the Go
   binary on 2026-10-17 and `hey whoami` answered on the existing credentials file; the tick's Node
   caller and the Go binary now share that file, so the first hour boundary either refreshes under
@@ -208,6 +211,10 @@ Written and type-checked, never seen to fire. Unproven, not done:
   harness's credentials write-back never fired) and no send has gone through the binary anywhere
   but the Mac.
 
+- **The send budget refusing a real sender.** `SEND_BUDGET_PER_HOUR` landed 2026-10-17, proven
+  in the handler suite (the 31st refused, another label and the next hour unaffected) and through
+  the router as a tool error; no live sender has reached 30 in an hour, so the `rate#` row, the
+  `ADD` on real DynamoDB and the one-line exit 1 on a box are unseen.
 - **A full ask → answer → auto-resume round trip.** Both halves have been seen separately.
 - **`headless` runner mode** — a fallback, exercised once early, untouched since the interactive
   runner landed.
@@ -407,14 +414,19 @@ The Lambda reads `prefs` on every send — quiet hours make the push passive, no
 drovr reads it once per tick: `away` runs the pass on the `away` ceiling without touching
 control.json. A waiting send may offer `--choices`; exactly yes/no is answerable from the lock
 screen, anything else is chips in the thread. The phone can mark a thread unread (deletes its
-`read#` row), delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
+`read#` row) or, from a bubble's long-press, unread from that message on / read up to it — the same
+`read#` watermark moved (`readAt` one millisecond before the pressed message, or its own instant),
+and an open thread's auto-read is held until the reader leaves it; delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
 status card — a long-press reveals its corner x for 5 s, the x asks, the confirm names the card
 (its one `status#` row, which a live sender rewrites on its next put); a `hey --wait` whose message was deleted ends with one line and exit 2, like no reply.
 `control.notifyTo` is the handle;
 null disables alerts and leaves the log line. The `from` label is the program for a cycle alert
 and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
 Slack app and no SMS any more: a failed send is a `console.error` line and an exit code, never a
-text. A send is never retried — a retried send is a duplicate message.
+text. A send is never retried — a retried send is a duplicate message. Every `from` label has a
+send budget of 30 messages per recipient per clock hour, enforced in the handler (`rate#<from>#<hour>`
+rows, atomic `ADD`, two-hour TTL) before the message row is written, so neither CLI needed new
+logic: the 31st is `HeyError('rate_limited')`, a tool error the CLI prints as one line and exit 1.
 
 hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
 `docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
