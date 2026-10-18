@@ -390,18 +390,19 @@ Written and type-checked, never seen to fire. Unproven, not done:
   which request lost — and that it deleted its unreturned pair — is proven only by reasoning,
   not by a test or a log line.
 - **Hey on the Mac, live.** Plan 11 landed with the iOS suite green and the same unit suite green
-  on macOS; the window, inspector, menu bar extra and Settings were **not** looked
-  at — the two Mac UI tests are written but have never run (macOS Automation Mode needs Craig's
-  authentication: `sudo automationmodetool enable-automationmode-without-authentication`), and
-  nothing has run against the real pool from the Mac yet. Unobserved, each its own line: a push reaching the Mac (banner, dock badge,
+  on macOS. The two Mac UI tests ran on 2026-10-18 once Craig added his Apple ID to Xcode and
+  ran `sudo automationmodetool enable-automationmode-without-authentication` (both pass; the
+  first needed two Mac-only accommodations: the split view remembers a collapsed sidebar across
+  launches of the bundle id, so the test clicks "Show Sidebar" when it is there, and the compose
+  field and Send report not hittable under their glass, so they are clicked by coordinate). The
+  **signed** Mac build (`aps-environment`, `associated-domains`, `keychain-access-groups`, an
+  embedded profile, team `TEAMID0000`) exists from the same day; nothing has run against the real
+  pool from the Mac yet. Unobserved, each its own line: a push reaching the Mac (banner, dock badge,
   menu bar count); a passkey sign-in on the Mac (first run is the email code, like a new phone); a
   Yes/No answered from a Mac notification closing a `hey --wait`; the menu bar extra opening the
   window on a thread from a real row; a Mac sign-out leaving the phone's `device#` row in place and
-  the phone still buzzing; a notification clicked on the closed Mac app launching it onto the thread;
-  the first **signed** Mac build: on 2026-10-18 it failed `No Accounts: Add a new account in Accounts
-  settings` / `No profiles for 'app.drovr.hey' were found` because Xcode had no Apple ID signed in,
-  so no macOS development profile has been minted and every Mac run so far was locally signed
-  without the push, associated-domains and keychain-access-groups entitlements. Also unobserved, from
+  the phone still buzzing; a notification clicked on the closed Mac app launching it onto the thread.
+  Also unobserved, from
   the final review: the menu bar count moving while another app is frontmost (a push refreshes
   through `application(_:didReceiveRemoteNotification:)`); a notification click with the window
   closed bringing the window up (`PushDelegate.openWindowRequest`, answered by `MenuBarLabel`); the
