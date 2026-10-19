@@ -389,27 +389,33 @@ Written and type-checked, never seen to fire. Unproven, not done:
 - **The losing side of a refresh race.** Two concurrent live refreshes returned one pair, but
   which request lost — and that it deleted its unreturned pair — is proven only by reasoning,
   not by a test or a log line.
-- **Hey on the Mac, live.** Plan 11 landed with the iOS suite green and the same unit suite green
-  on macOS. The two Mac UI tests ran on 2026-10-18 once Craig added his Apple ID to Xcode and
-  ran `sudo automationmodetool enable-automationmode-without-authentication` — a persistent CI
-  setting that lets any local process drive the screen, so it is enabled for the 20 s the Mac UI
-  tests take and `disable-automationmode-without-authentication` right after (both pass; the
-  first needed two Mac-only accommodations: the split view remembers a collapsed sidebar across
-  launches of the bundle id, so the test clicks "Show Sidebar" when it is there, and the compose
-  field and Send report not hittable under their glass, so they are clicked by coordinate). The
-  **signed** Mac build (`aps-environment`, `associated-domains`, `keychain-access-groups`, an
-  embedded profile, team `TEAMID0000`) exists from the same day; nothing has run against the real
-  pool from the Mac yet. Unobserved, each its own line: a push reaching the Mac (banner, dock badge,
-  menu bar count); a passkey sign-in on the Mac (first run is the email code, like a new phone); a
-  Yes/No answered from a Mac notification closing a `hey --wait`; the menu bar extra opening the
-  window on a thread from a real row; a Mac sign-out leaving the phone's `device#` row in place and
-  the phone still buzzing; a notification clicked on the closed Mac app launching it onto the thread.
-  Also unobserved, from
-  the final review: the menu bar count moving while another app is frontmost (a push refreshes
-  through `application(_:didReceiveRemoteNotification:)`); a notification click with the window
-  closed bringing the window up (`PushDelegate.openWindowRequest`, answered by `MenuBarLabel`); the
-  Amplify session surviving a relaunch (data-protection keychain under `keychain-access-groups`); the
-  count drawn beside the menu bar icon at all.
+- **Hey on the Mac, live — mostly observed 2026-10-19.** The signed Debug build runs from
+  `/Applications/Hey.app` (copied there 2026-10-19; a build left in the session scratchpad under
+  `/private/tmp` is gone at the next reboot, and with it the Mac's push target). Seen against the
+  real pool: a push reaching the Mac (banner in Notification Center, Dock badge, menu bar count —
+  both delegate paths fire, `willPresent` frontmost and `application(_:didReceiveRemoteNotification:)`
+  behind another app); the Amplify session surviving a relaunch; Yes/No answered from the Mac closing
+  a `hey --wait` (exit 0); the menu bar extra opening the window on a thread and hiding its own
+  popover; Cmd-, Settings; a Mac sign-out removing only the `os: macos` device row while the phone
+  kept buzzing; the passkey sign-in on the Mac (Touch ID against the phone's passkey through iCloud
+  Keychain), after the anchor fix below; and the phone buzzing with the Mac app running. Fixed on
+  the day, each a trap: the menu bar label must be an `HStack { Image; Text }` — a `Text` with the
+  image interpolated drew an 18 pt blank, and the MacBook's own menu bar is full to the notch, so the
+  item is visible only on the external display; read marks load **before** the pages or the badge
+  climbs through every unread row of the first fill and falls back (0 → 50 → 186 → 0, phone too);
+  bubble text on the Mac is an `NSTextView` (`Mac/LinkText.swift`) because SwiftUI `Text` gives a link
+  run no hover cursor and an `NSTextField` tracks links only as first responder — hand over the link,
+  I-beam and selection elsewhere, `menu(for:)` nil so the SwiftUI context menu still shows; the
+  `.menuBarExtraStyle(.window)` popover does not close itself, so `NSApp.keyWindow?.orderOut(nil)`
+  before `openWindow`; and the passkey panel needs `presentationAnchorForWebAuthn` — Amplify's
+  default is a fresh screenless `NSWindow`, which put the Touch ID panel on the other monitor while
+  the button spun (`AmplifyAuthSession.panelAnchor`). Still unobserved: a notification clicked on the
+  **closed** Mac app launching it onto the thread, and the window request with the window closed
+  (`PushDelegate.openWindowRequest`); the first-run email-code path on a Mac with no remembered
+  username (`continueSignInWithFirstFactorSelection` → `EMAIL_OTP`); the post-code passkey
+  registration panel on the Mac (anchored by the same fix, never shown); a right-click on a Mac bubble
+  reaching Copy / Mark unread through the `NSTextView` (unverified by eye); the Mac UI tests on main
+  past 3af40ee (they need Craig's `automationmodetool`, so they have not re-run since).
 
 ## Notifications
 
@@ -455,7 +461,7 @@ send budget of 30 messages per recipient per clock hour, enforced in the handler
 rows, atomic `ADD`, two-hour TTL) before the message row is written, so neither CLI needed new
 logic: the 31st is `HeyError('rate_limited')`, a tool error the CLI prints as one line and exit 1.
 
-**Hey on the Mac** (plan 11, `docs/superpowers/specs/2026-10-18-hey-desktop-app-design.md`): the same project has a `HeyMac` target (`ios/Hey/project.yml`; macOS 26; module `Hey` and bundle id `app.drovr.hey`, both identical to the phone's on purpose), a signed Debug build Craig runs from `/Applications` or the scratchpad (none signed yet: see "Hey on the Mac, live"). One window — threads, the open thread, the status cards in an inspector where the drovr detail is a pane — a menu bar extra with the unread count and the newest five threads that opens the window on a click, and Settings (Cmd-,) on the same `prefs` row. It signs in with the same passkey (the AASA entry covers the Mac: same team, same bundle id), registers its sandbox APNs token on `APNS_SANDBOX/hey` as a second `device#` row, and the Lambda fans out to both devices unchanged. Device rows carry `os` (`ios` / `macos`; absent is the phone's), so a sign-out removes only that platform's rows. Mac-only views live in `ios/Hey/Hey/Mac/`; every other platform conditional is in `Platform.swift`, `Theme.swift`, `HeyApp.swift`, `PushDelegate.swift` and `RootView.swift`. The TUI's keys are not in the Mac app.
+**Hey on the Mac** (plan 11, `docs/superpowers/specs/2026-10-18-hey-desktop-app-design.md`): the same project has a `HeyMac` target (`ios/Hey/project.yml`; macOS 26; module `Hey` and bundle id `app.drovr.hey`, both identical to the phone's on purpose), a signed Debug build Craig runs from `/Applications/Hey.app` (see "Hey on the Mac, live"). One window — threads, the open thread, the status cards in an inspector where the drovr detail is a pane — a menu bar extra with the unread count and the newest five threads that opens the window on a click, and Settings (Cmd-,) on the same `prefs` row. It signs in with the same passkey (the AASA entry covers the Mac: same team, same bundle id), registers its sandbox APNs token on `APNS_SANDBOX/hey` as a second `device#` row, and the Lambda fans out to both devices unchanged. Device rows carry `os` (`ios` / `macos`; absent is the phone's), so a sign-out removes only that platform's rows. Mac-only views live in `ios/Hey/Hey/Mac/`; every other platform conditional is in `Platform.swift`, `Theme.swift`, `HeyApp.swift`, `PushDelegate.swift` and `RootView.swift`. The TUI's keys are not in the Mac app.
 
 hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
 `docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
@@ -558,10 +564,11 @@ removed aice publisher cost $22-26 a *day*. It stays acceptable only on those te
 overwritten, no fan-out, no second surface. A web page reading that row would be a new billing
 decision, not a free extension.
 
-## The repo is local-only
+## The remote is stale
 
-There is no git remote, so losing the disk loses drovr. Craig has not asked for it to be pushed
-anywhere; do not create one unprompted, but say so if the subject arises.
+`origin` is `git@github.com:cadam11/drovr.git`, last pushed 2026-08-30; `main` was 260-odd commits
+ahead of it on 2026-10-19. Pushing is Craig's act — do not push unprompted, but say so when the
+subject arises, because a lost disk loses everything since that push.
 
 ## Conventions
 
