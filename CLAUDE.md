@@ -173,6 +173,9 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `cli/hey/conformance_test.go` | **Offline rows must not be able to send.** Measured 2026-10-17: the plan's bash-shaped comparison loop, run under zsh, kept `"help nope"` as one argument — not a command name, so a send by contract — and both CLIs delivered 22 rows each to Craig's phone from the real signed-in `HOME`. Offline HOMEs hold no credentials file and point `endpoint` at `https://127.0.0.1:9/mcp`, and any offline row whose output matches `sent <id> to` fails the table on either side. Never compare the two CLIs from a real `HOME`; in zsh an unquoted `$args` does not word-split (`${=args}` does). |
 | `infra/cli.tf` | The five `aws_s3_object` sources are required on purpose. A `fileset`/`fileexists` guard would turn a checkout without `dist/cli/` into a plan that proposes deleting the published binaries, which an executor told to expect "1 to change" might wave through. Failing loudly costs a `pnpm build:cli`. |
 | `scripts/release-hey.sh` | The archives must be deterministic or every `tofu plan` re-uploads them: version from `VERSION` (never the commit), `touch -t` on the binary, `--uid 0 --gid 0 --uname '' --gname ''`, `gzip -n`. Build twice and diff the sums; a toolchain upgrade legitimately changes the bytes once. |
+| `StatusRowItem.swift` | The SDK `Item` adapter and the widget's JSON adapter both reduce a row to strings for `StatusRow.decode(strings:)`. **A dropped non-string key is a misattributed row**: `compactMapValues` turned a numeric `program` into "absent", which the decoder reads as drovr's row (`testAProgramOfTheWrongTypeIsAnError` caught it on the first run, 2026-10-20). Both adapters throw `row is missing <key>` for a non-string among `StatusRow.stringKeys` and pass `ttl` (a number) through unread. |
+| `WidgetTimeline.swift` | A widget's stale marker cannot be the card's. The card says stale at two tick intervals; the widget fetches at most every 15 minutes and holds a row that was up to a tick old when fetched, so the card's boundary alone would show orange routinely while drovr was fine (side agent, 2026-10-20). `staleBoundary` adds `WidgetRefresh.interval`; a real stop shows on the widget about 15 minutes after the card. |
+| `StatusTimelineProvider.swift` | `TimelineProvider.Context` is not Sendable: a `Task { completion(... placeholder(in: context)) }` is a Swift 6 error. Take the fallback entry before the task starts. |
 
 ## The CLI is read by agents
 
@@ -416,6 +419,17 @@ Written and type-checked, never seen to fire. Unproven, not done:
   registration panel on the Mac (anchored by the same fix, never shown); a right-click on a Mac bubble
   reaching Copy / Mark unread through the `NSTextView` (unverified by eye); the Mac UI tests on main
   past 3af40ee (they need Craig's `automationmodetool`, so they have not re-run since).
+- **The widgets fetching, live.** Plan "Hey widgets" landed 2026-10-20 on `hey-widgets`: both
+  extensions build and embed, the Mac widget bundle is 2.0 MB, 280 unit tests pass on both platforms
+  (SigV4's signing key against AWS's published vector among them), and both apps are installed. Not yet
+  seen: a widget on either home screen; the first `REFRESH_TOKEN_AUTH` → `GetCredentialsForIdentity`
+  → signed `Query` round trip (a signing mismatch would be a 403 whose message names it, in the log as
+  `widget fetch failed: InvalidSignatureException …`); the `widget footprint N MB` line; a tap opening
+  the drovr sheet (phone) or the window with the inspector (Mac); sign-out emptying the Mac widget while
+  the phone's stays; a failed fetch redrawing the cache; a stale entry appearing with the app closed.
+  Craig adds "drovr pool" on each device, then: `/usr/bin/log show --last 10m --predicate 'subsystem ==
+  "app.drovr.hey"' --info | grep widget`.
+
 
 ## Notifications
 
@@ -462,6 +476,8 @@ rows, atomic `ADD`, two-hour TTL) before the message row is written, so neither 
 logic: the 31st is `HeyError('rate_limited')`, a tool error the CLI prints as one line and exit 1.
 
 **Hey on the Mac** (plan 11, `docs/superpowers/specs/2026-10-18-hey-desktop-app-design.md`): the same project has a `HeyMac` target (`ios/Hey/project.yml`; macOS 26; module `Hey` and bundle id `app.drovr.hey`, both identical to the phone's on purpose), a signed Debug build Craig runs from `/Applications/Hey.app` (see "Hey on the Mac, live"). One window — threads, the open thread, the status cards in an inspector where the drovr detail is a pane — a menu bar extra with the unread count and the newest five threads that opens the window on a click, and Settings (Cmd-,) on the same `prefs` row. It signs in with the same passkey (the AASA entry covers the Mac: same team, same bundle id), registers its sandbox APNs token on `APNS_SANDBOX/hey` as a second `device#` row, and the Lambda fans out to both devices unchanged. Device rows carry `os` (`ios` / `macos`; absent is the phone's), so a sign-out removes only that platform's rows. Mac-only views live in `ios/Hey/Hey/Mac/`; every other platform conditional is in `Platform.swift`, `Theme.swift`, `HeyApp.swift`, `PushDelegate.swift` and `RootView.swift`. The TUI's keys are not in the Mac app.
+
+**Hey widgets** (`docs/superpowers/specs/2026-10-20-hey-widgets-design.md`, 2026-10-20): three WidgetKit kinds — Pool, Accounts, Programs — from one bundle, `HeyWidget` on iOS and `HeyMacWidget` on the Mac (`ios/Hey/HeyWidget/`, bundle id `app.drovr.hey.widget`, embedded in each app). **The widget carries no SDK**: it compiles `Hey/Model`, `Hey/Widget` and three shared files, never `Hey/Services`, because WidgetKit kills an extension past about 30 MB and the AWS SDK plus Amplify would have filled that. The app writes `{sub, identityId, refreshToken}` to one keychain item in the shared access group (`WidgetSessionStore`, service `app.drovr.hey.widget`) after every load and deletes it on sign-out (`AppModel.widgetsChanged`, set in `makeModel`); the widget mints an id token with `REFRESH_TOKEN_AUTH`, hour-long credentials with `GetCredentialsForIdentity`, and signs the same `status#` Query the app runs with a hand-rolled SigV4 (`Hey/Widget/SigV4.swift`, its signing key pinned to AWS's example vector) over `URLSession`. Last good rows are cached in the extension's own UserDefaults; the stale marker on a widget fires one refresh window (15 min) after the card's two tick intervals, or a row fetched up to a tick old would read orange before the next fetch while drovr was fine. Every widget's tap is `hey://status`, the app's only URL scheme. The provider logs `widget footprint N MB` after every fetch. The Mac widget bundle is 2.0 MB.
 
 hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
 `docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
@@ -615,6 +631,9 @@ subject arises, because a lost disk loses everything since that push.
   'platform=macOS' -allowProvisioningUpdates -allowProvisioningDeviceRegistration`, never
   `CODE_SIGNING_ALLOWED=NO`): its push entitlement is `com.apple.developer.aps-environment`
   where iOS says `aps-environment`, which is why they are two targets and not one.
+  The widget extension makes three direct calls of its own with no SDK: `cognito-idp` `InitiateAuth`
+  (`REFRESH_TOKEN_AUTH`), `cognito-identity` `GetCredentialsForIdentity`, and a SigV4-signed DynamoDB
+  `Query` of `status#` rows under the same device role.
   The device role may also `DeleteItem` on its own partition (sign-out removes the phone's
   `device#` rows first; mark-unread and delete-thread remove `read#` and `msg#` rows). `hey help`,
   `hey help <cmd>`, `hey <cmd> --help`, `hey help --json` and `hey guide` render from
