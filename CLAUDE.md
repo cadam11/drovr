@@ -176,6 +176,10 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `StatusRowItem.swift` | The SDK `Item` adapter and the widget's JSON adapter both reduce a row to strings for `StatusRow.decode(strings:)`. **A dropped non-string key is a misattributed row**: `compactMapValues` turned a numeric `program` into "absent", which the decoder reads as drovr's row (`testAProgramOfTheWrongTypeIsAnError` caught it on the first run, 2026-10-20). Both adapters throw `row is missing <key>` for a non-string among `StatusRow.stringKeys` and pass `ttl` (a number) through unread. |
 | `WidgetTimeline.swift` | A widget's stale marker cannot be the card's. The card says stale at two tick intervals; the widget fetches at most every 15 minutes and holds a row that was up to a tick old when fetched, so the card's boundary alone would show orange routinely while drovr was fine (side agent, 2026-10-20). `staleBoundary` adds `WidgetRefresh.interval`; a real stop shows on the widget about 15 minutes after the card. |
 | `StatusTimelineProvider.swift` | `TimelineProvider.Context` is not Sendable: a `Task { completion(... placeholder(in: context)) }` is a Swift 6 error. Take the fallback entry before the task starts. |
+| `AppModel.swift` | `widgetsChanged(nil)` is **sign-out only**. `loadNow` runs while signed in, and Amplify's tokens are unreadable offline past the id token's hour; passing that nil deleted the keychain record and every widget read "Sign in to Hey" with policy `.never` until a later load succeeded online (review, 2026-10-20). A load that cannot read the session leaves the record alone. |
+| `WidgetSession.swift` | Only `errSecItemNotFound` is signed out. Every other `OSStatus` — `errSecInteractionNotAllowed` before first unlock, -34018 for a missing entitlement or profile group — is `Outcome.failed`, drawn as the reason on the widget's normal schedule; folded into nil it was "Sign in to Hey" with no reload, hiding the most likely first-run failure on the Mac. `write` leaves an unchanged record in place: every load calls it, and a delete-then-add opens a moment with no item. |
+| `StatusFetch.swift` | The Query is newest-`sk`-first; the widget passes the rows through `StatusReport.ordered` or, with two hosts, it draws one and `hey://status` opens the other. |
+| `ConversationsView.swift` | A widget tap usually launches the app cold, before any report is loaded, so `onOpenURL` cannot open the sheet then. `AppModel.statusDetailRequested` holds the request and `takeStatusDetail()` answers it once the reports land (`onChange(of: model.statusReports)`). |
 
 ## The CLI is read by agents
 
@@ -419,17 +423,16 @@ Written and type-checked, never seen to fire. Unproven, not done:
   registration panel on the Mac (anchored by the same fix, never shown); a right-click on a Mac bubble
   reaching Copy / Mark unread through the `NSTextView` (unverified by eye); the Mac UI tests on main
   past 3af40ee (they need Craig's `automationmodetool`, so they have not re-run since).
-- **The widgets fetching, live.** Plan "Hey widgets" landed 2026-10-20 on `hey-widgets`: both
-  extensions build and embed, the Mac widget bundle is 2.0 MB, 280 unit tests pass on both platforms
-  (SigV4's signing key against AWS's published vector among them), and both apps are installed. Not yet
-  seen: a widget on either home screen; the first `REFRESH_TOKEN_AUTH` → `GetCredentialsForIdentity`
-  → signed `Query` round trip (a signing mismatch would be a 403 whose message names it, in the log as
-  `widget fetch failed: InvalidSignatureException …`); the `widget footprint N MB` line; a tap opening
-  the drovr sheet (phone) or the window with the inspector (Mac); sign-out emptying the Mac widget while
-  the phone's stays; a failed fetch redrawing the cache; a stale entry appearing with the app closed.
-  Craig adds "drovr pool" on each device, then: `/usr/bin/log show --last 10m --predicate 'subsystem ==
-  "app.drovr.hey"' --info | grep widget`.
-
+- **The widgets, live — the Mac fetch observed 2026-10-20.** Plan "Hey widgets" landed on `main`:
+  both extensions build and embed (the Mac widget bundle is 2.0 MB, no SDK), 285 unit tests pass on
+  both platforms (SigV4 against AWS's signing-key vector and botocore's full signature among them),
+  and the Mac's "drovr pool" widget ran its first `REFRESH_TOKEN_AUTH` → `GetCredentialsForIdentity`
+  → signed `Query` round trip with no failure line, footprint 8.3–12.0 MB against the ~30 MB limit.
+  Not yet seen: the widget on the phone; what either widget draws, by eye; a tap opening the drovr
+  sheet (phone) or the window with the inspector (Mac — whether a URL reaches `MenuBarLabel`'s
+  `.onOpenURL` or the window scene is unsettled by reading); sign-out emptying the Mac widget while the
+  phone's stays; a failed fetch redrawing the cache; a stale entry with the app closed. Log:
+  `/usr/bin/log show --last 10m --predicate 'process == "HeyWidget"' --info | grep widget`.
 
 ## Notifications
 
