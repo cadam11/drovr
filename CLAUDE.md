@@ -429,7 +429,7 @@ Written and type-checked, never seen to fire. Unproven, not done:
   both platforms (SigV4 against AWS's signing-key vector and botocore's full signature among them),
   and the Mac's "drovr pool" widget ran its first `REFRESH_TOKEN_AUTH` → `GetCredentialsForIdentity`
   → signed `Query` round trip with no failure line, footprint 8.3–12.0 MB against the ~30 MB limit.
-  Not yet seen: the widget on the phone; what either widget draws, by eye; a tap opening the drovr
+  Seen 2026-10-20 evening: the Mac gallery drawing all three drovr kinds at every family and the "status card" kind listed after the build-number bump (Craig: "lgtm"). Not yet seen: the widget on the phone; the status card's picker choosing a second program; a tap opening the drovr
   sheet (phone) or the window with the inspector (Mac — whether a URL reaches `MenuBarLabel`'s
   `.onOpenURL` or the window scene is unsettled by reading); sign-out emptying the Mac widget while the
   phone's stays; a failed fetch redrawing the cache; a stale entry with the app closed. Log:
