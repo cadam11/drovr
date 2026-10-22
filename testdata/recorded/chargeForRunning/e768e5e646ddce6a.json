@@ -1,0 +1,38 @@
+{
+  "fn": "chargeForRunning",
+  "input": {
+    "running": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "beta",
+        "startedAt": "2026-08-22T12:00:00.000Z",
+        "endedAt": null,
+        "exit": "running",
+        "poolBefore": {
+          "fable": 0,
+          "general": 0,
+          "session": 0
+        },
+        "poolAfter": null,
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "poolNow": {
+      "fable": 0.35000000000000003,
+      "general": 0.45000000000000007,
+      "session": 0.4
+    },
+    "cost": {
+      "fable": 0.1,
+      "general": 0.08,
+      "session": 0.25
+    }
+  },
+  "output": 1
+}

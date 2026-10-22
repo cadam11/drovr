@@ -1,0 +1,40 @@
+{
+  "fn": "poolContext",
+  "input": {
+    "funding": {
+      "cycles": 0,
+      "binding": "fable",
+      "accounts": [
+        {
+          "name": "karen",
+          "cycles": 0,
+          "binding": "fable",
+          "routable": true
+        }
+      ]
+    },
+    "pool": {
+      "fable": 0,
+      "general": 0,
+      "session": 0.4,
+      "usableAccounts": 1,
+      "perAccount": [
+        {
+          "name": "karen",
+          "fable": 0,
+          "general": 0,
+          "session": 0.4,
+          "routable": true
+        }
+      ],
+      "resetAt": {
+        "fable": 1787702400000,
+        "general": 1787702400000,
+        "session": null
+      },
+      "earliestRecoveryAt": 1787702400000
+    },
+    "now": 1787400000000
+  },
+  "output": "fable is tightest, more room in 4d"
+}

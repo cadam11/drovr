@@ -1,0 +1,9 @@
+{
+  "fn": "consecutiveFailures",
+  "input": {
+    "cycles": [],
+    "now": 1787400000000,
+    "windowMinutes": 60
+  },
+  "output": 0
+}

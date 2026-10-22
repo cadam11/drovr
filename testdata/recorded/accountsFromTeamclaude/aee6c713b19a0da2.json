@@ -1,0 +1,174 @@
+{
+  "fn": "accountsFromTeamclaude",
+  "input": {
+    "status": {
+      "currentAccount": "first@example.com",
+      "accounts": [
+        {
+          "name": "first@example.com",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0.98,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0.2,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0.22,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "second@example.com",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0.66,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0.08,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0.07,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "fourth@example.com",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0.9,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0.98,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        }
+      ],
+      "switchThreshold": null,
+      "switchThresholds": null,
+      "routes": []
+    }
+  },
+  "output": [
+    {
+      "name": "first@example.com",
+      "org": null,
+      "status": "active",
+      "sessions": 0,
+      "disabled": false,
+      "current": true,
+      "lastUsedAt": null,
+      "fableEligible": null,
+      "fableTarget": false,
+      "buckets": {
+        "session": {
+          "usedFraction": 0.98,
+          "resetsAt": "2026-08-22T14:00:00.000Z"
+        },
+        "general": {
+          "usedFraction": 0.2,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0.22,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": null,
+        "general": null,
+        "fable": null
+      }
+    },
+    {
+      "name": "second@example.com",
+      "org": null,
+      "status": "active",
+      "sessions": 0,
+      "disabled": false,
+      "current": false,
+      "lastUsedAt": null,
+      "fableEligible": null,
+      "fableTarget": false,
+      "buckets": {
+        "session": {
+          "usedFraction": 0.66,
+          "resetsAt": "2026-08-22T14:00:00.000Z"
+        },
+        "general": {
+          "usedFraction": 0.08,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0.07,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": null,
+        "general": null,
+        "fable": null
+      }
+    },
+    {
+      "name": "fourth@example.com",
+      "org": null,
+      "status": "active",
+      "sessions": 0,
+      "disabled": false,
+      "current": false,
+      "lastUsedAt": null,
+      "fableEligible": null,
+      "fableTarget": false,
+      "buckets": {
+        "session": {
+          "usedFraction": 0,
+          "resetsAt": "2026-08-22T14:00:00.000Z"
+        },
+        "general": {
+          "usedFraction": 0.9,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0.98,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": null,
+        "general": null,
+        "fable": null
+      }
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { record } from './record.ts';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -160,7 +161,7 @@ export const installAgent = (input: {
  * Every branch says what is wrong and the exact command that fixes it. Referring to
  * a command some earlier invocation printed is useless to a reader who did not see it.
  */
-export const describeService = (
+const describeServiceUnrecorded = (
   state: ServiceState,
   lastTickAt: number | null,
   now: number,
@@ -213,7 +214,7 @@ export const describeService = (
 };
 
 /** The same facts as a discriminated value, for a caller that needs to branch rather than read. */
-export const serviceHealth = (
+const serviceHealthUnrecorded = (
   state: ServiceState,
   lastTickAt: number | null,
   now: number,
@@ -226,3 +227,17 @@ export const serviceHealth = (
   }
   return 'healthy';
 };
+
+export const describeService = (
+  state: ServiceState,
+  lastTickAt: number | null,
+  now: number,
+  lockedBy?: { pid: number; heldMs: number | null } | null,
+): string =>
+  record('describeService', { state, lastTickAt, now, lockedBy }, describeServiceUnrecorded(state, lastTickAt, now, lockedBy));
+export const serviceHealth = (
+  state: ServiceState,
+  lastTickAt: number | null,
+  now: number,
+): ReturnType<typeof serviceHealthUnrecorded> =>
+  record('serviceHealth', { state, lastTickAt, now }, serviceHealthUnrecorded(state, lastTickAt, now));

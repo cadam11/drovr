@@ -1,0 +1,90 @@
+{
+  "fn": "spentSince",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-21T23:00:00.000Z",
+        "endedAt": null,
+        "exit": "running",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": null,
+        "startupTokens": null,
+        "yield": {
+          "ticketsMoved": 1,
+          "prsOpened": 0,
+          "commits": 2
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-21T23:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "abandoned",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.8,
+          "general": 0.8,
+          "session": 0.8
+        },
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-21T23:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.42,
+          "general": 0.42,
+          "session": 0.42
+        },
+        "startupTokens": 14000,
+        "yield": {
+          "ticketsMoved": 3,
+          "prsOpened": 1,
+          "commits": 9
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "windowStart": 1787328000000,
+    "until": "Infinity"
+  },
+  "output": {
+    "fable": 0.5800000000000001,
+    "general": 0.5800000000000001,
+    "session": 0.5800000000000001
+  }
+}

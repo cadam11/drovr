@@ -1,3 +1,4 @@
+import { record } from './record.ts';
 import { hoursToWeeklyReset, poolFrom, type AccountHeadroom, type Pool } from './capacity.ts';
 import {
   ceilingsFor, isPaused, nextCadenceStart, priorityRank, programPausedUntil, type Control,
@@ -131,7 +132,7 @@ const bindingOf = (accounts: AccountFunding[], pool: Pool): BucketName => {
  * whole pool. It is a count of cycles because fundability is now counted in cycles —
  * there is no per-bucket pool left to deduct a per-bucket cost from.
  */
-export const cyclesFundableFrom = (pool: Pool, cost: CycleCost, running: number): Funding => {
+const cyclesFundableFromUnrecorded = (pool: Pool, cost: CycleCost, running: number): Funding => {
   const accounts = pool.perAccount.map((account) => fundingFor(account, cost));
   // A pool with no usable accounts funds nothing. It still has to name a bucket, and
   // session is the shortest wait, so it is the least misleading one to claim.
@@ -233,7 +234,7 @@ const couplingNote = (funding: Funding): string | null => {
  * `buildState` calls this too, so the shared line every renderer draws can never
  * disagree with the note the decisions carry.
  */
-export const poolContext = (funding: Funding, pool: Pool, now: number): string => {
+const poolContextUnrecorded = (funding: Funding, pool: Pool, now: number): string => {
   const recovery = untilText(pool.resetAt[funding.binding], now);
   const notes = [couplingNote(funding), concentrationNote(funding, pool.usableAccounts)]
     .filter((note) => note !== null);
@@ -557,7 +558,11 @@ const admissionLimits = (
  * ten minutes by its own leftover pane, then waited 5h on the session reset.
  */
 export const requiredCycles = (binding: BucketName, control: Control, rank: number): number =>
-  (binding === 'session' ? 1 : 1 + control.reserveCycles) + rank * control.priorityStepCycles;
+  record(
+    'requiredCycles',
+    { binding, control, rank },
+    (binding === 'session' ? 1 : 1 + control.reserveCycles) + rank * control.priorityStepCycles,
+  );
 
 /**
  * Can the pool fund a whole cycle plus a reserve, and is the loop within its weekly
@@ -629,7 +634,7 @@ const capacityVerdict = (input: DecideInput, pool: Pool, running: CycleRecord[])
  * slot, can the pool afford it. Each is pure and independently testable; all the I/O
  * stays in the caller.
  */
-export const decide = (input: DecideInput): Decision => {
+const decideUnrecorded = (input: DecideInput): Decision => {
   const ceilings = ceilingsFor(input.control);
   if (ceilings === null) return halt('mode is off');
 
@@ -647,3 +652,9 @@ export const decide = (input: DecideInput): Decision => {
 };
 
 export const poolSnapshot = snapshot;
+
+export const decide = (input: DecideInput): Decision => record('decide', { input }, decideUnrecorded(input));
+export const cyclesFundableFrom = (pool: Pool, cost: CycleCost, running: number): Funding =>
+  record('cyclesFundableFrom', { pool, cost, running }, cyclesFundableFromUnrecorded(pool, cost, running));
+export const poolContext = (funding: Funding, pool: Pool, now: number): string =>
+  record('poolContext', { funding, pool, now }, poolContextUnrecorded(funding, pool, now));

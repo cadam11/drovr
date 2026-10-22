@@ -1,0 +1,98 @@
+{
+  "fn": "priorityRank",
+  "input": {
+    "control": {
+      "mode": "normal",
+      "pauseUntil": null,
+      "ceilings": {
+        "low": {
+          "weekly": 0.25,
+          "session": 0.25
+        },
+        "normal": {
+          "weekly": 0.55,
+          "session": 0.4
+        },
+        "away": {
+          "weekly": 0.85,
+          "session": 0.6
+        }
+      },
+      "reserveCycles": 0.5,
+      "priorityStepCycles": 0.25,
+      "maxCyclesPerDay": 8,
+      "maxCycleHours": 12,
+      "tickBudgetMinutes": 8,
+      "maxConcurrentCycles": 2,
+      "deadlineHorizonDays": 21,
+      "contextCeilingTokens": 250000,
+      "crashWindowMinutes": 60,
+      "notifyTo": null,
+      "nudgeAfterMinutes": 240,
+      "blockedBackoffMinutes": 60,
+      "stuckCycleThreshold": 3,
+      "stallNudgeMinutes": 10,
+      "maxStallNudges": 3,
+      "blockedAlertMinutes": 20,
+      "seedCycleCost": {
+        "fable": 0.1,
+        "general": 0.08,
+        "session": 0.25
+      },
+      "programs": [
+        {
+          "name": "alpha",
+          "cwd": "/tmp/alpha",
+          "description": null,
+          "host": null,
+          "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+          "enabled": true,
+          "model": "fable",
+          "useDirenv": true,
+          "runner": "orca",
+          "cyclePrompt": "/project-loop {program}",
+          "sessionName": "{program} program runner",
+          "maxCyclesPerDay": null,
+          "priority": 1,
+          "deadline": null,
+          "pauseUntil": null,
+          "cadence": "1h",
+          "aice": null,
+          "asksFile": null
+        },
+        {
+          "name": "beta",
+          "cwd": "/tmp/beta",
+          "description": null,
+          "host": null,
+          "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+          "enabled": true,
+          "model": "fable",
+          "useDirenv": true,
+          "runner": "orca",
+          "cyclePrompt": "/project-loop {program}",
+          "sessionName": "{program} program runner",
+          "maxCyclesPerDay": null,
+          "priority": 3,
+          "deadline": null,
+          "pauseUntil": null,
+          "cadence": null,
+          "aice": null,
+          "asksFile": null
+        }
+      ]
+    },
+    "program": "beta",
+    "now": 1787400000000,
+    "lastStarts": {
+      "alpha": 1787392800000,
+      "beta": null
+    }
+  },
+  "output": {
+    "rank": 1,
+    "above": [
+      "alpha"
+    ]
+  }
+}

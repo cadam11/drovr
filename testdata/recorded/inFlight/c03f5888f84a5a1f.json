@@ -1,0 +1,130 @@
+{
+  "fn": "inFlight",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T09:00:00.000Z",
+        "endedAt": "2026-08-22T09:01:00.000Z",
+        "exit": "crash",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.3,
+          "general": 1.32,
+          "session": 0.95
+        },
+        "startupTokens": 12000,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T08:00:00.000Z",
+        "endedAt": "2026-08-22T08:01:00.000Z",
+        "exit": "crash",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.3,
+          "general": 1.32,
+          "session": 0.95
+        },
+        "startupTokens": 12000,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T07:00:00.000Z",
+        "endedAt": "2026-08-22T07:01:00.000Z",
+        "exit": "crash",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.3,
+          "general": 1.32,
+          "session": 0.95
+        },
+        "startupTokens": 12000,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T06:00:00.000Z",
+        "endedAt": "2026-08-22T06:01:00.000Z",
+        "exit": "crash",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.3,
+          "general": 1.32,
+          "session": 0.95
+        },
+        "startupTokens": 12000,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T05:00:00.000Z",
+        "endedAt": "2026-08-22T05:01:00.000Z",
+        "exit": "crash",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.3,
+          "general": 1.32,
+          "session": 0.95
+        },
+        "startupTokens": 12000,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "now": 1787400000000,
+    "maxHours": 12
+  },
+  "output": []
+}

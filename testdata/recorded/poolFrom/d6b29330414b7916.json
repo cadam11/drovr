@@ -1,0 +1,107 @@
+{
+  "fn": "poolFrom",
+  "input": {
+    "status": {
+      "currentAccount": "a",
+      "accounts": [
+        {
+          "name": "a",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "b",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        }
+      ],
+      "switchThreshold": null,
+      "switchThresholds": null,
+      "routes": [
+        {
+          "name": "fable",
+          "accounts": [
+            {
+              "name": "a",
+              "eligible": true
+            },
+            {
+              "name": "b",
+              "eligible": false
+            }
+          ],
+          "target": null
+        }
+      ]
+    },
+    "ceilings": {
+      "weekly": 0.55,
+      "session": 0.4
+    },
+    "now": 1787400000000
+  },
+  "output": {
+    "fable": 1.1,
+    "general": 1.1,
+    "session": 0.8,
+    "usableAccounts": 2,
+    "perAccount": [
+      {
+        "name": "a",
+        "fable": 0.55,
+        "general": 0.55,
+        "session": 0.4,
+        "routable": true
+      },
+      {
+        "name": "b",
+        "fable": 0.55,
+        "general": 0.55,
+        "session": 0.4,
+        "routable": false
+      }
+    ],
+    "resetAt": {
+      "fable": 1787702400000,
+      "general": 1787702400000,
+      "session": 1787407200000
+    },
+    "earliestRecoveryAt": 1787407200000
+  }
+}

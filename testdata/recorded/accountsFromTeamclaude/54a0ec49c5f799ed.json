@@ -1,0 +1,68 @@
+{
+  "fn": "accountsFromTeamclaude",
+  "input": {
+    "status": {
+      "currentAccount": "a@x",
+      "accounts": [
+        {
+          "name": "a@x",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 1,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0.4,
+            "unified5hReset": 1787596200000,
+            "unified7d": 0.5,
+            "unified7dReset": 1787778000000,
+            "unified7dFable": 0.6,
+            "unified7dFableReset": 1787778000000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        }
+      ],
+      "routes": [],
+      "switchThreshold": 0.95,
+      "switchThresholds": null
+    }
+  },
+  "output": [
+    {
+      "name": "a@x",
+      "org": null,
+      "status": "active",
+      "sessions": 1,
+      "disabled": false,
+      "current": true,
+      "lastUsedAt": null,
+      "fableEligible": null,
+      "fableTarget": false,
+      "buckets": {
+        "session": {
+          "usedFraction": 0.4,
+          "resetsAt": "2026-08-24T18:30:00.000Z"
+        },
+        "general": {
+          "usedFraction": 0.5,
+          "resetsAt": "2026-08-26T21:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0.6,
+          "resetsAt": "2026-08-26T21:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": 0.95,
+        "general": 0.95,
+        "fable": 0.95
+      }
+    }
+  ]
+}

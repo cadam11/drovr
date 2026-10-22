@@ -1,0 +1,176 @@
+{
+  "fn": "consecutiveZeroYield",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T11:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "context",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.2,
+          "general": 1.2,
+          "session": 1
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T10:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "context",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.2,
+          "general": 1.2,
+          "session": 1
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T09:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "context",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.2,
+          "general": 1.2,
+          "session": 1
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T08:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "context",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.2,
+          "general": 1.2,
+          "session": 1
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T07:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "context",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.2,
+          "general": 1.2,
+          "session": 1
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T06:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "context",
+        "poolBefore": {
+          "fable": 1.4,
+          "general": 1.4,
+          "session": 1.2
+        },
+        "poolAfter": {
+          "fable": 1.2,
+          "general": 1.2,
+          "session": 1
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ]
+  },
+  "output": 0
+}

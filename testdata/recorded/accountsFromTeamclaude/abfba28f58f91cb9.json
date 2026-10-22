@@ -1,0 +1,140 @@
+{
+  "fn": "accountsFromTeamclaude",
+  "input": {
+    "status": {
+      "currentAccount": "fifth@example.com",
+      "accounts": [
+        {
+          "name": "fifth@example.com",
+          "type": "oauth",
+          "orgName": "Propra",
+          "status": "active",
+          "sessions": 2,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0.23,
+            "unified5hReset": 1787596200000,
+            "unified7d": 0.87,
+            "unified7dReset": 1787778000000,
+            "unified7dFable": 0.94,
+            "unified7dFableReset": 1787778000000,
+            "unifiedStatus": "allowed_warning"
+          },
+          "usage": {
+            "lastUsed": "2026-10-17T15:22:59.091Z"
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "agent@example.com",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": null,
+            "unified5hReset": null,
+            "unified7d": null,
+            "unified7dReset": null,
+            "unified7dFable": null,
+            "unified7dFableReset": null,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": 0.8
+        }
+      ],
+      "routes": [
+        {
+          "name": "fable",
+          "accounts": [
+            {
+              "name": "fifth@example.com",
+              "eligible": true
+            },
+            {
+              "name": "agent@example.com",
+              "eligible": false
+            }
+          ],
+          "target": "fifth@example.com"
+        }
+      ],
+      "switchThreshold": 0.95,
+      "switchThresholds": {
+        "unified5h": 0.98,
+        "unified7d": 0.9,
+        "unified7dFable": 0.98
+      }
+    }
+  },
+  "output": [
+    {
+      "name": "fifth@example.com",
+      "org": "Propra",
+      "status": "active",
+      "sessions": 2,
+      "disabled": false,
+      "current": true,
+      "lastUsedAt": "2026-10-17T15:22:59.091Z",
+      "fableEligible": true,
+      "fableTarget": true,
+      "buckets": {
+        "session": {
+          "usedFraction": 0.23,
+          "resetsAt": "2026-08-24T18:30:00.000Z"
+        },
+        "general": {
+          "usedFraction": 0.87,
+          "resetsAt": "2026-08-26T21:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0.94,
+          "resetsAt": "2026-08-26T21:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": 0.98,
+        "general": 0.9,
+        "fable": 0.98
+      }
+    },
+    {
+      "name": "agent@example.com",
+      "org": null,
+      "status": "active",
+      "sessions": 0,
+      "disabled": false,
+      "current": false,
+      "lastUsedAt": null,
+      "fableEligible": false,
+      "fableTarget": false,
+      "buckets": {
+        "session": {
+          "usedFraction": null,
+          "resetsAt": null
+        },
+        "general": {
+          "usedFraction": null,
+          "resetsAt": null
+        },
+        "fable": {
+          "usedFraction": null,
+          "resetsAt": null
+        }
+      },
+      "switchThresholds": {
+        "session": 0.8,
+        "general": 0.8,
+        "fable": 0.8
+      }
+    }
+  ]
+}

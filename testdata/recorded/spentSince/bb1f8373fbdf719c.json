@@ -1,0 +1,42 @@
+{
+  "fn": "spentSince",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-15T12:00:00.000Z",
+        "endedAt": "2026-08-15T13:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.9,
+          "general": 0.85,
+          "session": 0.7
+        },
+        "startupTokens": 1000,
+        "yield": {
+          "ticketsMoved": 1,
+          "prsOpened": 0,
+          "commits": 2
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "windowStart": 1787097600000,
+    "until": 1787400000000
+  },
+  "output": {
+    "fable": 0,
+    "general": 0,
+    "session": 0
+  }
+}

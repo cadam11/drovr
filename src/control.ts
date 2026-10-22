@@ -1,3 +1,4 @@
+import { record } from './record.ts';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { Ceilings } from './capacity.ts';
@@ -30,7 +31,7 @@ const RANKED = ['low', 'normal', 'away'];
  * ones pushed up to at least it. Ordering is an invariant of the file, not a
  * convention, so it is enforced at every write rather than documented and hoped for.
  */
-export const orderCeilings = (
+const orderCeilingsUnrecorded = (
   ceilings: Record<string, Ceiling>,
   edited: string,
 ): Record<string, Ceiling> => {
@@ -257,7 +258,7 @@ export const applyAwayMode = (control: Control, awayFromPhone: boolean): Control
  * A calendar-bound program earns a priority step as its date closes in, and keeps
  * it while overdue — a deadline that has passed is more urgent, not less.
  */
-export const effectivePriority = (program: Program, now: number, horizonDays: number): number => {
+const effectivePriorityUnrecorded = (program: Program, now: number, horizonDays: number): number => {
   if (program.deadline === null) return program.priority;
   const at = Date.parse(program.deadline);
   if (Number.isNaN(at)) {
@@ -294,7 +295,7 @@ export const byPriority = (programs: Program[], now: number, horizonDays: number
  * not read itself) so cadence windows can be judged for the shadowing programs, not
  * just the one being ranked.
  */
-export const priorityRank = (
+const priorityRankUnrecorded = (
   control: Control,
   program: string,
   now: number,
@@ -359,4 +360,22 @@ export const isPaused = (control: Control, now: number): boolean => {
     throw new Error(`control.pauseUntil is not a valid timestamp: ${control.pauseUntil}`);
   }
   return until > now;
+};
+
+export const orderCeilings = (ceilings: Record<string, Ceiling>, edited: string): Record<string, Ceiling> =>
+  record('orderCeilings', { ceilings, edited }, orderCeilingsUnrecorded(ceilings, edited));
+export const effectivePriority = (program: Program, now: number, horizonDays: number): number =>
+  record('effectivePriority', { program, now, horizonDays }, effectivePriorityUnrecorded(program, now, horizonDays));
+export const priorityRank = (
+  control: Control,
+  program: string,
+  now: number,
+  lastStartFor: (name: string) => number | null,
+): { rank: number; above: string[] } => {
+  const ranked = priorityRankUnrecorded(control, program, now, lastStartFor);
+  // A closure cannot be serialised, so the recording carries what it answered for every
+  // program — a ledger scan per program, paid only while recording.
+  if (process.env.DROVR_RECORD === undefined) return ranked;
+  const lastStarts = Object.fromEntries(control.programs.map((p) => [p.name, lastStartFor(p.name)]));
+  return record('priorityRank', { control, program, now, lastStarts }, ranked);
 };

@@ -1,0 +1,126 @@
+{
+  "fn": "allocationSegments",
+  "input": {
+    "input": {
+      "status": {
+        "currentAccount": "a",
+        "accounts": [
+          {
+            "name": "a",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.99,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "b",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.99,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          }
+        ],
+        "switchThreshold": null,
+        "switchThresholds": null,
+        "routes": []
+      },
+      "pool": {
+        "fable": 0,
+        "general": 0.9000000000000001,
+        "session": 0.8,
+        "usableAccounts": 2,
+        "perAccount": [
+          {
+            "name": "a",
+            "fable": 0,
+            "general": 0.45000000000000007,
+            "session": 0.4,
+            "routable": true
+          },
+          {
+            "name": "b",
+            "fable": 0,
+            "general": 0.45000000000000007,
+            "session": 0.4,
+            "routable": true
+          }
+        ],
+        "resetAt": {
+          "fable": 1787702400000,
+          "general": 1787702400000,
+          "session": 1787407200000
+        },
+        "earliestRecoveryAt": 1787407200000
+      },
+      "cycles": [],
+      "runningCycles": 0,
+      "cycleCost": {
+        "fable": 0.1,
+        "general": 0.08,
+        "session": 0.25
+      },
+      "now": 1787400000000
+    }
+  },
+  "output": {
+    "fable": {
+      "bucket": "fable",
+      "total": 2,
+      "yoursSpent": 1.98,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 0,
+      "yoursReserved": 0.02
+    },
+    "general": {
+      "bucket": "general",
+      "total": 2,
+      "yoursSpent": 0.2,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 0.9,
+      "yoursReserved": 0.9
+    },
+    "session": {
+      "bucket": "session",
+      "total": 2,
+      "yoursSpent": 0,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 0.8,
+      "yoursReserved": 1.2
+    }
+  }
+}

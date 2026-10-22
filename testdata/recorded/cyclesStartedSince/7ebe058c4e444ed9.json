@@ -1,0 +1,65 @@
+{
+  "fn": "cyclesStartedSince",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-21T16:00:00.000Z",
+        "endedAt": "2026-08-21T17:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 2,
+          "general": 2,
+          "session": 2
+        },
+        "poolAfter": {
+          "fable": 1.95,
+          "general": 1.95,
+          "session": 2
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-21T17:00:00.000Z",
+        "endedAt": "2026-08-21T18:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 2,
+          "general": 2,
+          "session": 2
+        },
+        "poolAfter": {
+          "fable": 1.95,
+          "general": 1.95,
+          "session": 2
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "since": 1787313600000
+  },
+  "output": 2
+}

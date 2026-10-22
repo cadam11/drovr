@@ -1,0 +1,122 @@
+{
+  "fn": "poolFrom",
+  "input": {
+    "status": {
+      "currentAccount": "a",
+      "accounts": [
+        {
+          "name": "a",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0.05,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0.05,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "b",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0.1,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0.1,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "c",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0.1,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0.1,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        }
+      ],
+      "switchThreshold": null,
+      "switchThresholds": null,
+      "routes": []
+    },
+    "ceilings": {
+      "weekly": 0.55,
+      "session": 0.4
+    },
+    "now": 1792710132507
+  },
+  "output": {
+    "fable": 1.4000000000000001,
+    "general": 1.4000000000000001,
+    "session": 1.2000000000000002,
+    "usableAccounts": 3,
+    "perAccount": [
+      {
+        "name": "a",
+        "fable": 0.5,
+        "general": 0.5,
+        "session": 0.4,
+        "routable": true
+      },
+      {
+        "name": "b",
+        "fable": 0.45000000000000007,
+        "general": 0.45000000000000007,
+        "session": 0.4,
+        "routable": true
+      },
+      {
+        "name": "c",
+        "fable": 0.45000000000000007,
+        "general": 0.45000000000000007,
+        "session": 0.4,
+        "routable": true
+      }
+    ],
+    "resetAt": {
+      "fable": null,
+      "general": null,
+      "session": null
+    },
+    "earliestRecoveryAt": null
+  }
+}

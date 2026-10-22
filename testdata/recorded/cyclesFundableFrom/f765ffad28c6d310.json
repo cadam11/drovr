@@ -1,0 +1,57 @@
+{
+  "fn": "cyclesFundableFrom",
+  "input": {
+    "pool": {
+      "fable": 0.6000000000000001,
+      "general": 0.6000000000000001,
+      "session": 0.7000000000000001,
+      "usableAccounts": 2,
+      "perAccount": [
+        {
+          "name": "a",
+          "fable": 0.15000000000000002,
+          "general": 0.15000000000000002,
+          "session": 0.30000000000000004,
+          "routable": true
+        },
+        {
+          "name": "b",
+          "fable": 0.45000000000000007,
+          "general": 0.45000000000000007,
+          "session": 0.4,
+          "routable": true
+        }
+      ],
+      "resetAt": {
+        "fable": 1787702400000,
+        "general": 1787702400000,
+        "session": 1787407200000
+      },
+      "earliestRecoveryAt": 1787407200000
+    },
+    "cost": {
+      "fable": 0.1,
+      "general": 0.08,
+      "session": 0.25
+    },
+    "running": 16.249999999999996
+  },
+  "output": {
+    "cycles": 0,
+    "binding": "session",
+    "accounts": [
+      {
+        "name": "a",
+        "cycles": 1.2000000000000002,
+        "binding": "session",
+        "routable": true
+      },
+      {
+        "name": "b",
+        "cycles": 1.6,
+        "binding": "session",
+        "routable": true
+      }
+    ]
+  }
+}

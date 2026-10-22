@@ -1,0 +1,34 @@
+{
+  "fn": "orderCeilings",
+  "input": {
+    "ceilings": {
+      "low": {
+        "weekly": 0.25,
+        "session": 0.25
+      },
+      "normal": {
+        "weekly": 0.95,
+        "session": 0.6909090909090909
+      },
+      "away": {
+        "weekly": 0.85,
+        "session": 0.6
+      }
+    },
+    "edited": "normal"
+  },
+  "output": {
+    "low": {
+      "weekly": 0.25,
+      "session": 0.25
+    },
+    "normal": {
+      "weekly": 0.95,
+      "session": 0.6909090909090909
+    },
+    "away": {
+      "weekly": 0.95,
+      "session": 0.6909090909090909
+    }
+  }
+}

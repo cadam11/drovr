@@ -1,0 +1,159 @@
+{
+  "fn": "estimateCycleCost",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T00:00:00.000Z",
+        "endedAt": "2026-08-22T01:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 2,
+          "general": 2,
+          "session": 2
+        },
+        "poolAfter": {
+          "fable": 1.94,
+          "general": 1.94,
+          "session": 1.99
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T01:00:00.000Z",
+        "endedAt": "2026-08-22T02:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 2,
+          "general": 2,
+          "session": 2
+        },
+        "poolAfter": {
+          "fable": 1.94,
+          "general": 1.94,
+          "session": 1.99
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T02:00:00.000Z",
+        "endedAt": "2026-08-22T03:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 2,
+          "general": 2,
+          "session": 2
+        },
+        "poolAfter": {
+          "fable": 1.94,
+          "general": 1.94,
+          "session": 1.99
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T03:00:00.000Z",
+        "endedAt": "2026-08-22T04:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 2,
+          "general": 2,
+          "session": 2
+        },
+        "poolAfter": {
+          "fable": 1.94,
+          "general": 1.94,
+          "session": 1.99
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T04:00:00.000Z",
+        "endedAt": "2026-08-22T05:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 2,
+          "general": 2,
+          "session": 2
+        },
+        "poolAfter": {
+          "fable": 1.94,
+          "general": 1.94,
+          "session": 1.99
+        },
+        "startupTokens": 12000,
+        "yield": {
+          "ticketsMoved": 2,
+          "prsOpened": 1,
+          "commits": 6
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "seed": {
+      "fable": 0.1,
+      "general": 0.08,
+      "session": 0.25
+    },
+    "minSamples": 3,
+    "fraction": 0.9
+  },
+  "output": {
+    "fable": 0.06000000000000005,
+    "general": 0.06000000000000005,
+    "session": 0.0625
+  }
+}

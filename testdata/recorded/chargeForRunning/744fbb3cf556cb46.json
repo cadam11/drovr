@@ -1,0 +1,58 @@
+{
+  "fn": "chargeForRunning",
+  "input": {
+    "running": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T12:00:00.000Z",
+        "endedAt": null,
+        "exit": "running",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": null,
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T12:00:00.000Z",
+        "endedAt": null,
+        "exit": "running",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 0.83
+        },
+        "poolAfter": null,
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "poolNow": {
+      "fable": 1,
+      "general": 1,
+      "session": 0.83
+    },
+    "cost": {
+      "fable": 0.025,
+      "general": 0.02,
+      "session": 0.085
+    }
+  },
+  "output": 3.0000000000000004
+}

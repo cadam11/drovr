@@ -1,3 +1,4 @@
+import { record } from './record.ts';
 import { allocationSegments, type Allocation, type BucketName } from './allocation.ts';
 import { poolFrom } from './capacity.ts';
 import { ceilingsFor, effectivePriority, isPaused, type Control, type Program } from './control.ts';
@@ -112,7 +113,7 @@ const modeMeaning = (control: Control, storedMode: Control['mode']): string => {
  * reads control, teamclaude, the ledger and launchd and decides every program; this only
  * arranges what it was handed, so the CLI and the tick cannot drift apart.
  */
-export const buildStatusPayload = (input: StatusInput) => {
+const buildStatusPayloadUnrecorded = (input: StatusInput) => {
   const { control, storedMode, status, cycles, now, evaluations, service } = input;
   const ceilings = ceilingsFor(control);
   // control.maxCycleHours, never inFlight's own 24h default: decide() cuts off there, and a
@@ -187,3 +188,6 @@ export const buildStatusPayload = (input: StatusInput) => {
 };
 
 export type StatusPayload = ReturnType<typeof buildStatusPayload>;
+
+export const buildStatusPayload = (input: StatusInput): ReturnType<typeof buildStatusPayloadUnrecorded> =>
+  record('buildStatusPayload', { input }, buildStatusPayloadUnrecorded(input));

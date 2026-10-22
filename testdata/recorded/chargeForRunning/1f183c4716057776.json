@@ -1,0 +1,38 @@
+{
+  "fn": "chargeForRunning",
+  "input": {
+    "running": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "drovr",
+        "startedAt": "2026-08-22T12:00:00.000Z",
+        "endedAt": null,
+        "exit": "running",
+        "poolBefore": {
+          "fable": 0,
+          "general": 0,
+          "session": 0
+        },
+        "poolAfter": null,
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "poolNow": {
+      "fable": 1.4000000000000001,
+      "general": 1.4000000000000001,
+      "session": 1.2000000000000002
+    },
+    "cost": {
+      "fable": 0.09999999999999998,
+      "general": 0.09999999999999998,
+      "session": 0.09999999999999998
+    }
+  },
+  "output": 1
+}

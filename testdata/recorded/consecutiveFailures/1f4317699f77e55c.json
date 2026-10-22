@@ -1,0 +1,30 @@
+{
+  "fn": "consecutiveFailures",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T10:00:00.000Z",
+        "endedAt": null,
+        "exit": "running",
+        "poolBefore": {
+          "fable": 0,
+          "general": 0,
+          "session": 0
+        },
+        "poolAfter": null,
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "now": 1787400000000,
+    "windowMinutes": 60
+  },
+  "output": 0
+}

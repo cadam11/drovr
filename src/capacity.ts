@@ -1,3 +1,4 @@
+import { record } from './record.ts';
 import { fableEligible, type TeamclaudeAccount, type TeamclaudeStatus } from './teamclaude.ts';
 
 /**
@@ -63,7 +64,7 @@ export const isUsable = (account: TeamclaudeAccount, now: number): boolean => {
  * display figure — how much of each bucket is spent pool-wide. Fundability is computed
  * per account from `perAccount`, in decide.ts.
  */
-export const poolFrom = (
+const poolFromUnrecorded = (
   status: TeamclaudeStatus,
   ceilings: Ceilings,
   now: number,
@@ -113,3 +114,6 @@ export const hoursToWeeklyReset = (status: TeamclaudeStatus, now: number): numbe
 };
 
 const sum = (values: number[]): number => values.reduce((total, value) => total + value, 0);
+
+export const poolFrom = (status: TeamclaudeStatus, ceilings: Ceilings, now: number): Pool =>
+  record('poolFrom', { status, ceilings, now }, poolFromUnrecorded(status, ceilings, now));

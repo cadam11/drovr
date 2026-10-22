@@ -1,0 +1,7 @@
+{
+  "fn": "consecutiveZeroYield",
+  "input": {
+    "cycles": []
+  },
+  "output": 0
+}

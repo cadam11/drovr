@@ -1,0 +1,172 @@
+{
+  "fn": "decide",
+  "input": {
+    "input": {
+      "status": {
+        "currentAccount": "a",
+        "accounts": [
+          {
+            "name": "a",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.2,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          }
+        ],
+        "switchThreshold": null,
+        "switchThresholds": null,
+        "routes": []
+      },
+      "control": {
+        "mode": "normal",
+        "pauseUntil": null,
+        "ceilings": {
+          "low": {
+            "weekly": 0.25,
+            "session": 0.25
+          },
+          "normal": {
+            "weekly": 0.55,
+            "session": 0.4
+          },
+          "away": {
+            "weekly": 0.85,
+            "session": 0.6
+          }
+        },
+        "reserveCycles": 0.5,
+        "priorityStepCycles": 0.25,
+        "maxCyclesPerDay": 8,
+        "maxCycleHours": 12,
+        "tickBudgetMinutes": 8,
+        "maxConcurrentCycles": 2,
+        "deadlineHorizonDays": 21,
+        "contextCeilingTokens": 250000,
+        "crashWindowMinutes": 60,
+        "notifyTo": null,
+        "nudgeAfterMinutes": 240,
+        "blockedBackoffMinutes": 60,
+        "stuckCycleThreshold": 3,
+        "stallNudgeMinutes": 10,
+        "maxStallNudges": 3,
+        "blockedAlertMinutes": 20,
+        "seedCycleCost": {
+          "fable": 0.1,
+          "general": 0.08,
+          "session": 0.25
+        },
+        "programs": [
+          {
+            "name": "alpha",
+            "cwd": "/tmp/alpha",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": true,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 1,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          },
+          {
+            "name": "beta",
+            "cwd": "/tmp/beta",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": true,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 0,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          }
+        ]
+      },
+      "cycles": [
+        {
+          "v": 1,
+          "kind": "delivery",
+          "program": "beta",
+          "startedAt": "2026-08-22T12:00:00.000Z",
+          "endedAt": null,
+          "exit": "running",
+          "poolBefore": {
+            "fable": 0,
+            "general": 0,
+            "session": 0
+          },
+          "poolAfter": null,
+          "startupTokens": null,
+          "yield": null,
+          "asksRaised": 0,
+          "pauseUntil": null,
+          "sessionId": null,
+          "closing": null
+        }
+      ],
+      "program": "alpha",
+      "now": 1787400000000
+    }
+  },
+  "output": {
+    "verdict": "WAIT",
+    "reason": "a start needs 1.25 and the pool has room for 0.60 cycles (1 running)",
+    "note": "session is tightest, more room in 2h",
+    "pool": {
+      "fable": 0.35000000000000003,
+      "general": 0.45000000000000007,
+      "session": 0.4,
+      "usableAccounts": 1,
+      "perAccount": [
+        {
+          "name": "a",
+          "fable": 0.35000000000000003,
+          "general": 0.45000000000000007,
+          "session": 0.4,
+          "routable": true
+        }
+      ],
+      "resetAt": {
+        "fable": 1787702400000,
+        "general": 1787702400000,
+        "session": 1787407200000
+      },
+      "earliestRecoveryAt": 1787407200000
+    },
+    "cyclesFundable": 0.6000000000000001,
+    "binding": "session",
+    "earliestRecoveryAt": 1787407200000
+  }
+}

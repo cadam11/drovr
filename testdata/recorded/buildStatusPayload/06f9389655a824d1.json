@@ -1,0 +1,515 @@
+{
+  "fn": "buildStatusPayload",
+  "input": {
+    "input": {
+      "control": {
+        "mode": "normal",
+        "pauseUntil": null,
+        "ceilings": {
+          "low": {
+            "weekly": 0.25,
+            "session": 0.25
+          },
+          "normal": {
+            "weekly": 0.55,
+            "session": 0.4
+          },
+          "away": {
+            "weekly": 0.85,
+            "session": 0.6
+          }
+        },
+        "reserveCycles": 0.5,
+        "priorityStepCycles": 0.25,
+        "maxCyclesPerDay": 8,
+        "maxCycleHours": 12,
+        "tickBudgetMinutes": 8,
+        "maxConcurrentCycles": 2,
+        "deadlineHorizonDays": 21,
+        "contextCeilingTokens": 250000,
+        "crashWindowMinutes": 60,
+        "notifyTo": null,
+        "nudgeAfterMinutes": 240,
+        "blockedBackoffMinutes": 60,
+        "stuckCycleThreshold": 3,
+        "stallNudgeMinutes": 10,
+        "maxStallNudges": 3,
+        "blockedAlertMinutes": 20,
+        "seedCycleCost": {
+          "fable": 0.1,
+          "general": 0.08,
+          "session": 0.25
+        },
+        "programs": [
+          {
+            "name": "demo",
+            "cwd": "/tmp/demo",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": true,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 0,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          },
+          {
+            "name": "off",
+            "cwd": "/tmp/off",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": false,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 0,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          }
+        ]
+      },
+      "storedMode": "normal",
+      "status": {
+        "currentAccount": "a",
+        "accounts": [
+          {
+            "name": "a",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.05,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.05,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "b",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.1,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "c",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.1,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          }
+        ],
+        "switchThreshold": null,
+        "switchThresholds": null,
+        "routes": []
+      },
+      "cycles": [],
+      "now": 1787400000000,
+      "service": {
+        "state": {
+          "installed": true,
+          "loaded": true,
+          "pid": null,
+          "lastExitStatus": 0,
+          "intervalSeconds": 600
+        },
+        "lastTickAt": 1787399940000,
+        "lockHolder": null
+      },
+      "evaluations": [
+        {
+          "program": {
+            "name": "demo",
+            "cwd": "/tmp/demo",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": true,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 0,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          },
+          "decision": {
+            "verdict": "GO",
+            "reason": "room for 4.80 more cycles across 3 accounts (0 running)",
+            "note": "session is tightest, more room in 2h",
+            "pool": {
+              "fable": 1.4000000000000001,
+              "general": 1.4000000000000001,
+              "session": 1.2000000000000002,
+              "usableAccounts": 3,
+              "perAccount": [
+                {
+                  "name": "a",
+                  "fable": 0.5,
+                  "general": 0.5,
+                  "session": 0.4,
+                  "routable": true
+                },
+                {
+                  "name": "b",
+                  "fable": 0.45000000000000007,
+                  "general": 0.45000000000000007,
+                  "session": 0.4,
+                  "routable": true
+                },
+                {
+                  "name": "c",
+                  "fable": 0.45000000000000007,
+                  "general": 0.45000000000000007,
+                  "session": 0.4,
+                  "routable": true
+                }
+              ],
+              "resetAt": {
+                "fable": 1787702400000,
+                "general": 1787702400000,
+                "session": 1787407200000
+              },
+              "earliestRecoveryAt": 1787407200000
+            },
+            "cyclesFundable": 4.800000000000001,
+            "binding": "session",
+            "earliestRecoveryAt": 1787407200000
+          },
+          "pid": null
+        },
+        {
+          "program": {
+            "name": "off",
+            "cwd": "/tmp/off",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": false,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 0,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          },
+          "decision": {
+            "verdict": "STOP",
+            "reason": "disabled — enable it to let cycles start",
+            "note": null,
+            "pool": null,
+            "cyclesFundable": null,
+            "binding": null,
+            "earliestRecoveryAt": null
+          },
+          "pid": null
+        }
+      ]
+    }
+  },
+  "output": {
+    "generatedAt": "2026-08-22T12:00:00.000Z",
+    "service": {
+      "health": "healthy",
+      "explanation": "loaded and fires every 600s. Last tick completed 1 minutes ago",
+      "lastTickAt": "2026-08-22T11:59:00.000Z",
+      "intervalSeconds": 600
+    },
+    "mode": "normal",
+    "modeFromPhone": false,
+    "modeMeaning": "programs may use up to 55% of each account's weekly quota; the rest stays available to Craig",
+    "pausedUntil": null,
+    "paused": false,
+    "pool": {
+      "fable": 1.4,
+      "general": 1.4,
+      "session": 1.2,
+      "usableAccounts": 3,
+      "resetAt": {
+        "fable": "2026-08-26T00:00:00.000Z",
+        "general": "2026-08-26T00:00:00.000Z",
+        "session": "2026-08-22T14:00:00.000Z"
+      },
+      "earliestRecoveryAt": "2026-08-22T14:00:00.000Z",
+      "units": "account-fractions of headroom; one usable account contributes at most 1.0"
+    },
+    "capacity": {
+      "cyclesFundable": 4.8,
+      "bindingBucket": "session",
+      "fundingAccounts": 3,
+      "perAccount": [
+        {
+          "name": "a",
+          "cyclesFundable": 1.6,
+          "bindingBucket": "session",
+          "routableForFable": true
+        },
+        {
+          "name": "b",
+          "cyclesFundable": 1.6,
+          "bindingBucket": "session",
+          "routableForFable": true
+        },
+        {
+          "name": "c",
+          "cyclesFundable": 1.6,
+          "bindingBucket": "session",
+          "routableForFable": true
+        }
+      ],
+      "units": "whole delivery cycles, net of cycles already in flight; the total is the sum over accounts of each account’s own tightest bucket, never the min of the pool sums"
+    },
+    "capacityNote": "session is tightest, more room in 2h",
+    "allocation": {
+      "fable": {
+        "bucket": "fable",
+        "total": 3,
+        "yoursSpent": 0.25,
+        "programsSpent": 0,
+        "programsReserved": 0,
+        "programsAvailable": 1.4,
+        "yoursReserved": 1.35
+      },
+      "general": {
+        "bucket": "general",
+        "total": 3,
+        "yoursSpent": 0.25,
+        "programsSpent": 0,
+        "programsReserved": 0,
+        "programsAvailable": 1.4,
+        "yoursReserved": 1.35
+      },
+      "session": {
+        "bucket": "session",
+        "total": 3,
+        "yoursSpent": 0,
+        "programsSpent": 0,
+        "programsReserved": 0,
+        "programsAvailable": 1.2,
+        "yoursReserved": 1.8
+      },
+      "units": "account-units per bucket; yoursSpent + programsSpent + programsReserved + programsAvailable + yoursReserved = total, the stacked bar drovr watch draws"
+    },
+    "estimatedCycleCost": {
+      "fable": 0.1,
+      "general": 0.08,
+      "session": 0.25,
+      "units": "account-fractions consumed by one typical delivery cycle"
+    },
+    "inFlight": [],
+    "accounts": [
+      {
+        "name": "a",
+        "org": null,
+        "status": "active",
+        "sessions": 0,
+        "disabled": false,
+        "current": true,
+        "lastUsedAt": null,
+        "fableEligible": null,
+        "fableTarget": false,
+        "buckets": {
+          "session": {
+            "usedFraction": 0,
+            "resetsAt": "2026-08-22T14:00:00.000Z"
+          },
+          "general": {
+            "usedFraction": 0.05,
+            "resetsAt": "2026-08-26T00:00:00.000Z"
+          },
+          "fable": {
+            "usedFraction": 0.05,
+            "resetsAt": "2026-08-26T00:00:00.000Z"
+          }
+        },
+        "switchThresholds": {
+          "session": null,
+          "general": null,
+          "fable": null
+        },
+        "headroom": {
+          "fable": 0.5,
+          "general": 0.5,
+          "session": 0.4
+        }
+      },
+      {
+        "name": "b",
+        "org": null,
+        "status": "active",
+        "sessions": 0,
+        "disabled": false,
+        "current": false,
+        "lastUsedAt": null,
+        "fableEligible": null,
+        "fableTarget": false,
+        "buckets": {
+          "session": {
+            "usedFraction": 0,
+            "resetsAt": "2026-08-22T14:00:00.000Z"
+          },
+          "general": {
+            "usedFraction": 0.1,
+            "resetsAt": "2026-08-26T00:00:00.000Z"
+          },
+          "fable": {
+            "usedFraction": 0.1,
+            "resetsAt": "2026-08-26T00:00:00.000Z"
+          }
+        },
+        "switchThresholds": {
+          "session": null,
+          "general": null,
+          "fable": null
+        },
+        "headroom": {
+          "fable": 0.45,
+          "general": 0.45,
+          "session": 0.4
+        }
+      },
+      {
+        "name": "c",
+        "org": null,
+        "status": "active",
+        "sessions": 0,
+        "disabled": false,
+        "current": false,
+        "lastUsedAt": null,
+        "fableEligible": null,
+        "fableTarget": false,
+        "buckets": {
+          "session": {
+            "usedFraction": 0,
+            "resetsAt": "2026-08-22T14:00:00.000Z"
+          },
+          "general": {
+            "usedFraction": 0.1,
+            "resetsAt": "2026-08-26T00:00:00.000Z"
+          },
+          "fable": {
+            "usedFraction": 0.1,
+            "resetsAt": "2026-08-26T00:00:00.000Z"
+          }
+        },
+        "switchThresholds": {
+          "session": null,
+          "general": null,
+          "fable": null
+        },
+        "headroom": {
+          "fable": 0.45,
+          "general": 0.45,
+          "session": 0.4
+        }
+      }
+    ],
+    "accountsUnits": "per teamclaude account: each bucket’s used fraction of its own quota and its next reset; headroom is what the pool counts for it under the current ceilings, null when it is not usable; switchThresholds is the used fraction per bucket at which teamclaude stops routing to the account",
+    "concurrencyCap": 2,
+    "programs": [
+      {
+        "name": "demo",
+        "cwd": "/tmp/demo",
+        "host": null,
+        "enabled": true,
+        "priority": 0,
+        "effectivePriority": 0,
+        "deadline": null,
+        "verdict": "GO",
+        "verdictMeaning": "a cycle would launch on the next tick",
+        "reason": "room for 4.80 more cycles across 3 accounts (0 running)",
+        "poolNote": "session is tightest, more room in 2h",
+        "bindingBucket": "session",
+        "cyclesFundable": 4.8,
+        "recoversAt": "2026-08-22T14:00:00.000Z",
+        "runningPid": null
+      },
+      {
+        "name": "off",
+        "cwd": "/tmp/off",
+        "host": null,
+        "enabled": false,
+        "priority": 0,
+        "effectivePriority": 0,
+        "deadline": null,
+        "verdict": "STOP",
+        "verdictMeaning": "needs a human: mode is off, or this program produced no yield for several cycles",
+        "reason": "disabled — enable it to let cycles start",
+        "poolNote": null,
+        "bindingBucket": null,
+        "cyclesFundable": null,
+        "recoversAt": null,
+        "runningPid": null
+      }
+    ]
+  }
+}

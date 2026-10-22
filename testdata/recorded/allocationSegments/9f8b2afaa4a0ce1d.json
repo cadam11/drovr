@@ -1,0 +1,156 @@
+{
+  "fn": "allocationSegments",
+  "input": {
+    "input": {
+      "status": {
+        "currentAccount": "a",
+        "accounts": [
+          {
+            "name": "a",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.05,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.05,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "b",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.1,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "c",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.1,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          }
+        ],
+        "switchThreshold": null,
+        "switchThresholds": null,
+        "routes": []
+      },
+      "pool": {
+        "fable": 2.3,
+        "general": 2.3,
+        "session": 1.7999999999999998,
+        "usableAccounts": 3,
+        "perAccount": [
+          {
+            "name": "a",
+            "fable": 0.7999999999999999,
+            "general": 0.7999999999999999,
+            "session": 0.6,
+            "routable": true
+          },
+          {
+            "name": "b",
+            "fable": 0.75,
+            "general": 0.75,
+            "session": 0.6,
+            "routable": true
+          },
+          {
+            "name": "c",
+            "fable": 0.75,
+            "general": 0.75,
+            "session": 0.6,
+            "routable": true
+          }
+        ],
+        "resetAt": {
+          "fable": 1787702400000,
+          "general": 1787702400000,
+          "session": 1787407200000
+        },
+        "earliestRecoveryAt": 1787407200000
+      },
+      "cycles": [],
+      "runningCycles": 0,
+      "cycleCost": {
+        "fable": 0.1,
+        "general": 0.08,
+        "session": 0.25
+      },
+      "now": 1787400000000
+    }
+  },
+  "output": {
+    "fable": {
+      "bucket": "fable",
+      "total": 3,
+      "yoursSpent": 0.25,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 2.3,
+      "yoursReserved": 0.45
+    },
+    "general": {
+      "bucket": "general",
+      "total": 3,
+      "yoursSpent": 0.25,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 2.3,
+      "yoursReserved": 0.45
+    },
+    "session": {
+      "bucket": "session",
+      "total": 3,
+      "yoursSpent": 0,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 1.8,
+      "yoursReserved": 1.2
+    }
+  }
+}

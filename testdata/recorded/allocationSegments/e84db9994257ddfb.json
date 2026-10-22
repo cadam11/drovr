@@ -1,0 +1,277 @@
+{
+  "fn": "allocationSegments",
+  "input": {
+    "input": {
+      "status": {
+        "currentAccount": "a",
+        "accounts": [
+          {
+            "name": "a",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.05,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.05,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "b",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.1,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "c",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.1,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.1,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          }
+        ],
+        "switchThreshold": null,
+        "switchThresholds": null,
+        "routes": []
+      },
+      "pool": {
+        "fable": 1.4000000000000001,
+        "general": 1.4000000000000001,
+        "session": 1.2000000000000002,
+        "usableAccounts": 3,
+        "perAccount": [
+          {
+            "name": "a",
+            "fable": 0.5,
+            "general": 0.5,
+            "session": 0.4,
+            "routable": true
+          },
+          {
+            "name": "b",
+            "fable": 0.45000000000000007,
+            "general": 0.45000000000000007,
+            "session": 0.4,
+            "routable": true
+          },
+          {
+            "name": "c",
+            "fable": 0.45000000000000007,
+            "general": 0.45000000000000007,
+            "session": 0.4,
+            "routable": true
+          }
+        ],
+        "resetAt": {
+          "fable": 1787702400000,
+          "general": 1787702400000,
+          "session": 1787407200000
+        },
+        "earliestRecoveryAt": 1787407200000
+      },
+      "cycles": [
+        {
+          "v": 1,
+          "kind": "delivery",
+          "program": "sunnyt",
+          "startedAt": "2026-08-22T11:00:00.000Z",
+          "endedAt": "2026-08-22T12:00:00.000Z",
+          "exit": "seam",
+          "poolBefore": {
+            "fable": 1,
+            "general": 1,
+            "session": 1
+          },
+          "poolAfter": {
+            "fable": 0.9,
+            "general": 0.9,
+            "session": 0.9
+          },
+          "startupTokens": null,
+          "yield": null,
+          "asksRaised": 1,
+          "pauseUntil": null,
+          "sessionId": null,
+          "closing": null
+        },
+        {
+          "v": 1,
+          "kind": "delivery",
+          "program": "joinery",
+          "startedAt": "2026-08-22T10:00:00.000Z",
+          "endedAt": "2026-08-22T11:00:00.000Z",
+          "exit": "seam",
+          "poolBefore": {
+            "fable": 1,
+            "general": 1,
+            "session": 1
+          },
+          "poolAfter": {
+            "fable": 0.9,
+            "general": 0.9,
+            "session": 0.9
+          },
+          "startupTokens": null,
+          "yield": null,
+          "asksRaised": 1,
+          "pauseUntil": null,
+          "sessionId": null,
+          "closing": null
+        },
+        {
+          "v": 1,
+          "kind": "delivery",
+          "program": "drovr",
+          "startedAt": "2026-08-22T09:00:00.000Z",
+          "endedAt": "2026-08-22T10:00:00.000Z",
+          "exit": "seam",
+          "poolBefore": {
+            "fable": 1,
+            "general": 1,
+            "session": 1
+          },
+          "poolAfter": {
+            "fable": 0.9,
+            "general": 0.9,
+            "session": 0.9
+          },
+          "startupTokens": null,
+          "yield": null,
+          "asksRaised": 1,
+          "pauseUntil": null,
+          "sessionId": null,
+          "closing": null
+        },
+        {
+          "v": 1,
+          "kind": "delivery",
+          "program": "sunnyt",
+          "startedAt": "2026-08-22T08:00:00.000Z",
+          "endedAt": "2026-08-22T09:00:00.000Z",
+          "exit": "seam",
+          "poolBefore": {
+            "fable": 1,
+            "general": 1,
+            "session": 1
+          },
+          "poolAfter": {
+            "fable": 0.9,
+            "general": 0.9,
+            "session": 0.9
+          },
+          "startupTokens": null,
+          "yield": null,
+          "asksRaised": 1,
+          "pauseUntil": null,
+          "sessionId": null,
+          "closing": null
+        },
+        {
+          "v": 1,
+          "kind": "delivery",
+          "program": "joinery",
+          "startedAt": "2026-08-22T07:00:00.000Z",
+          "endedAt": "2026-08-22T08:00:00.000Z",
+          "exit": "seam",
+          "poolBefore": {
+            "fable": 1,
+            "general": 1,
+            "session": 1
+          },
+          "poolAfter": {
+            "fable": 0.9,
+            "general": 0.9,
+            "session": 0.9
+          },
+          "startupTokens": null,
+          "yield": null,
+          "asksRaised": 1,
+          "pauseUntil": null,
+          "sessionId": null,
+          "closing": null
+        }
+      ],
+      "runningCycles": 0,
+      "cycleCost": {
+        "fable": 0.09999999999999998,
+        "general": 0.09999999999999998,
+        "session": 0.09999999999999998
+      },
+      "now": 1787400000000
+    }
+  },
+  "output": {
+    "fable": {
+      "bucket": "fable",
+      "total": 3,
+      "yoursSpent": 0,
+      "programsSpent": 0.25,
+      "programsReserved": 0,
+      "programsAvailable": 1.4,
+      "yoursReserved": 1.35
+    },
+    "general": {
+      "bucket": "general",
+      "total": 3,
+      "yoursSpent": 0,
+      "programsSpent": 0.25,
+      "programsReserved": 0,
+      "programsAvailable": 1.4,
+      "yoursReserved": 1.35
+    },
+    "session": {
+      "bucket": "session",
+      "total": 3,
+      "yoursSpent": 0,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 1.2,
+      "yoursReserved": 1.8
+    }
+  }
+}

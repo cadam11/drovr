@@ -1,0 +1,39 @@
+{
+  "fn": "estimateCycleCost",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T10:00:00.000Z",
+        "endedAt": null,
+        "exit": "running",
+        "poolBefore": {
+          "fable": 0,
+          "general": 0,
+          "session": 0
+        },
+        "poolAfter": null,
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "seed": {
+      "fable": 0.1,
+      "general": 0.08,
+      "session": 0.25
+    },
+    "minSamples": 3,
+    "fraction": 0.9
+  },
+  "output": {
+    "fable": 0.1,
+    "general": 0.08,
+    "session": 0.25
+  }
+}

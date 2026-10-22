@@ -1,0 +1,171 @@
+{
+  "fn": "inFlight",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "sunnyt",
+        "startedAt": "2026-08-22T11:00:00.000Z",
+        "endedAt": "2026-08-22T12:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.9,
+          "general": 0.9,
+          "session": 0.9
+        },
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 1,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "joinery",
+        "startedAt": "2026-08-22T10:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.9,
+          "general": 0.9,
+          "session": 0.9
+        },
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 1,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "drovr",
+        "startedAt": "2026-08-22T09:00:00.000Z",
+        "endedAt": "2026-08-22T10:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.9,
+          "general": 0.9,
+          "session": 0.9
+        },
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 1,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "sunnyt",
+        "startedAt": "2026-08-22T08:00:00.000Z",
+        "endedAt": "2026-08-22T09:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.9,
+          "general": 0.9,
+          "session": 0.9
+        },
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 1,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "joinery",
+        "startedAt": "2026-08-22T07:00:00.000Z",
+        "endedAt": "2026-08-22T08:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.9,
+          "general": 0.9,
+          "session": 0.9
+        },
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 1,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      },
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "drovr",
+        "startedAt": "2026-08-22T12:00:00.000Z",
+        "endedAt": null,
+        "exit": "running",
+        "poolBefore": {
+          "fable": 0,
+          "general": 0,
+          "session": 0
+        },
+        "poolAfter": null,
+        "startupTokens": null,
+        "yield": null,
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "now": 1787400000000,
+    "maxHours": 12
+  },
+  "output": [
+    {
+      "v": 1,
+      "kind": "delivery",
+      "program": "drovr",
+      "startedAt": "2026-08-22T12:00:00.000Z",
+      "endedAt": null,
+      "exit": "running",
+      "poolBefore": {
+        "fable": 0,
+        "general": 0,
+        "session": 0
+      },
+      "poolAfter": null,
+      "startupTokens": null,
+      "yield": null,
+      "asksRaised": 0,
+      "pauseUntil": null,
+      "sessionId": null,
+      "closing": null
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { record } from './record.ts';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { Pool } from './capacity.ts';
@@ -173,7 +174,7 @@ export const percentile = (values: number[], fraction: number): number => {
  * tail by six times. The number is what a reserve is denominated in, and a reserve
  * sized for the typical cycle is not a reserve. Budget the expensive case.
  */
-export const estimateCycleCost = (
+const estimateCycleCostUnrecorded = (
   cycles: CycleRecord[],
   seed: CycleCost,
   minSamples = 3,
@@ -211,7 +212,7 @@ export const estimateCycleCost = (
  * and must still cost a full cycle. A 5h window that reset mid-cycle makes the
  * observed drain negative, and then the estimate stands on its own.
  */
-export const chargeForRunning = (
+const chargeForRunningUnrecorded = (
   running: CycleRecord[],
   poolNow: CycleCost,
   cost: CycleCost,
@@ -235,7 +236,7 @@ export const chargeForRunning = (
  * shown up in the quota that sample recorded. Unbounded by default, because every live
  * caller means "everything in the window so far".
  */
-export const spentSince = (
+const spentSinceUnrecorded = (
   cycles: CycleRecord[],
   windowStart: number,
   until = Number.POSITIVE_INFINITY,
@@ -259,7 +260,7 @@ export const spentSince = (
  * it from the ledger rather than from locks means a decision made in any process
  * sees every program's running work.
  */
-export const inFlight = (
+const inFlightUnrecorded = (
   cycles: CycleRecord[],
   now = Date.now(),
   maxHours = 24,
@@ -285,7 +286,7 @@ export const inFlight = (
  * may do, and a burst of cycles that died on a broken PATH should not burn the day.
  * Repeated failure is caught by consecutiveFailures instead.
  */
-export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number => {
+const cyclesStartedSinceUnrecorded = (cycles: CycleRecord[], since: number): number => {
   // None of these did any work, so none should cost a program its day: a crash never
   // ran, a deferral never started, a stalled cycle sat at its prompt, and a blocked
   // cycle only rediscovered that someone owes it an answer. Their own backoffs and
@@ -321,7 +322,7 @@ const FAILED = new Set(['crash', 'stalled']);
  * cycle is cheap once, but a program that stalls every time would otherwise loop
  * on it forever, paying full onboarding each round.
  */
-export const consecutiveFailures = (
+const consecutiveFailuresUnrecorded = (
   cycles: CycleRecord[],
   now = Date.now(),
   windowMinutes = 60,
@@ -344,7 +345,7 @@ export const consecutiveFailures = (
  * waiting on a human answer, which is a different condition entirely — counting it
  * as stuck reports a malfunction when the truth is that someone owes it a reply.
  */
-export const consecutiveZeroYield = (cycles: CycleRecord[]): number => {
+const consecutiveZeroYieldUnrecorded = (cycles: CycleRecord[]): number => {
   // A cycle that asked to rest declared *why* it produced nothing, exactly like a
   // blocked one — counting it would latch a program as stuck for waiting well.
   const finished = cycles.filter(
@@ -383,7 +384,7 @@ export const lastFinished = (cycles: CycleRecord[]): CycleRecord | null =>
  * blocked. That pattern means nobody has answered them — the program is not stalled
  * or broken, it is owed a reply.
  */
-export const unansweredAsks = (cycles: CycleRecord[]): { asks: number; at: number } | null => {
+const unansweredAsksUnrecorded = (cycles: CycleRecord[]): { asks: number; at: number } | null => {
   const finished = cycles.filter(
     (cycle) => cycle.endedAt !== null && cycle.exit !== 'deferred' && cycle.exit !== 'crash',
   );
@@ -427,3 +428,36 @@ export const lastDecisionAt = (path: string): number | null => {
   const at = Date.parse(parsed.data.at);
   return Number.isNaN(at) ? null : at;
 };
+
+export const estimateCycleCost = (
+  cycles: CycleRecord[],
+  seed: CycleCost,
+  minSamples = 3,
+  fraction = 0.9,
+): CycleCost =>
+  record(
+    'estimateCycleCost',
+    { cycles, seed, minSamples, fraction },
+    estimateCycleCostUnrecorded(cycles, seed, minSamples, fraction),
+  );
+export const chargeForRunning = (running: CycleRecord[], poolNow: CycleCost, cost: CycleCost): number =>
+  record('chargeForRunning', { running, poolNow, cost }, chargeForRunningUnrecorded(running, poolNow, cost));
+export const cyclesStartedSince = (cycles: CycleRecord[], since: number): number =>
+  record('cyclesStartedSince', { cycles, since }, cyclesStartedSinceUnrecorded(cycles, since));
+export const consecutiveFailures = (cycles: CycleRecord[], now = Date.now(), windowMinutes = 60): number =>
+  record(
+    'consecutiveFailures',
+    { cycles, now, windowMinutes },
+    consecutiveFailuresUnrecorded(cycles, now, windowMinutes),
+  );
+export const consecutiveZeroYield = (cycles: CycleRecord[]): number =>
+  record('consecutiveZeroYield', { cycles }, consecutiveZeroYieldUnrecorded(cycles));
+export const unansweredAsks = (cycles: CycleRecord[]): { asks: number; at: number } | null =>
+  record('unansweredAsks', { cycles }, unansweredAsksUnrecorded(cycles));
+export const spentSince = (
+  cycles: CycleRecord[],
+  windowStart: number,
+  until = Number.POSITIVE_INFINITY,
+): CycleCost => record('spentSince', { cycles, windowStart, until }, spentSinceUnrecorded(cycles, windowStart, until));
+export const inFlight = (cycles: CycleRecord[], now = Date.now(), maxHours = 24): CycleRecord[] =>
+  record('inFlight', { cycles, now, maxHours }, inFlightUnrecorded(cycles, now, maxHours));

@@ -1,3 +1,4 @@
+import { record } from './record.ts';
 import { z } from 'zod';
 import { fableEligible, switchThresholds, type TeamclaudeStatus } from './teamclaude.ts';
 
@@ -32,7 +33,7 @@ export type StatusAccount = z.infer<typeof statusAccountShape>;
 const iso = (at: number | null): string | null => (at === null ? null : new Date(at).toISOString());
 
 /** The ACCOUNTS block of `drovr watch`, per account, from a parsed teamclaude status. Pure. */
-export const accountsFromTeamclaude = (status: TeamclaudeStatus): StatusAccount[] => {
+const accountsFromTeamclaudeUnrecorded = (status: TeamclaudeStatus): StatusAccount[] => {
   const eligible = fableEligible(status);
   const target = status.routes.find((route) => route.name === 'fable')?.target ?? null;
   return status.accounts.map((account) => ({
@@ -53,3 +54,6 @@ export const accountsFromTeamclaude = (status: TeamclaudeStatus): StatusAccount[
     switchThresholds: switchThresholds(status, account),
   }));
 };
+
+export const accountsFromTeamclaude = (status: TeamclaudeStatus): StatusAccount[] =>
+  record('accountsFromTeamclaude', { status }, accountsFromTeamclaudeUnrecorded(status));

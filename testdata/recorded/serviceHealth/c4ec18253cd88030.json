@@ -1,0 +1,15 @@
+{
+  "fn": "serviceHealth",
+  "input": {
+    "state": {
+      "installed": true,
+      "loaded": true,
+      "pid": null,
+      "lastExitStatus": 0,
+      "intervalSeconds": 600
+    },
+    "lastTickAt": 1787399940000,
+    "now": 1787400000000
+  },
+  "output": "healthy"
+}

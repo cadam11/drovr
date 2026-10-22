@@ -1,0 +1,210 @@
+{
+  "fn": "decide",
+  "input": {
+    "input": {
+      "status": {
+        "currentAccount": "first@example.com",
+        "accounts": [
+          {
+            "name": "first@example.com",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0.98,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.49,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.41,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "second@example.com",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0.1,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.05,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.05,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "fourth@example.com",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          }
+        ],
+        "switchThreshold": null,
+        "switchThresholds": null,
+        "routes": [
+          {
+            "name": "fable",
+            "accounts": [
+              {
+                "name": "first@example.com",
+                "eligible": false
+              },
+              {
+                "name": "second@example.com",
+                "eligible": true
+              },
+              {
+                "name": "fourth@example.com",
+                "eligible": true
+              }
+            ],
+            "target": "second@example.com"
+          }
+        ]
+      },
+      "control": {
+        "mode": "normal",
+        "pauseUntil": null,
+        "ceilings": {
+          "low": {
+            "weekly": 0.25,
+            "session": 0.25
+          },
+          "normal": {
+            "weekly": 0.55,
+            "session": 0.4
+          },
+          "away": {
+            "weekly": 0.85,
+            "session": 0.6
+          }
+        },
+        "reserveCycles": 0.5,
+        "priorityStepCycles": 0.25,
+        "maxCyclesPerDay": 8,
+        "maxCycleHours": 12,
+        "tickBudgetMinutes": 8,
+        "maxConcurrentCycles": 2,
+        "deadlineHorizonDays": 21,
+        "contextCeilingTokens": 250000,
+        "crashWindowMinutes": 60,
+        "notifyTo": null,
+        "nudgeAfterMinutes": 240,
+        "blockedBackoffMinutes": 60,
+        "stuckCycleThreshold": 3,
+        "stallNudgeMinutes": 10,
+        "maxStallNudges": 3,
+        "blockedAlertMinutes": 20,
+        "seedCycleCost": {
+          "fable": 0.1,
+          "general": 0.08,
+          "session": 0.25
+        },
+        "programs": [
+          {
+            "name": "demo",
+            "cwd": "/tmp/demo",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": true,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 0,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          }
+        ]
+      },
+      "cycles": [],
+      "program": "demo",
+      "now": 1787400000000
+    }
+  },
+  "output": {
+    "verdict": "GO",
+    "reason": "room for 2.80 more cycles from 2 of 3 accounts (0 running)",
+    "note": "session is tightest, more room in 2h — only 2 of 3 accounts have room in all three buckets: session is full on first",
+    "pool": {
+      "fable": 1.1900000000000002,
+      "general": 1.11,
+      "session": 0.7000000000000001,
+      "usableAccounts": 3,
+      "perAccount": [
+        {
+          "name": "first@example.com",
+          "fable": 0.14000000000000007,
+          "general": 0.06000000000000005,
+          "session": 0,
+          "routable": false
+        },
+        {
+          "name": "second@example.com",
+          "fable": 0.5,
+          "general": 0.5,
+          "session": 0.30000000000000004,
+          "routable": true
+        },
+        {
+          "name": "fourth@example.com",
+          "fable": 0.55,
+          "general": 0.55,
+          "session": 0.4,
+          "routable": true
+        }
+      ],
+      "resetAt": {
+        "fable": 1787702400000,
+        "general": 1787702400000,
+        "session": 1787407200000
+      },
+      "earliestRecoveryAt": 1787407200000
+    },
+    "cyclesFundable": 2.8000000000000003,
+    "binding": "session",
+    "earliestRecoveryAt": 1787407200000
+  }
+}

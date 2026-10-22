@@ -1,0 +1,13 @@
+{
+  "fn": "spentSince",
+  "input": {
+    "cycles": [],
+    "windowStart": 1787098140000,
+    "until": 1787400540000
+  },
+  "output": {
+    "fable": 0,
+    "general": 0,
+    "session": 0
+  }
+}

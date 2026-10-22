@@ -1,0 +1,183 @@
+{
+  "fn": "decide",
+  "input": {
+    "input": {
+      "status": {
+        "currentAccount": "a",
+        "accounts": [
+          {
+            "name": "a",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": null,
+              "unified5hReset": null,
+              "unified7d": 0,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "b",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": null,
+              "unified5hReset": null,
+              "unified7d": 0,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": 0.8
+          }
+        ],
+        "switchThreshold": 0.98,
+        "switchThresholds": {
+          "unified7d": 0.9
+        },
+        "routes": []
+      },
+      "control": {
+        "mode": "normal",
+        "pauseUntil": null,
+        "ceilings": {
+          "low": {
+            "weekly": 0.25,
+            "session": 0.25
+          },
+          "normal": {
+            "weekly": 0.55,
+            "session": 0.4
+          },
+          "away": {
+            "weekly": 0.85,
+            "session": 0.6
+          }
+        },
+        "reserveCycles": 0.5,
+        "priorityStepCycles": 0.25,
+        "maxCyclesPerDay": 8,
+        "maxCycleHours": 12,
+        "tickBudgetMinutes": 8,
+        "maxConcurrentCycles": 2,
+        "deadlineHorizonDays": 21,
+        "contextCeilingTokens": 250000,
+        "crashWindowMinutes": 60,
+        "notifyTo": null,
+        "nudgeAfterMinutes": 240,
+        "blockedBackoffMinutes": 60,
+        "stuckCycleThreshold": 3,
+        "stallNudgeMinutes": 10,
+        "maxStallNudges": 3,
+        "blockedAlertMinutes": 20,
+        "seedCycleCost": {
+          "fable": 0.1,
+          "general": 0.08,
+          "session": 0.25
+        },
+        "programs": [
+          {
+            "name": "demo",
+            "cwd": "/tmp/demo",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": true,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 0,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          },
+          {
+            "name": "off",
+            "cwd": "/tmp/off",
+            "description": null,
+            "host": null,
+            "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+            "enabled": false,
+            "model": "fable",
+            "useDirenv": true,
+            "runner": "orca",
+            "cyclePrompt": "/project-loop {program}",
+            "sessionName": "{program} program runner",
+            "maxCyclesPerDay": null,
+            "priority": 0,
+            "deadline": null,
+            "pauseUntil": null,
+            "cadence": null,
+            "aice": null,
+            "asksFile": null
+          }
+        ]
+      },
+      "cycles": [],
+      "program": "demo",
+      "now": 1787400000000
+    }
+  },
+  "output": {
+    "verdict": "GO",
+    "reason": "room for 3.20 more cycles across 2 accounts (0 running)",
+    "note": "session is tightest, more room in unknown",
+    "pool": {
+      "fable": 1.1,
+      "general": 1.1,
+      "session": 0.8,
+      "usableAccounts": 2,
+      "perAccount": [
+        {
+          "name": "a",
+          "fable": 0.55,
+          "general": 0.55,
+          "session": 0.4,
+          "routable": true
+        },
+        {
+          "name": "b",
+          "fable": 0.55,
+          "general": 0.55,
+          "session": 0.4,
+          "routable": true
+        }
+      ],
+      "resetAt": {
+        "fable": 1787702400000,
+        "general": 1787702400000,
+        "session": null
+      },
+      "earliestRecoveryAt": 1787702400000
+    },
+    "cyclesFundable": 3.2,
+    "binding": "session",
+    "earliestRecoveryAt": 1787702400000
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "fn": "poolFrom",
+  "input": {
+    "status": {
+      "currentAccount": "ok",
+      "accounts": [
+        {
+          "name": "ok",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": null,
+            "unified5hReset": null,
+            "unified7d": 0.08,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "blown",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": null,
+            "unified5hReset": null,
+            "unified7d": 0.99,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        }
+      ],
+      "switchThreshold": null,
+      "switchThresholds": null,
+      "routes": []
+    },
+    "ceilings": {
+      "weekly": 0.55,
+      "session": 0.4
+    },
+    "now": 1787400000000
+  },
+  "output": {
+    "fable": 1.1,
+    "general": 0.47000000000000003,
+    "session": 0.8,
+    "usableAccounts": 2,
+    "perAccount": [
+      {
+        "name": "ok",
+        "fable": 0.55,
+        "general": 0.47000000000000003,
+        "session": 0.4,
+        "routable": true
+      },
+      {
+        "name": "blown",
+        "fable": 0.55,
+        "general": 0,
+        "session": 0.4,
+        "routable": true
+      }
+    ],
+    "resetAt": {
+      "fable": 1787702400000,
+      "general": 1787702400000,
+      "session": null
+    },
+    "earliestRecoveryAt": 1787702400000
+  }
+}

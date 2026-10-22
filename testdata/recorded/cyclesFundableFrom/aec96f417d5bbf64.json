@@ -1,0 +1,57 @@
+{
+  "fn": "cyclesFundableFrom",
+  "input": {
+    "pool": {
+      "fable": 0.33000000000000007,
+      "general": 0.35000000000000003,
+      "session": 0.4,
+      "usableAccounts": 2,
+      "perAccount": [
+        {
+          "name": "fourth@example.com",
+          "fable": 0,
+          "general": 0,
+          "session": 0.4,
+          "routable": true
+        },
+        {
+          "name": "first@example.com",
+          "fable": 0.33000000000000007,
+          "general": 0.35000000000000003,
+          "session": 0,
+          "routable": true
+        }
+      ],
+      "resetAt": {
+        "fable": 1787616000000,
+        "general": 1787616000000,
+        "session": 1787407200000
+      },
+      "earliestRecoveryAt": 1787407200000
+    },
+    "cost": {
+      "fable": 0.025,
+      "general": 0.02,
+      "session": 0.063
+    },
+    "running": 0
+  },
+  "output": {
+    "cycles": 0,
+    "binding": "session",
+    "accounts": [
+      {
+        "name": "fourth@example.com",
+        "cycles": 0,
+        "binding": "fable",
+        "routable": true
+      },
+      {
+        "name": "first@example.com",
+        "cycles": 0,
+        "binding": "session",
+        "routable": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "fn": "cyclesStartedSince",
+  "input": {
+    "cycles": [],
+    "since": 1787313600000
+  },
+  "output": 0
+}

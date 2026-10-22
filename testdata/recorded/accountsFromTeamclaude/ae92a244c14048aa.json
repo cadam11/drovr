@@ -1,0 +1,123 @@
+{
+  "fn": "accountsFromTeamclaude",
+  "input": {
+    "status": {
+      "currentAccount": "a",
+      "accounts": [
+        {
+          "name": "a",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": null,
+            "unified5hReset": null,
+            "unified7d": 0,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "b",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": null,
+            "unified5hReset": null,
+            "unified7d": 0,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": 0.8
+        }
+      ],
+      "switchThreshold": 0.98,
+      "switchThresholds": {
+        "unified7d": 0.9
+      },
+      "routes": []
+    }
+  },
+  "output": [
+    {
+      "name": "a",
+      "org": null,
+      "status": "active",
+      "sessions": 0,
+      "disabled": false,
+      "current": true,
+      "lastUsedAt": null,
+      "fableEligible": null,
+      "fableTarget": false,
+      "buckets": {
+        "session": {
+          "usedFraction": null,
+          "resetsAt": null
+        },
+        "general": {
+          "usedFraction": 0,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": 0.98,
+        "general": 0.9,
+        "fable": 0.98
+      }
+    },
+    {
+      "name": "b",
+      "org": null,
+      "status": "active",
+      "sessions": 0,
+      "disabled": false,
+      "current": false,
+      "lastUsedAt": null,
+      "fableEligible": null,
+      "fableTarget": false,
+      "buckets": {
+        "session": {
+          "usedFraction": null,
+          "resetsAt": null
+        },
+        "general": {
+          "usedFraction": 0,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": 0.8,
+        "general": 0.8,
+        "fable": 0.8
+      }
+    }
+  ]
+}

@@ -1,0 +1,156 @@
+{
+  "fn": "allocationSegments",
+  "input": {
+    "input": {
+      "status": {
+        "currentAccount": "first@example.com",
+        "accounts": [
+          {
+            "name": "first@example.com",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0.98,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.2,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.22,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "second@example.com",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0.66,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.08,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.07,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          },
+          {
+            "name": "fourth@example.com",
+            "type": "oauth",
+            "orgName": null,
+            "status": "active",
+            "sessions": 0,
+            "disabled": false,
+            "quota": {
+              "unified5h": 0,
+              "unified5hReset": 1787407200000,
+              "unified7d": 0.9,
+              "unified7dReset": 1787702400000,
+              "unified7dFable": 0.98,
+              "unified7dFableReset": 1787702400000,
+              "unifiedStatus": null
+            },
+            "usage": {
+              "lastUsed": null
+            },
+            "rateLimitedUntil": null,
+            "pausedUntil": null,
+            "switchThreshold": null
+          }
+        ],
+        "switchThreshold": null,
+        "switchThresholds": null,
+        "routes": []
+      },
+      "pool": {
+        "fable": 0.81,
+        "general": 0.8200000000000001,
+        "session": 0.4,
+        "usableAccounts": 3,
+        "perAccount": [
+          {
+            "name": "first@example.com",
+            "fable": 0.33000000000000007,
+            "general": 0.35000000000000003,
+            "session": 0,
+            "routable": true
+          },
+          {
+            "name": "second@example.com",
+            "fable": 0.48000000000000004,
+            "general": 0.47000000000000003,
+            "session": 0,
+            "routable": true
+          },
+          {
+            "name": "fourth@example.com",
+            "fable": 0,
+            "general": 0,
+            "session": 0.4,
+            "routable": true
+          }
+        ],
+        "resetAt": {
+          "fable": 1787702400000,
+          "general": 1787702400000,
+          "session": 1787407200000
+        },
+        "earliestRecoveryAt": 1787407200000
+      },
+      "cycles": [],
+      "runningCycles": 0,
+      "cycleCost": {
+        "fable": 0.025,
+        "general": 0.02,
+        "session": 0.063
+      },
+      "now": 1787400000000
+    }
+  },
+  "output": {
+    "fable": {
+      "bucket": "fable",
+      "total": 3,
+      "yoursSpent": 1.27,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 0.81,
+      "yoursReserved": 0.92
+    },
+    "general": {
+      "bucket": "general",
+      "total": 3,
+      "yoursSpent": 1.18,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 0.82,
+      "yoursReserved": 1
+    },
+    "session": {
+      "bucket": "session",
+      "total": 3,
+      "yoursSpent": 1.64,
+      "programsSpent": 0,
+      "programsReserved": 0,
+      "programsAvailable": 0.4,
+      "yoursReserved": 0.96
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "fn": "chargeForRunning",
+  "input": {
+    "running": [],
+    "poolNow": {
+      "fable": 0.15000000000000002,
+      "general": 0.15000000000000002,
+      "session": 0.30000000000000004
+    },
+    "cost": {
+      "fable": 0.1,
+      "general": 0.08,
+      "session": 0.25
+    }
+  },
+  "output": 0
+}

@@ -1,0 +1,37 @@
+{
+  "fn": "cyclesStartedSince",
+  "input": {
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-22T09:00:00.000Z",
+        "endedAt": "2026-08-22T11:00:00.000Z",
+        "exit": "abandoned",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.9,
+          "general": 0.9,
+          "session": 0.9
+        },
+        "startupTokens": null,
+        "yield": {
+          "ticketsMoved": 1,
+          "prsOpened": 0,
+          "commits": 2
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "since": 0
+  },
+  "output": 0
+}

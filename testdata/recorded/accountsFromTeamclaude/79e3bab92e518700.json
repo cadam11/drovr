@@ -1,0 +1,136 @@
+{
+  "fn": "accountsFromTeamclaude",
+  "input": {
+    "status": {
+      "currentAccount": "a@x.io",
+      "accounts": [
+        {
+          "name": "a@x.io",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "quota": {
+            "unified5h": 0.1,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0.4,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0.4,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        },
+        {
+          "name": "b@x.io",
+          "type": "oauth",
+          "orgName": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": true,
+          "quota": {
+            "unified5h": 0,
+            "unified5hReset": 1787407200000,
+            "unified7d": 0.1,
+            "unified7dReset": 1787702400000,
+            "unified7dFable": 0.1,
+            "unified7dFableReset": 1787702400000,
+            "unifiedStatus": null
+          },
+          "usage": {
+            "lastUsed": null
+          },
+          "rateLimitedUntil": null,
+          "pausedUntil": null,
+          "switchThreshold": null
+        }
+      ],
+      "switchThreshold": null,
+      "switchThresholds": null,
+      "routes": [
+        {
+          "name": "fable",
+          "accounts": [
+            {
+              "name": "a@x.io",
+              "eligible": true
+            },
+            {
+              "name": "b@x.io",
+              "eligible": false
+            }
+          ],
+          "target": "a@x.io"
+        }
+      ]
+    }
+  },
+  "output": [
+    {
+      "name": "a@x.io",
+      "org": null,
+      "status": "active",
+      "sessions": 0,
+      "disabled": false,
+      "current": true,
+      "lastUsedAt": null,
+      "fableEligible": true,
+      "fableTarget": true,
+      "buckets": {
+        "session": {
+          "usedFraction": 0.1,
+          "resetsAt": "2026-08-22T14:00:00.000Z"
+        },
+        "general": {
+          "usedFraction": 0.4,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0.4,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": null,
+        "general": null,
+        "fable": null
+      }
+    },
+    {
+      "name": "b@x.io",
+      "org": null,
+      "status": "active",
+      "sessions": 0,
+      "disabled": true,
+      "current": false,
+      "lastUsedAt": null,
+      "fableEligible": false,
+      "fableTarget": false,
+      "buckets": {
+        "session": {
+          "usedFraction": 0,
+          "resetsAt": "2026-08-22T14:00:00.000Z"
+        },
+        "general": {
+          "usedFraction": 0.1,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        },
+        "fable": {
+          "usedFraction": 0.1,
+          "resetsAt": "2026-08-26T00:00:00.000Z"
+        }
+      },
+      "switchThresholds": {
+        "session": null,
+        "general": null,
+        "fable": null
+      }
+    }
+  ]
+}

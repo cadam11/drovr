@@ -1,3 +1,4 @@
+import { record } from './record.ts';
 import type { Pool } from './capacity.ts';
 import { spentSince, type CycleCost, type CycleRecord } from './ledger.ts';
 import type { TeamclaudeStatus } from './teamclaude.ts';
@@ -88,7 +89,7 @@ const roundAllocation = (allocation: Allocation): Allocation => ({
  * One function for every payload (state.ts, status-payload.ts) so a remote bar cannot
  * disagree with the TUI's.
  */
-export const allocationSegments = (input: {
+const allocationSegmentsUnrecorded = (input: {
   status: TeamclaudeStatus;
   pool: Pool;
   cycles: CycleRecord[];
@@ -109,3 +110,7 @@ export const allocationSegments = (input: {
     ]),
   ) as Record<BucketName, Allocation>;
 };
+
+export const allocationSegments = (
+  input: Parameters<typeof allocationSegmentsUnrecorded>[0],
+): Record<BucketName, Allocation> => record('allocationSegments', { input }, allocationSegmentsUnrecorded(input));

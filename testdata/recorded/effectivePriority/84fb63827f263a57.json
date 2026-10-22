@@ -1,0 +1,28 @@
+{
+  "fn": "effectivePriority",
+  "input": {
+    "program": {
+      "name": "gamma",
+      "cwd": "/tmp/gamma",
+      "description": null,
+      "host": null,
+      "cycleCommand": "teamclaude run -- --model {model} -p \"/project-loop {program}\"",
+      "enabled": true,
+      "model": "fable",
+      "useDirenv": true,
+      "runner": "orca",
+      "cyclePrompt": "/project-loop {program}",
+      "sessionName": "{program} program runner",
+      "maxCyclesPerDay": null,
+      "priority": 0,
+      "deadline": null,
+      "pauseUntil": null,
+      "cadence": null,
+      "aice": null,
+      "asksFile": null
+    },
+    "now": 1787400000000,
+    "horizonDays": 21
+  },
+  "output": 0
+}
