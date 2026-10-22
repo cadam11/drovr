@@ -1,2 +1,2 @@
 #!/bin/sh
-exit 1
+echo "{ \"PID\" = 123; \"LastExitStatus\" = 0; };"

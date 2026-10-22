@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,28 @@ import (
 // Only generatedAt is normalised; every other difference is a port bug.
 var generatedAt = regexp.MustCompile(`"generatedAt": "[^"]+"`)
 
+// goBin is built once with the caller's own environment: the fixture moves HOME, and a
+// `go run` under it would look for its build cache and module cache in testdata.
+var goBin string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "drovr-conformance")
+	if err != nil {
+		panic(err)
+	}
+	goBin = filepath.Join(dir, "drovr")
+	out, err := exec.Command("go", "build", "-o", goBin, ".").CombinedOutput()
+	if err != nil {
+		os.RemoveAll(dir)
+		panic(fmt.Sprintf("go build: %v\n%s", err, out))
+	}
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// oracle points both CLIs at the fixture alone: HOME (the launchd plist), DROVR_HOME, and
+// shims for teamclaude, launchctl and orca ahead of the real PATH, so node still resolves.
 func oracle(t *testing.T) (node string, env []string) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -22,12 +45,12 @@ func oracle(t *testing.T) (node string, env []string) {
 	}
 	bin, _ := filepath.Abs("testdata/bin")
 	home, _ := filepath.Abs("testdata/home")
-	return node, append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "DROVR_HOME="+home)
+	return node, append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "DROVR_HOME="+home, "HOME="+home)
 }
 
 func runBoth(t *testing.T, args ...string) (goOut, tsOut string) {
 	node, env := oracle(t)
-	g := exec.Command("go", append([]string{"run", "."}, args...)...)
+	g := exec.Command(goBin, args...)
 	g.Env = env
 	gb, err := g.CombinedOutput()
 	if err != nil {

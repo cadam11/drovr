@@ -4,7 +4,8 @@
   "notifyTo": null,
   "programs": [
     { "name": "alpha", "cwd": "/tmp/drovr-fixture/alpha", "priority": 0 },
-    { "name": "beta", "cwd": "/tmp/drovr-fixture/beta", "priority": 1, "cadence": "12h" },
+    { "name": "beta", "cwd": "/tmp/drovr-fixture/beta", "priority": 1, "cadence": "12h",
+      "host": { "environment": "env-fixture", "ssh": "ubuntu@fixture-box", "cwd": "/home/ubuntu/beta", "wake": null } },
     { "name": "gamma", "cwd": "/tmp/drovr-fixture/gamma", "priority": 0, "enabled": false }
   ]
 }
