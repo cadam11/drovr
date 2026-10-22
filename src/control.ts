@@ -149,6 +149,11 @@ const programShape = z.object({
     .nullable()
     .default(null),
   aice: aiceShape.nullable().default(null),
+  /**
+   * Markdown file of asks, relative to cwd, for a program with no aice page: one task item per
+   * ask, unchecked while open. Read by asks.ts when there is no aice page.
+   */
+  asksFile: z.string().nullable().default(null),
 });
 
 const controlShape = z.object({
