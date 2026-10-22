@@ -1,0 +1,10 @@
+{
+  "mode": "normal",
+  "pauseUntil": null,
+  "notifyTo": null,
+  "programs": [
+    { "name": "alpha", "cwd": "/tmp/drovr-fixture/alpha", "priority": 0 },
+    { "name": "beta", "cwd": "/tmp/drovr-fixture/beta", "priority": 1, "cadence": "12h" },
+    { "name": "gamma", "cwd": "/tmp/drovr-fixture/gamma", "priority": 0, "enabled": false }
+  ]
+}

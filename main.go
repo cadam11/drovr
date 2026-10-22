@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cadam11/drovr/internal/cli"
+	"github.com/cadam11/drovr/internal/epoch"
 	"github.com/cadam11/drovr/internal/help"
+	"github.com/cadam11/drovr/internal/paths"
 )
 
 // version is stamped by scripts/release.sh with -ldflags "-X main.version=<VERSION>".
@@ -51,6 +55,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "version", "--version":
 		fmt.Fprintln(stdout, version)
 		return nil
+	case "status":
+		env := cli.Env{Paths: paths.New(), Now: epoch.Now, Stdout: stdout, Stderr: stderr}
+		return cli.Status(context.Background(), env, asJSON)
 	}
 	if _, ok := help.Find(cmd); ok {
 		return notPorted(cmd, rest)

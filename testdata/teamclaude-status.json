@@ -1,0 +1,72 @@
+{
+  "currentAccount": "acct-a",
+  "accounts": [
+    {
+      "name": "acct-a",
+      "disabled": false,
+      "quota": {
+        "unified5h": 0.1,
+        "unified5hReset": 1893474000000,
+        "unified7d": 0.2,
+        "unified7dReset": 1893974400000,
+        "unified7dFable": 0.15,
+        "unified7dFableReset": 1893672000000,
+        "unifiedStatus": "allowed"
+      },
+      "rateLimitedUntil": null,
+      "pausedUntil": null
+    },
+    {
+      "name": "acct-b",
+      "disabled": false,
+      "quota": {
+        "unified5h": 0.3,
+        "unified5hReset": 1893474000000,
+        "unified7d": 0.4,
+        "unified7dReset": 1893974400000,
+        "unified7dFable": 0.35,
+        "unified7dFableReset": 1893672000000,
+        "unifiedStatus": "allowed"
+      },
+      "rateLimitedUntil": null,
+      "pausedUntil": null
+    },
+    {
+      "name": "acct-c",
+      "disabled": false,
+      "quota": {
+        "unified5h": 0.05,
+        "unified5hReset": 1893474000000,
+        "unified7d": 0.1,
+        "unified7dReset": 1893974400000,
+        "unified7dFable": 0.1,
+        "unified7dFableReset": 1893672000000,
+        "unifiedStatus": "allowed"
+      },
+      "rateLimitedUntil": null,
+      "pausedUntil": null
+    }
+  ],
+  "routes": [
+    {
+      "name": "fable",
+      "accounts": [
+        {
+          "name": "acct-a",
+          "eligible": true
+        },
+        {
+          "name": "acct-b",
+          "eligible": true
+        },
+        {
+          "name": "acct-c",
+          "eligible": false
+        }
+      ],
+      "target": "acct-a"
+    }
+  ],
+  "switchThreshold": 0.9,
+  "switchThresholds": null
+}
