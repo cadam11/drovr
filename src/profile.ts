@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { iconForm } from '../lambda/hey/handler.ts';
+import { iconForm } from './hey-wire.ts';
 import type { Program } from './control.ts';
 import { defaultCaller, setProfile } from './hey.ts';
 import { listRepos, worktreeRepoId } from './orca.ts';

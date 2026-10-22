@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { NOT_FOUND_PREFIX, prefsShape, PROGRAM_PATTERN, statusRowShape, type Prefs, type Profile, type StatusRow } from '../lambda/hey/handler.ts';
+import { NOT_FOUND_PREFIX, prefsShape, PROGRAM_PATTERN, statusRowShape, type Prefs, type Profile, type StatusRow } from './hey-wire.ts';
 import { credentialsPath, DEFAULT_ENDPOINT, toolCaller } from './hey-http.ts';
 import { accountsFromTeamclaude, statusAccountShape } from './status-accounts.ts';
 import { statusShape as teamclaudeStatusShape } from './teamclaude.ts';
