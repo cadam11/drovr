@@ -11,7 +11,15 @@ import (
 // ToFixed is Number.prototype.toFixed: it rounds the exact binary value half-up,
 // where %.Nf rounds half-even and so disagrees on exact ties like 0.125.
 func ToFixed(v float64, digits int) string {
-	if digits < 0 || digits > 20 || math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v) >= 1e21 {
+	switch {
+	case math.IsNaN(v):
+		return "NaN"
+	case math.IsInf(v, 1):
+		return "Infinity"
+	case math.IsInf(v, -1):
+		return "-Infinity"
+	}
+	if digits < 0 || digits > 20 || math.Abs(v) >= 1e21 {
 		panic(fmt.Sprintf("jsnum: ToFixed(%v, %d) outside the supported range", v, digits))
 	}
 	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(digits)), nil)
