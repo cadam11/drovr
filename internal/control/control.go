@@ -271,6 +271,11 @@ func ParseDuration(s string) (epoch.Millis, error) {
 		return 0, fmt.Errorf("duration %q: %w", s, err)
 	}
 	unit := map[string]epoch.Millis{"m": 60_000, "h": 3_600_000, "d": 86_400_000}[m[2]]
+	// JS yields a huge float here; a wrapped int64 could read as negative, opening a cadence
+	// window TS holds shut or slipping a rest under MaxRestDays.
+	if value > math.MaxInt64/unit {
+		return 0, fmt.Errorf("duration %q is too long to represent", s)
+	}
 	return value * unit, nil
 }
 

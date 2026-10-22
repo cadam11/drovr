@@ -37,8 +37,11 @@ func TestParseRefusals(t *testing.T) {
 		`{"programs":[{"name":"a","cwd":"/x","host":{"environment":"e","ssh":"s","cwd":"rel"}}]}`: "host.cwd must be an absolute path on the box",
 		`{"programs":[{"name":"a","cwd":"/x","runner":"docker"}]}`:                                "runner",
 		`{"programs":[{"name":"a","cwd":"/x","description":"` + strings.Repeat("x", 501) + `"}]}`: "description",
-		`{"reserveCycles":"half"}`:                "reserveCycles",
-		`{"programs":[{"name":null,"cwd":"/x"}]}`: "programs[0].name",
+		`{"reserveCycles":"half"}`:                              "reserveCycles",
+		`{"programs":[{"name":"a","cwd":"/x","enabled":null}]}`: "programs[0].enabled",
+		`{"mode":null}`: "mode",
+		`{"ceilings":{"low":{"weekly":"x","session":0.2}}}`: "ceilings.low.weekly",
+		`{"programs":[{"name":null,"cwd":"/x"}]}`:           "programs[0].name",
 	}
 	for in, want := range cases {
 		_, err := Parse([]byte(in))
@@ -56,7 +59,7 @@ func TestParseStripsUnknownAndKeepsNullPause(t *testing.T) {
 }
 
 func TestDurationAndPauses(t *testing.T) {
-	for in, want := range map[string]epoch.Millis{"30m": 1_800_000, "12h": 43_200_000, "7d": 604_800_000} {
+	for in, want := range map[string]epoch.Millis{"30m": 1_800_000, "12h": 43_200_000, "7d": 604_800_000, "100000d": 8_640_000_000_000} {
 		got, err := ParseDuration(in)
 		if err != nil || got != want {
 			t.Errorf("ParseDuration(%q) = %d, %v", in, got, err)
@@ -64,6 +67,9 @@ func TestDurationAndPauses(t *testing.T) {
 	}
 	if _, err := ParseDuration("1w"); err == nil || !strings.Contains(err.Error(), `duration must look like 30m, 3h, or 2d — got "1w"`) {
 		t.Errorf("1w: %v", err)
+	}
+	if _, err := ParseDuration("200000000000d"); err == nil || !strings.Contains(err.Error(), `"200000000000d"`) {
+		t.Errorf("overflowing duration: %v", err)
 	}
 	now := epoch.MustParse("2026-08-22T12:00:00.000Z")
 	past := "2026-08-22T11:00:00.000Z"
