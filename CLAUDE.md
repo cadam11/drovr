@@ -94,8 +94,6 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `orca.ts` | The runner must be Fable, but Craig's default model must not change. `--model fable` goes in the launch argv (per session) — never `/model`, a settings file, or an env default. Orca's own claude launcher (`agentCmdOverrides: claude → tcr`) is not used, so its arguments do not matter. |
 | `orca.ts` | `PaneBusy` means precisely "the cycle did not start and nothing is wrong": a leftover still working or blocked, one that would not exit, or a new runner that came up behind a dialog. Recorded as a crash it wrote eight 0.2s cycles into aice-x's ledger, feeding the failure latch and the zero-yield streak for a healthy program. |
 | `orca.ts` | Only send `/exit` to a **settled** agent. A runner keeps working after writing its report; `/exit` typed into that turn is swallowed by it, and the terminal is held forever. Return false instead and let the next tick retry — the release has to be retryable, not one-shot. |
-| `project.yml` | The `HeyMac` target's module is `Hey` (`PRODUCT_MODULE_NAME`), never the target name: `AmplifyAuthSession: Hey.AuthSession`, `Hey.isUnread` and every `@testable import Hey` spell the module, and the first `HeyMacTests` run is what pins it. The bundle id is also the phone's on purpose — the APNs topic is the bundle id, and a second id would mean a second pair of SNS platform applications and a Lambda that picks one per row. |
-| `Theme.swift` | Every dynamic colour goes through `adaptiveColor(light:dark:)`; UIKit's `UIColor { trait in … }` has no macOS body and `Color(.systemBackground)` / `Color(.tertiarySystemFill)` do not exist there. A `UIColor` anywhere outside the `#if canImport(UIKit)` block breaks the Mac build, which is the only place it is caught. |
 | everywhere | A terminal handle is drovr's grip, not an address a human can follow: `term_844e…` names no place and no way to get there, which is the "name the fix, not a reference to it" rule failing in six messages at once. `runnerAddress` resolves it to the tab and the command that opens it (`orca terminal switch --terminal <handle>`); the handle survives only as that command's argument. It is best-effort — orca being unreachable costs the message its address, never the message. |
 | `cycle.ts` | An idle runner with no report is **stalled**, not finished — an interactive session that lost its turn to a 529, or answered Craig and stopped, sits at the prompt forever. The watch loop only ever asked *report yet?* and *agent gone?*, so both held a slot until `maxCycleHours`. Nudge the live session (cheap, keeps its context), bounded, then give up and free the pane. |
 | `cycle.ts` | `maxCycleHours` bounds how long drovr **watches**, not how long a cycle may live — drovr never kills one, so at the deadline the watch exits and the runner keeps going. Recording that as `crash` asserted that a cycle which often *had* delivered produced nothing, and discarded the quota sample of the longest and most expensive cycles there are. It is `abandoned`: a statement about drovr having stopped looking, not about the cycle. |
@@ -143,44 +141,11 @@ Each of these was a real bug. Re-read before touching the relevant file.
 | `keys.ts` | One writer of `control.json` now means **one code path, not one process**. `mutate` is called from the launchd tick, from `drovr watch` and from the CLI, and neither of the latter two takes the tick lock. The staged write-and-rename protects readers from a torn file; it does not order concurrent writers. The window is milliseconds and a lost update costs a re-pressed key, so do not build a lock for it — but do not claim single-writer serialization either. |
 | `hey-http.ts` | A `401` is retried **once after one refresh**, and nothing else is retried. The shim answers 401 before any tool runs, so the retry cannot duplicate a send; a 502 or a timeout after the POST might have delivered, so it is one line and exit 1. `toolCaller` is the only place this rule lives; a caller that loops on it is a duplicate-message machine. |
 | `hey-http.ts` | The credentials file is written through a **rename**, 0600, and two writers inside the shim's 60 s grace get the **same** pair — which is what lets a `hey --wait` poll and the tick refresh at the same hour boundary without one of them being signed out. Do not "fix" a refresh race with a lock file; the grace is the design. |
-| `hey-mcp/device.ts` | `GET /mcp/device?user_code=…` **prefills and spends nothing**; only the POST spends. A link preview, a mail scanner or a prefetch would otherwise burn the code before Craig sees the page (aice's rule, kept). |
-| `hey-mcp/device.ts` | **Browsers submit the device form twice.** Measured 2026-10-17: `POST /mcp/device -> 302` then, 230 ms later, `POST /mcp/device -> 400` from the prefilled page — the first press spent the code and redirected, the second found it spent and its error page *replaced* the redirect, so Craig's first real `hey login` ended "expired". Same class as plan 7's resubmitted code form. `deviceEnter` writes a `spent#<code>` pointer (`SPENT_REPLAY_SEC`) naming the login row it parked, and a resubmit inside that window replays the same 302 while the login is live and unfinished. Under the page's CSP there is no JS to disable the button, so the server has to be the one that is idempotent. |
-| `hey-mcp/device.ts` | The user-code budget is a **global per-minute counter** bumped before the lookup, not a per-device try count: before the code resolves there is no device to count against. `increment` is DynamoDB `ADD`, atomic; the memory store mirrors it. |
-| `hey-mcp/tools.ts` | `to` on a tool is a **self-check**, never a recipient: it must equal the session's handle and every tool still addresses the session. It exists so a box with the wrong `HEY_TO` is told so instead of silently sending to whoever signed in. |
 | `nudge.ts` | `publishStatus` builds its default caller **inside** the try: `defaultCaller()` reads `~/.config/hey.json`, and a malformed file in a default-parameter position threw before the guard, out of the tick. |
 | `status-accounts.ts` | `src/status-accounts.ts` imports only `zod` and `teamclaude.ts`. It is the account shape the CLI's `hey status put` validates and builds; importing `state.ts` from it (where `accountsOf` used to live) would drag orca, exec and the whole supervisor into a command meant to run where none of them exist. `state.ts` imports *it*, never the reverse. |
 | `hey.ts` | `genericStatusShape` **strips** unknown keys on purpose — Hadrian pipes the one object it also writes to SSM, carrying `at`, `box` and `tickets` — and refuses a *known* key of the wrong shape with its path. Do not make it `.strict()` to "catch typos": the writer's extra fields are the contract, and a typo in a known field is already refused. |
 | `profile.ts` | A sender profile is **decoration**, so both ends read it leniently — `profileFromRepo` yields nothing for a repo shape it does not know and `ProfileIcon.parse` yields nil for an icon it cannot draw — while the Lambda validates it strictly on the way in. A strict reader here would fail an inbox load over a tile. The seed runs **after** `startCycleAgent`, never before: two orca calls and an invoke are bounded, but a late launch is the wrong price for an avatar. |
 | `tick.ts` | The phone's Away is applied with `applyAwayMode` to the `Control` every `decide({` caller builds and is **never written** to control.json: a pass that wrote it would make the toggle sticky after Craig turned it off. `off` is not overridden — it is a stop, not a ceiling. `state.ts` reads it in the probe half and caches it with the quota probe, or every `watch` frame would pay a 15 s-bounded hey call. |
-| `handler.ts` | A `prefs` row the Lambda cannot parse reads as the defaults with a log line and the send goes out **loud**; a newer app writing a key this Lambda does not know is exactly the case, and a failed send over a setting would be worse than a sound. The app's decoder is strict the other way for the same reason: a row it cannot write back whole is one it must not overwrite. |
-| `ConversationsView.swift` | A swipe button with `role: .destructive` makes SwiftUI's `List` animate the row away **before the action runs**. Put a confirmation between the swipe and the delete and the row stays while the List already counted it gone; when the real removal lands, the collection view asserts "Invalid Number Of Items In Section" and the app dies — measured 2026-10-16, three runs. Deferred destructive actions are red by `.tint(.red)` and no role. |
-| `ConversationsView.swift` | A `List` hoists `.contextMenu` to the **row's cell**, so two cards in one paged row each carrying their own menu answered every long-press with the first card's actions — measured 2026-10-17 on Craig's phone, where page two's "Delete card" confirmed `drovr@mac`. That is why the card's long-press is a **gesture** (it reveals the corner x, Home-Screen style) and not a menu: a gesture belongs to the card it is on, a menu to the row. The reveal must be a `highPriorityGesture` or the header Button swallows the press; and the x overlay must be attached **before** that gesture, inside its view — a high-priority press holds the touch until it fails and re-dispatches only to its own subviews, so an x attached after it never received a tap (measured 2026-10-17, every tap reached the header beneath). A confirmation names its subject only through `presenting:` (the button says `Delete <id>`), never from state read while it is up. |
-| `AppModel.swift` | Optimistic removal's rollback is a **reload**, not a saved copy: a thread delete that fails halfway has already removed some rows from the table, so restoring the old array would show rows the table no longer holds. `deleteThread` reloads on failure and the list is whatever the table says; the error rides the load banner. Since plan 10 the window is several pages and the optimistic removal took every one of them, so the rollback **forgets the window and fills again** (`forgetWindow` + `load()`): a page-1 merge would leave the survivors on older pages in the table but unreachable until a relaunch — the cursor sits below them and no refresh looks there. Caught by the plan 10 review, not live. |
-| `AppModel.swift` | A refresh is **page 1 merged**, never `rows = page`. With older pages loaded, assigning page 1 drops them (the list shrinks back to 50 on every pull) and appending it doubles every row a refresh re-reads; `mergeRows` keys by `sk`, incoming wins. The cursor is set by the fill and moved only by `loadOlder` — a refresh that moved it would skip the rows between the old page 1 and the kept pages. And the three-day fill runs **once**, when `pagesLoaded == 0`: a refresh that re-ran it would pay three Queries on every pull and push. `load()` is coalesced like `start()`: a pull and a foreground push landing before page 1 returns both saw `pagesLoaded == 0` and filled twice, counting every page double, so the cap tripped at 500 real rows under a note reading 1000. And **the cap is pages fetched, not rows held**: a refresh merges new arrivals past `Paging.maxRows`, so `deleteThread` hands the store at most `maxRows` rows per batch — the real store's precondition is the invariant, not the guard; unbounded it was a crash on the one thing a flooded user does. All three predicted by plan 10's tests and its review, not yet bitten live. |
-| `LoadOlderRow.swift` | **Tap only.** A one-message thread or a short list shows the paging row at once, so an `onAppear` auto-load would chain page after page to the cap on open — a 1000-row window by the back door, when the three-day fill has already decided what the window is. |
-| `DynamoInboxStore.swift` | `ExclusiveStartKey` is the table's **full key** `{pk, sk}` rebuilt from the `sk` cursor, never `LastEvaluatedKey` handed back whole across the seam: `Model/` must not import the SDK, and the row behind the cursor may be gone by the next page (delete thread, TTL) — the position still holds because it is a key, not a row. DynamoDB sends a `LastEvaluatedKey` whenever the limit was hit, even with nothing older, so a trailing **empty page is normal** and must read as exhausted, not as an error; the fake mirrors it (`next` iff the page is full). |
-| `hey-mcp/session.ts` | A refresh token presented twice inside 60 s must get the **same** successor pair. claude.ai double-submits refreshes at the hour boundary; strict revoke-on-replay logged users out every hour in aice. Only a replay after the window is theft. |
-| `hey-mcp/oauth.ts` | Trust a redirect URI **parsed**, never by string prefix: `https://claude.ai.evil.example/…` and `https://claude.ai@evil.example/…` both start with the trusted string. Registration is open by construction (that is what DCR is); `isTrustedRedirectUri` at `/authorize` is the whole gate, and an untrusted URI gets an HTML 400, never a redirect. |
-| `hey-mcp/router.ts` | The SDK's streamable transport 406s a POST whose `Accept` lacks `text/event-stream`, even in JSON-response mode where no stream is ever opened. Widen the header before `handleRequest`, or a strict client never sees a tools list. |
-| `hey-mcp/tools.ts` | `wait` is bounded three ways — the poll count, `MAX_WAIT_SECONDS = 50`, and the message's own `waitUntil` — because the Lambda has 55 s and CloudFront's origin read timeout is 60 s, its ceiling without a quota ticket. A `wait` that outlives either is a 504 the agent reads as a lost message. |
-| `hey-mcp/http.ts` | No `form-action` in the login page's CSP. Chrome and Safari apply it to the **redirect that answers a form POST**, and the code form's answer is a 302 to the client's own callback (`http://127.0.0.1:<port>/…` or claude.ai), which `'self'` blocks: the Lambda minted the code and the session, the browser never followed, and back/reload showed "expired or already used". Measured 2026-10-17, twice, before the cause was found. |
-| `infra/mcp.tf` | A NONE-auth Function URL needs **two** statements since October 2025: the `lambda:InvokeFunctionUrl` one the provider adds **and** `lambda:InvokeFunction` conditioned on `lambda:InvokedViaFunctionUrl`, or every request is a 403 `AccessDeniedException` with the policy visibly present (measured 2026-10-17; aice's aice-ops hit the same 403 and gave up on NONE). Provider 5.100 cannot express that condition (`invoked_via_function_url` is 6.x), so `terraform_data.hey_mcp_invoke_via_url` writes it through the CLI. |
-| `infra/mcp.tf` | The Function URL **remaps** `WWW-Authenticate` to `x-amzn-remapped-www-authenticate` on the way out, and a CloudFront Function cannot put it back: "CloudFront doesn't invoke edge functions for viewer response events when the origin returns HTTP status code 400 or higher", and the header rides on a 401. `lambda/hey-mcp-edge/` is a Lambda@Edge **origin-response** (run for every status) that copies it back; without it clients only find the metadata through the well-known fallback. |
-| `infra/mcp.tf` | Dropping an edge function's association and deleting the function in one apply fails `FunctionInUse`: Tofu orders the delete before the distribution update. Two commits (association first), or `-target` the distribution first — measured 2026-10-17 removing the CloudFront Function above. |
-| `cli/hey/help.go` | `help --json` must be the Node document byte for byte, and Go's `encoding/json` differs from `JSON.stringify` in three ways that each change the bytes: it sorts map keys (so every object is a struct in the TS literal's field order — the JSON-RPC envelope included), it HTML-escapes `<>&` by default (so everything goes through `marshalJSON` with `SetEscapeHTML(false)`), and it has no notion of JavaScript's integer-key ordering (so `exitCodes` is declared `0, 1, 2, 130`, not the `0, 2, 1, 130` the TS literal writes). `pnpm conform:cli` catches all three; `go test` catches the last two. |
-| `cli/hey/args.go` | Choice length is JavaScript's `.length`, UTF-16 units, through `jsLength` — the handler's zod `.max(24)` measures the same way, so a rune count would pass a twelve-emoji choice the server then refuses as `bad_request` after a round trip. |
-| `cli/hey/main.go` | Ctrl-C is a cancelled context, not a process exit: `fail` checks `ctx.Err()` before anything else, or an interrupted call prints `context canceled` and exits 1 where the Node CLI dies silently with 130. |
-| `cli/hey/conformance_test.go` | **Offline rows must not be able to send.** Measured 2026-10-17: the plan's bash-shaped comparison loop, run under zsh, kept `"help nope"` as one argument — not a command name, so a send by contract — and both CLIs delivered 22 rows each to Craig's phone from the real signed-in `HOME`. Offline HOMEs hold no credentials file and point `endpoint` at `https://127.0.0.1:9/mcp`, and any offline row whose output matches `sent <id> to` fails the table on either side. Never compare the two CLIs from a real `HOME`; in zsh an unquoted `$args` does not word-split (`${=args}` does). |
-| `infra/cli.tf` | The five `aws_s3_object` sources are required on purpose. A `fileset`/`fileexists` guard would turn a checkout without `dist/cli/` into a plan that proposes deleting the published binaries, which an executor told to expect "1 to change" might wave through. Failing loudly costs a `pnpm build:cli`. |
-| `scripts/release-hey.sh` | The archives must be deterministic or every `tofu plan` re-uploads them: version from `VERSION` (never the commit), `touch -t` on the binary, `--uid 0 --gid 0 --uname '' --gname ''`, `gzip -n`. Build twice and diff the sums; a toolchain upgrade legitimately changes the bytes once. |
-| `project.yml` | **The Mac's widget host re-reads an extension's widget list only when its build number changes.** `CURRENT_PROJECT_VERSION` is `CFBundleVersion` for the app and the widget alike; reinstalling with the same number logs `Unchanged extension … version 1` in chronod and keeps the cached kinds, so a new widget kind never reaches Edit Widgets however many times the app is reinstalled or chronod restarted (measured 2026-10-20: the status-card kind was in the bundle's AppIntents metadata and the phone listed four kinds, the Mac three). Bump it with every build that adds or removes a widget kind. The phone re-reads on every install. |
-| `StatusRowItem.swift` | The SDK `Item` adapter and the widget's JSON adapter both reduce a row to strings for `StatusRow.decode(strings:)`. **A dropped non-string key is a misattributed row**: `compactMapValues` turned a numeric `program` into "absent", which the decoder reads as drovr's row (`testAProgramOfTheWrongTypeIsAnError` caught it on the first run, 2026-10-20). Both adapters throw `row is missing <key>` for a non-string among `StatusRow.stringKeys` and pass `ttl` (a number) through unread. |
-| `WidgetTimeline.swift` | A widget's stale marker cannot be the card's. The card says stale at two tick intervals; the widget fetches at most every 15 minutes and holds a row that was up to a tick old when fetched, so the card's boundary alone would show orange routinely while drovr was fine (side agent, 2026-10-20). `staleBoundary` adds `WidgetRefresh.interval`; a real stop shows on the widget about 15 minutes after the card. |
-| `StatusTimelineProvider.swift` | `TimelineProvider.Context` is not Sendable: a `Task { completion(... placeholder(in: context)) }` is a Swift 6 error. Take the fallback entry before the task starts. |
-| `AppModel.swift` | `widgetsChanged(nil)` is **sign-out only**. `loadNow` runs while signed in, and Amplify's tokens are unreadable offline past the id token's hour; passing that nil deleted the keychain record and every widget read "Sign in to Hey" with policy `.never` until a later load succeeded online (review, 2026-10-20). A load that cannot read the session leaves the record alone. |
-| `WidgetSession.swift` | Only `errSecItemNotFound` is signed out. Every other `OSStatus` — `errSecInteractionNotAllowed` before first unlock, -34018 for a missing entitlement or profile group — is `Outcome.failed`, drawn as the reason on the widget's normal schedule; folded into nil it was "Sign in to Hey" with no reload, hiding the most likely first-run failure on the Mac. `write` leaves an unchanged record in place: every load calls it, and a delete-then-add opens a moment with no item. |
-| `StatusFetch.swift` | The Query is newest-`sk`-first; the widget passes the rows through `StatusReport.ordered` or, with two hosts, it draws one and `hey://status` opens the other. |
-| `ConversationsView.swift` | A widget tap usually launches the app cold, before any report is loaded, so `onOpenURL` cannot open the sheet then. `AppModel.statusDetailRequested` holds the request and `takeStatusDetail()` answers it once the reports land (`onChange(of: model.statusReports)`). |
 
 ## The CLI is read by agents
 
@@ -198,25 +163,10 @@ Two rules for anything the CLI prints:
 
 Never document a flag before implementing it — a help page that lies is worse than a missing one.
 
-`cli/hey/help.go` is `src/hey-help.ts` ported data for data, and `pnpm conform:cli` compares
-every help page and `help --json` byte for byte. A change to the Node registry lands in both
-files in the same commit, or the table fails.
 
 ## Not yet observed working
 
 Written and type-checked, never seen to fire. Unproven, not done:
-
-- **The Go `hey` refreshing a session on the Mac.** The Mac swapped its `hey` symlink for the Go
-  binary on 2026-10-17 and `hey whoami` answered on the existing credentials file; the tick's Node
-  caller and the Go binary now share that file, so the first hour boundary either refreshes under
-  both (the 60 s grace) or signs one of them out. Not yet seen.
-- **The Go `hey` on a box.** Built and conformance-tested against the Node CLI on the Mac
-  (2026-10-17: 65 offline rows byte-identical bar the Go-only `version`; 10 live rows through the
-  real shim — send, `--wait 10s` exit 2, prefs, profile, status, whoami, another handle refused —
-  identical after id/instant/clock normalisation), published at `https://drovr.app/cli/`. No box
-  has installed it, so no `hey login`, no refresh (the live run started with a fresh token, so the
-  harness's credentials write-back never fired) and no send has gone through the binary anywhere
-  but the Mac.
 
 - **The send budget refusing a real sender.** `SEND_BUDGET_PER_HOUR` landed 2026-10-17, proven
   in the handler suite (the 31st refused, another label and the next hour unaffected) and through
@@ -271,7 +221,7 @@ Written and type-checked, never seen to fire. Unproven, not done:
   it, so no record has yet been filled in by the live path. `drovr ledger --closing` shows them.
 - **A failed-tick text reaching Craig.** `runTick` was verified against a failing `teamclaude`
   in an isolated `DROVR_HOME` — three failed ticks wrote one marker and logged one alert
-  attempt, a healthy tick cleared it — but with no `phoneNumber` configured there, so the
+  attempt, a healthy tick cleared it — but with no `notifyTo` configured there, so the
   send itself has not run and no real tick has failed since it landed.
 - **`epochMs` coercing a real teamclaude value.** Proven against the recorded 2026-09-14 shape
   and against the live payload with one account rewritten, but teamclaude 1.1.14 assigns
@@ -285,256 +235,40 @@ Written and type-checked, never seen to fire. Unproven, not done:
   minute of landing (2026-08-29 15:57: aice-x admitted over resting sunnyt, refused at 15:47
   by the old ranking); the reverse — a lapsed rest raising lower programs' bars again on its
   own — is proven only in the suite.
-- **A TestFlight build of Hey.** Plan 4's Task 8 is deferred until the dedicated Apple developer
-  account is approved; every device build so far is a Debug build signed by a temporary team
-  (`TEAMID0000` in `infra/apple.tf` and `ios/Hey/project.yml`), and the plan's Task 8 preamble is
-  the team-switch checklist that runs first. With it unobserved: the `APNS/hey` (production)
-  platform application has never minted an endpoint, so no `production` device row exists and
-  `ExportOptions.plist` has never been written.
-- **A sandbox device row dying through `EndpointDisabled`.** The Lambda's disabled-endpoint
-  branch has run only in the suite; the one sandbox token is still live.
 - **Identity-pool credentials past their hour.** `AmplifyCredentials` asks Amplify on every
   request and caches nothing, but no Debug build has sat 65 minutes in the background and then
   refreshed (plan 4, Task 3 step 9 — the app was reinstalled too often on 2026-10-16 to run it).
-- **`ALLOW_REFRESH_TOKEN_AUTH` past the refresh token's first day.** A session restore across a
-  relaunch is observed (2026-10-16); one across days is not.
-- **A load error from a half-answered row in the wild.** `MessageRow.decode` and the Lambda's
-  `messageShape` refuse a row with `reply` but no `repliedAt`; only the suite has produced one,
-  since the app's UpdateItem sets both at once.
-- **A lock-screen answer through the new transport.** Plan 9's live `hey --wait 2m --choices yes,no`
-  expired untapped (2026-10-17, exit 2 as designed); a `--wait` closed by a reply over the HTTPS
-  caller is proven only in the suite.
 - **A `slow_down` from the real shim steering the CLI's interval.** Task 4 saw the shim answer
   `slow_down` to curl; the CLI's widening of its interval is proven only in the suite.
-- **A device code expiring under a waiting `hey login`.** Nobody has left one for 15 minutes.
 - **The 30-a-minute user-code budget tripping live.** The 429 page is proven in the suite.
-- **Two processes refreshing the same credentials file at once.** The grace is proven in plan 7's
-  suite and the rename in this one; the collision has not happened live.
-- **A box other than the Mac signed in with `hey login`.** The relliq dev box and the Hadrian box
-  are the first candidates. **The relliq dev box is dark since Task 11's apply (2026-10-17):** its
-  `hey-relliq-devbox` key is destroyed, so anything there that sent through hey fails until someone
-  runs `hey login` on it (`docs/hey-mcp.md`, "Install on a box").
-- **The hey Lambda is gone (plan 9, Task 12, done 2026-10-17 inside plan 12).** The Hadrian box had
-  signed in and sent through `hey login`, so `infra/senders.tf`, `infra/lambda.tf` and
-  `lambda/hey/index.ts` were removed (5 destroys, no Cognito change); `lambda/hey/handler.ts` and
-  `aws.ts` stay as the library `hey-mcp` runs in-process. Nothing may invoke a Lambda named `hey`
-  again: every sender holds a session from `hey login`.
-- **A read mark written from a second phone.** Read marks are `read#<from>` rows on the server
-  so two phones agree; one phone exists.
 - **drovr's admission under the phone's Away.** `applyAwayMode` is tested and `drovr status`
   read `away (phone)` live on 2026-10-16 while control.json stayed `normal`; no tick has yet
   admitted a cycle that `normal` would have refused.
-- **A profile seeded by a real cycle start.** `seedSenderProfile` ran by hand for drovr on
-  2026-10-16 (🦾, #737373, marker written, second run silent); the call from `runInOrca` has not
-  fired on a tick-launched cycle.
-- **A `profile#` row with an image icon drawn on the phone.** Every seeded profile so far is an
-  emoji or a colour; `AsyncImage` and the data-URL path are exercised only by `ProfileIcon.parse`.
-- **A quiet-hours banner seen silent on the phone.** The Lambda set `interruption-level: passive`
-  and the Mac printed the quiet note on 2026-10-16; whether the locked phone stayed dark and
-  silent was not confirmed by eye.
-- **A multi-choice reply from the phone.** `--multi` is tested end to end in the suites
-  (`multiReply`, the Lambda's `multi` row, `--multi` args) but check 9 (`--choices "a,b,c"
-  --multi` → tap a and c → Send → `a, c`) has not run on the device.
-- **The message-count badge on the phone.** `unreadBadge` and `unreadCount` count messages in
-  the suites; check 10 (two unread in one thread → badge 2) has not run on the device.
-- **A refused lock-screen answer announcing itself.** `announceRefusal` posts a local notification
-  when a yes/no action lands after the lapse; `refusalNotice` is tested, the post is not, and no
-  device has shown it.
-- **The New divider on the device.** A thread opened with unread bubbles draws a "New" rule above
-  the first of them and lifts the bubbles under it with the list's unread wash until the reader
-  leaves (Craig, 2026-10-17: read and unread bubbles in a thread "aren't distinct, that feels just
-  a little jarring"). Proven in the Simulator (`testOpeningAThreadShowsANewDividerAboveTheUnreadBubbles`)
-  and the suites; whether the opening scroll lands the divider in view on a long thread, and whether
-  the lift reads as "new" without shouting on the phone's own screen, has not been seen on a device.
-- **Full-width swipes and the growing compose field on the device.** Proven in the Simulator
-  (`testSwipeTogglesReadAndDeleteRemovesTheThread`, `testComposeGrowsWithALongDraftAndTheChipsStayPut`);
-  the build carrying them (b0950ee) is compiled but was not installed before Craig stepped away.
-- **Paging on the device.** The three-day first-load fill, "Load older" on the list and in a
-  thread, the hint for a page with nothing from that sender, the merge on a pull with older pages
-  loaded, a push tap paging to an old message and the cap note are proven in the Simulator
-  (`PagingTests`, `AppModelTests`, `SeedTests`, the two `-backlog` UI tests) and never on the
-  phone, whose partition has yet to hold 51 rows; `DynamoInboxStore`'s `ExclusiveStartKey` round
-  trip has run only against `MessageRow`'s unit tests, never against DynamoDB. The device build
-  is in the plan 10 scratchpad for the coordinator to install.
-- **The drovr card drawn from the live row on the phone.** The Mac's tick publishes
-  (`status published to hey (8156 bytes)`, 2026-10-17) and `hey status` reads it back; the card
-  is proven on the fixture in the Simulator, but the phone was unreachable when plan 6 landed, so
-  no device has yet drawn the real row or opened the sheet on it.
-- **The status row surviving a drovr outage into `stale`.** `cardFreshness` is proven in the
-  suite; no tick has yet stopped for twenty minutes under a signed-in phone, so the orange
-  `stale · Nm` has been seen only from the `-stale-drovr` seed.
-- **A status row the phone could not decode, in the wild.** `StatusRow.decode` names the missing
-  field and the card shows it (`DrovrMissingCard`), proven against a renamed key in the suite; no
-  real payload has yet broken the shape.
-- **A generic status card on the phone.** Plan 12 landed 2026-10-17 and its wire half ran live the
-  same afternoon: the Hadrian box piped `teamclaude status --json | hey status put --program hadrian
-  --host craig --teamclaude -` and a `lines`-only payload, both acked, both read back on the Mac by
-  `hey status` with the extra fields stripped, and a row written past the CLI's guard read back as
-  `? · 0 lines` without failing the list (spec amendment "Plan 12", observed). What has not been seen
-  is the phone: CA-iPhone was unreachable, so the generic card beside drovr's, the error card, and
-  the stale marker are proven only in the Simulator and the suite. Install the device build and look.
-- **Two hosts' drovr cards.** One row per host is proven in `handler.spec.ts`; only the Mac publishes
-  drovr's row today.
-- **A status card's row coming back on the sender's next put.** The reveal → x → confirm → DeleteItem
-  path ran on Craig's phone 2026-10-17 ("lgtm"; the two `hadrian-test` test rows were deleted under
-  the device role), as did a bubble's "Mark unread" (then labelled "Mark unread from here"). Unseen: a live sender rewriting a
-  deleted card on its next put, and the 5 s reveal timeout lapsing untouched.
 - **The publish failing without failing the tick, live.** `publishStatus` returns a reason and
   `stampTick` runs regardless (Task 3's tests); no real invoke has failed since it landed.
-- **`away (phone)` on the card, from a tick that ran under it.** The mode line reads plan 5's
-  `AppModel.prefs.away` the moment the toggle flips; the published row saying `mode: "away"` on
-  the next tick (plan 5's `applyAwayMode`) has not yet been seen to follow it on the phone.
-- **A hey-mcp session refreshing its Cognito token.** The `REFRESH_TOKEN_AUTH` call fires only
-  once a session is an hour old; proven in the suite against a canned Cognito, not yet seen live.
-- **A Cognito refusal revoking a hey-mcp session.** Disabling the Cognito user should 401 every
-  connector within the hour; nobody has disabled it. The throttle-is-a-502 branch beside it is
-  equally unseen live.
-- **A wrong email code re-offering the form, live.** Cognito's acceptance of a second
-  `EMAIL_OTP` answer on the same session after `CodeMismatchException` is what the page assumes;
-  only the right-code path has run against the real pool.
 - **A `wait` spanning two tool calls.** `listening: true` followed by a second `wait` that
   returns the reply has run only in the suite; the live `wait` lapsed unanswered.
-- **The losing side of a refresh race.** Two concurrent live refreshes returned one pair, but
-  which request lost — and that it deleted its unreturned pair — is proven only by reasoning,
-  not by a test or a log line.
-- **Hey on the Mac, live — mostly observed 2026-10-19.** The signed Debug build runs from
-  `/Applications/Hey.app` (copied there 2026-10-19; a build left in the session scratchpad under
-  `/private/tmp` is gone at the next reboot, and with it the Mac's push target). Seen against the
-  real pool: a push reaching the Mac (banner in Notification Center, Dock badge, menu bar count —
-  both delegate paths fire, `willPresent` frontmost and `application(_:didReceiveRemoteNotification:)`
-  behind another app); the Amplify session surviving a relaunch; Yes/No answered from the Mac closing
-  a `hey --wait` (exit 0); the menu bar extra opening the window on a thread and hiding its own
-  popover; Cmd-, Settings; a Mac sign-out removing only the `os: macos` device row while the phone
-  kept buzzing; the passkey sign-in on the Mac (Touch ID against the phone's passkey through iCloud
-  Keychain), after the anchor fix below; and the phone buzzing with the Mac app running. Fixed on
-  the day, each a trap: the menu bar label must be an `HStack { Image; Text }` — a `Text` with the
-  image interpolated drew an 18 pt blank, and the MacBook's own menu bar is full to the notch, so the
-  item is visible only on the external display; read marks load **before** the pages or the badge
-  climbs through every unread row of the first fill and falls back (0 → 50 → 186 → 0, phone too);
-  bubble text on the Mac is an `NSTextView` (`Mac/LinkText.swift`) because SwiftUI `Text` gives a link
-  run no hover cursor and an `NSTextField` tracks links only as first responder — hand over the link,
-  I-beam and selection elsewhere, `menu(for:)` nil so the SwiftUI context menu still shows; the
-  `.menuBarExtraStyle(.window)` popover does not close itself, so `NSApp.keyWindow?.orderOut(nil)`
-  before `openWindow`; and the passkey panel needs `presentationAnchorForWebAuthn` — Amplify's
-  default is a fresh screenless `NSWindow`, which put the Touch ID panel on the other monitor while
-  the button spun (`AmplifyAuthSession.panelAnchor`). Still unobserved: a notification clicked on the
-  **closed** Mac app launching it onto the thread, and the window request with the window closed
-  (`PushDelegate.openWindowRequest`); the first-run email-code path on a Mac with no remembered
-  username (`continueSignInWithFirstFactorSelection` → `EMAIL_OTP`); the post-code passkey
-  registration panel on the Mac (anchored by the same fix, never shown); a right-click on a Mac bubble
-  reaching Copy / Mark unread through the `NSTextView` (unverified by eye); the Mac UI tests on main
-  past 3af40ee (they need Craig's `automationmodetool`, so they have not re-run since).
-- **The widgets, live — the Mac fetch observed 2026-10-20.** Plan "Hey widgets" landed on `main`:
-  both extensions build and embed (the Mac widget bundle is 2.0 MB, no SDK), 285 unit tests pass on
-  both platforms (SigV4 against AWS's signing-key vector and botocore's full signature among them),
-  and the Mac's "drovr pool" widget ran its first `REFRESH_TOKEN_AUTH` → `GetCredentialsForIdentity`
-  → signed `Query` round trip with no failure line, footprint 8.3–12.0 MB against the ~30 MB limit.
-  Seen 2026-10-20 evening: the Mac gallery drawing all three drovr kinds at every family and the "status card" kind listed after the build-number bump (Craig: "lgtm"). Not yet seen: the widget on the phone; the status card's picker choosing a second program; a tap opening the drovr
-  sheet (phone) or the window with the inspector (Mac — whether a URL reaches `MenuBarLabel`'s
-  `.onOpenURL` or the window scene is unsettled by reading); sign-out emptying the Mac widget while the
-  phone's stays; a failed fetch redrawing the cache; a stale entry with the app closed. Log:
-  `/usr/bin/log show --last 10m --predicate 'process == "HeyWidget"' --info | grep widget`.
 
 ## Notifications
 
-Every alert goes through **hey**, drovr's own channel: `textCraig` in `nudge.ts` calls
-`https://hey.drovr.app/mcp` as the user who ran `hey login` on this Mac
-(`~/.config/hey/credentials.json`, read from the tick's `HOME`), and the shim writes a row to the `hey` table
-and publishes to every `device#` row the recipient's phones have registered, through the SNS
-platform applications `APNS/hey` and `APNS_SANDBOX/hey` (hey design,
-`docs/superpowers/specs/2026-10-15-notify-app-design.md`). The iOS app is `ios/Hey/`, a Debug
-build on Craig's phone until TestFlight (see "Not yet observed"); it reads its own partition
-straight from DynamoDB with identity-pool credentials and never calls the Lambda. Its window
-(plan 10) is the newest `msg#` rows paged 50 at a time on the one partition-wide Query, the cursor
-being the last `sk` carried as `ExclusiveStartKey` (`Model/Paging.swift`): the first load fills
-the last `Paging.firstLoadDays` = 3 days or 50 rows, whichever is more, "Load older" pages on
-tap, a refresh re-reads page 1 only and merges by `sk`, and `Paging.maxRows` = 1000 caps a
-session's paging (pages fetched, not rows held: a refresh still merges what arrived since). Unread counts are of loaded rows, so unread older than the window is not counted; the
-Lambda's badge on a push is the authoritative number. Read state is
-the app's `read#<from>` rows, which is how the Lambda can put the unread-**message** count on
-each push as `aps.badge` (Craig, 2026-10-16: messages, not threads; a thread's dot is still per
-thread); the app sets the same number itself whenever its unread set changes.
-Two more row kinds live on the partition: `profile#<from>` (icon, summary, colour — the tile
-and the header; seeded once per program by `profile.ts` from Orca's repo icon, changed with
-`hey profile`) and `prefs` (quiet hours and away, written only by the phone's settings sheet).
-The Lambda reads `prefs` on every send — quiet hours make the push passive, not absent — and
-drovr reads it once per tick: `away` runs the pass on the `away` ceiling without touching
-control.json. A waiting send may offer `--choices`; exactly yes/no is answerable from the lock
-screen, anything else is chips in the thread. The phone can mark a thread unread (deletes its
-`read#` row) or, from a bubble's long-press, "Mark unread" from that message on / "Mark read" up to
-it — the same `read#` watermark moved (`readAt` one millisecond before the pressed message, or its
-own instant), and an open thread's auto-read is held until the reader leaves it. An open thread
-draws a "New" divider above the first bubble newer than the watermark it was opened with
-(`AppModel.openedWithWatermark`, recorded by the auto-read before it moves the mark, following a
-hand-set one, cleared when the thread is left) and lifts the bubbles under it with the list's unread
-wash; nothing about when the auto-read fires or the badge changes; delete a thread (its `msg#` rows and `read#` row, never `profile#`) and delete a
-status card — a long-press reveals its corner x for 5 s, the x asks, the confirm names the card
-(its one `status#` row, which a live sender rewrites on its next put); a `hey --wait` whose message was deleted ends with one line and exit 2, like no reply.
-`control.notifyTo` is the handle;
-null disables alerts and leaves the log line. The `from` label is the program for a cycle alert
-and `drovr on <host>` for a supervisor alert, because the app groups a thread by it. There is no
-Slack app and no SMS any more: a failed send is a `console.error` line and an exit code, never a
-text. A send is never retried — a retried send is a duplicate message. Every `from` label has a
-send budget of 30 messages per recipient per clock hour, enforced in the handler (`rate#<from>#<hour>`
-rows, atomic `ADD`, two-hour TTL) before the message row is written, so neither CLI needed new
-logic: the 31st is `HeyError('rate_limited')`, a tool error the CLI prints as one line and exit 1.
-
-**Hey on the Mac** (plan 11, `docs/superpowers/specs/2026-10-18-hey-desktop-app-design.md`): the same project has a `HeyMac` target (`ios/Hey/project.yml`; macOS 26; module `Hey` and bundle id `app.drovr.hey`, both identical to the phone's on purpose), a signed Debug build Craig runs from `/Applications/Hey.app` (see "Hey on the Mac, live"). One window — threads, the open thread, the status cards in an inspector where the drovr detail is a pane — a menu bar extra with the unread count and the newest five threads that opens the window on a click, and Settings (Cmd-,) on the same `prefs` row. It signs in with the same passkey (the AASA entry covers the Mac: same team, same bundle id), registers its sandbox APNs token on `APNS_SANDBOX/hey` as a second `device#` row, and the Lambda fans out to both devices unchanged. Device rows carry `os` (`ios` / `macos`; absent is the phone's), so a sign-out removes only that platform's rows. Mac-only views live in `ios/Hey/Hey/Mac/`; every other platform conditional is in `Platform.swift`, `Theme.swift`, `HeyApp.swift`, `PushDelegate.swift` and `RootView.swift`. The TUI's keys are not in the Mac app.
-
-**Hey widgets** (`docs/superpowers/specs/2026-10-20-hey-widgets-design.md`, 2026-10-20): four WidgetKit kinds — Pool, Accounts, Programs, and "status card", an `AppIntentConfiguration` whose edit menu lists every generic `program@host` the last fetch cached (`CardQuery` over `WidgetCache`; Hadrian today, nothing named in code) — from one bundle, `HeyWidget` on iOS and `HeyMacWidget` on the Mac (`ios/Hey/HeyWidget/`, bundle id `app.drovr.hey.widget`, embedded in each app). **The widget carries no SDK**: it compiles `Hey/Model`, `Hey/Widget` and three shared files, never `Hey/Services`, because WidgetKit kills an extension past about 30 MB and the AWS SDK plus Amplify would have filled that. The app writes `{sub, identityId, refreshToken}` to one keychain item in the shared access group (`WidgetSessionStore`, service `app.drovr.hey.widget`) after every load and deletes it on sign-out (`AppModel.widgetsChanged`, set in `makeModel`); the widget mints an id token with `REFRESH_TOKEN_AUTH`, hour-long credentials with `GetCredentialsForIdentity`, and signs the same `status#` Query the app runs with a hand-rolled SigV4 (`Hey/Widget/SigV4.swift`, its signing key pinned to AWS's example vector) over `URLSession`. Last good rows, generic ones included (`GenericStatusReport.payloadJSON` is kept verbatim for it), are cached in the extension's own UserDefaults; the stale marker on a widget fires one refresh window (15 min) after the card's two tick intervals, or a row fetched up to a tick old would read orange before the next fetch while drovr was fine. Every widget's tap is `hey://status`, the app's only URL scheme. The provider logs `widget footprint N MB` after every fetch. The Mac widget bundle is 2.0 MB.
-
-hey is also an MCP server at `https://hey.drovr.app/mcp` (`lambda/hey-mcp/`, `infra/mcp.tf`,
-`docs/hey-mcp.md`): a client with no shell — claude.ai — connects with no AWS credentials and signs
-in with Craig's own emailed code. Every tool runs as the signed-in user through the same `handle()`,
-so there is one send path and one front door: the `hey` command, drovr's tick and claude.ai all
-hold a session from the same sign-in — the command and the tick through `hey login` (RFC 8628
-device flow), claude.ai through its connector. There is no IAM sender, no AWS SDK in the CLI and
-no AWS call in drovr since plan 9. Craig, 2026-10-17: local sessions (Claude Code, Codex) keep
-using the `hey` CLI; the connector is not added to them.
+Every alert goes through **hey** (https://hey.drovr.app, its own private repo): `textCraig` in
+`nudge.ts` calls `https://hey.drovr.app/mcp` as the user who ran `hey login` on this Mac
+(`~/.config/hey/credentials.json`, read from the tick's `HOME`) through `src/hey-http.ts`, one
+JSON-RPC `tools/call` per alert (`send`), prefs read (`prefs`), profile seed (`profile`) and the
+once-a-tick status row (`putStatus`). `src/hey-wire.ts` is the wire contract and `src/hey.ts` the
+client library; both are copies of files the hey repo owns, and a change there lands here by hand.
+`control.notifyTo` is the handle; null disables alerts and leaves the log line. The `from` label is
+the program for a cycle alert and `drovr on <host>` for a supervisor alert, because the app groups a
+thread by it. A send is never retried: a retried send is a duplicate message. hey is optional and
+paid; without it drovr logs and nothing more. **drovr makes no AWS call.**
 
 The tick also publishes its state there: at the end of every completed pass, after the usage
-sample and before `stampTick`, `publishStatus` sends the JSON `drovr status --json` prints
-(one builder, `src/status-payload.ts`) as the row `status#drovr@<host>`, 24 h TTL, overwritten
-each tick. Same rules as every send — bounded by the call's 15 s, logged and swallowed, off
-when `control.notifyTo` is null — and the same position as the usage sample, because it is a
-window onto the tick and must never be a gate in it. `hey status --json` reads it back; the Hey
-app draws its drovr card from it, stale after two tick intervals.
-
-The row is not drovr's alone since plan 12: any program signed in with `hey login` writes its own
-with `hey status put --program <name> -` (stdin JSON `{title, intervalSeconds?, accounts?, lines?,
-note?}`, unknown fields stripped) or `teamclaude status --json | hey status put --program <name>
---teamclaude -`, and the app shows it as a card beside drovr's, keyed `program@host`. The account
-shape on the wire is one module, `src/status-accounts.ts`, shared by drovr's payload builder and the
-CLI; `headroom` is drovr's pool figure and is optional there. The Lambda keys the row
-`status#<program>@<host>` and defaults a missing `program` to `drovr`, so the tick's call never
-changed. The Go CLI (`cli/hey/status_put.go`) carries the same command: its pre-send behaviour (help,
-usage and shape errors, not signed in) byte for byte against the Node one in 18 conformance rows, the
-payload bytes in its unit tests against zod's output — no row yet compares a real ack. The Hadrian box
-is the first other writer (spec amendment "Plan 12").
-
-`hey --wait 30m "text"` from any session blocks for a reply; `drovr notify` is fire and forget.
-`hey --wait 1h --detach --json "text"` opens the window and returns the id at once, and
-`hey wait <id> [--wait 9m]` resumes the wait without sending again — slices for a shell that kills
-a command at 10 minutes (Claude Code's Bash tool); a slice that ends while the message still
-listens says `still waiting on <id> until <HH:MM>`, exit 2, distinct from `no reply by`.
-Every machine, the Mac included (since 2026-10-17), runs the **Go port** in `cli/hey/` — one
-static binary, standard library only, installed at `/opt/homebrew/bin/hey` on the Mac. `src/hey-cli.ts`
-is the **oracle**, not a command: it is no longer in `package.json` `bin`, it exists so `pnpm
-conform:cli` can compare the Go binary against it byte for byte (`src/hey.ts` the library,
-`src/hey-http.ts` the caller and the credentials file, which drovr's tick still uses in-process). Install on a
-box: `curl -fsSL https://drovr.app/cli/hey_linux_amd64.tar.gz | tar xz && sudo install hey
-/usr/local/bin/hey && rm hey && hey version && hey login` (`hey_linux_arm64`, `hey_darwin_arm64`
-likewise; `https://drovr.app/cli/manifest.json` carries the version and sha256s), then
-`HEY_TO=craig` (`docs/hey-mcp.md`, "Install on a box"). Release: bump `cli/hey/VERSION`,
-`pnpm build:cli`, `tofu apply` (`infra/cli.tf`). `hey version` exists only in the Go binary and
-is kept out of `hey help` so the list matches.
-
-The infrastructure is the Tofu root in `infra/`, state in S3 (`drovr-tfstate-000000000000`,
-created once by `infra/bootstrap`, whose own state is local and gitignored). `pnpm build:lambda`
-and `pnpm build:cli` must run before any `tofu plan` there: the function's zip and the CLI
-archives are built from gitignored bundles (`infra/cli.tf`'s five sources are required, like the
-Lambda's `archive_file`: without `dist/cli/` the plan fails naming the file instead of proposing
-to delete the published binaries).
+sample and before `stampTick`, `publishStatus` sends the JSON `drovr status --json` prints (one
+builder, `src/status-payload.ts`) as the row `status#drovr@<host>`. Same rules as every send:
+bounded by the call's 15 s, logged and swallowed, off when `control.notifyTo` is null, and in the
+same position as the usage sample because it is a window onto the tick and must never be a gate
+in it. It is the one publisher drovr has: one call per tick to hey, nothing cached, nothing
+invalidated. A web page reading that row would be a new billing decision.
 
 ## drovr is also a program
 
@@ -584,11 +318,11 @@ removed aice publisher cost $22-26 a *day*. It stays acceptable only on those te
 overwritten, no fan-out, no second surface. A web page reading that row would be a new billing
 decision, not a free extension.
 
-## The remote is stale
+## The remote
 
-`origin` is `git@github.com:cadam11/drovr.git`, last pushed 2026-08-30; `main` was 260-odd commits
-ahead of it on 2026-10-19. Pushing is Craig's act — do not push unprompted, but say so when the
-subject arises, because a lost disk loses everything since that push.
+`origin` is `git@github.com:cadam11/drovr.git`, recreated in 2026-10 with the hey paths filtered out
+of every commit (`scripts/split-public.sh` in the hey repo's history). The history before that
+recreation is gone on purpose. Pushing is Craig's act.
 
 ## Conventions
 
@@ -599,9 +333,6 @@ subject arises, because a lost disk loses everything since that push.
 - `node --test test/*.spec.ts`. Test pure functions; no mocks or spies. The `keys.spec.ts` suite
   uses real temp files because those functions write Craig's live config.
 - `pnpm check-types` is the gate. Editor diagnostics lag behind edits — trust `tsc`.
-- `cli/hey/` is Go 1.26, one flat `package main`, standard library only, no cobra (the usage
-  strings are the contract). `pnpm test:cli` is its gate: `gofmt -l` empty, `go vet`,
-  `go test ./...`, `staticcheck` when installed. `version` is the only package-level variable.
 - Comments explain *why*, never *what*. Most functions should not have one.
 
 ## Interfaces to other tools
@@ -612,36 +343,9 @@ subject arises, because a lost disk loses everything since that push.
   an Orca worktree are refused with the `orca repo add --path <cwd>` that fixes it.
 - **teamclaude** — read-only, via `teamclaude status --json`, plus `teamclaude run` as the launch
   command of every cycle.
-- **hey** — **HTTPS to `https://hey.drovr.app/mcp`** through `src/hey-http.ts` — one JSON-RPC
-  `tools/call` per alert (`send`), prefs read (`prefs`), profile seed (`profile`) and the
-  once-a-tick status row (`putStatus`), as the user in `~/.config/hey/credentials.json`. **drovr
-  makes no AWS call.** Sign-in is Cognito pool "hey" (passkey, email code), custom domain
-  auth.drovr.app; devices get credentials from identity pool "hey" under role hey-device, confined
-  to their own partition by dynamodb:LeadingKeys.
-  The MCP front door is Lambda `hey-mcp` behind CloudFront `hey.drovr.app` (its own distribution;
-  nothing cached, nothing invalidated), its own OAuth 2.1 shim ported from aice, sessions under
-  `pk = mcp` in the same table, and Cognito's `USER_AUTH`/`EMAIL_OTP` on the `hey-ios` client over
-  the public `cognito-idp` endpoint — the only Cognito API drovr's code calls.
-  APNs goes through SNS platform applications `APNS/hey` and `APNS_SANDBOX/hey` (token key from
-  the Apple developer portal, reaching Tofu as `TF_VAR_apns_key_id` and `TF_VAR_apns_p8` from the
-  dotenvx-encrypted, committed `infra/.env` — every plan and apply is
-  `dotenvx run -f infra/.env -- tofu ...`, the private key is the gitignored `infra/.env.keys`,
-  and a lost key file means a new APNs key from the portal); the passkey association file is
-  `https://drovr.app/.well-known/apple-app-site-association` (`infra/apple.tf`). The app's own
-  dependencies are Amplify Swift 2.62.1 (Auth and AWSPluginsCore) and AWS SDK for Swift 1.7.60
-  (DynamoDB, SNS; the version Amplify pins), in `ios/Hey/project.yml`. Every `xcodebuild` on it
-  needs `-skipPackagePluginValidation` for smithy-swift's code-generator plugin.
-  The Mac target builds and tests **signed** on the host (`-scheme HeyMac -destination
-  'platform=macOS' -allowProvisioningUpdates -allowProvisioningDeviceRegistration`, never
-  `CODE_SIGNING_ALLOWED=NO`): its push entitlement is `com.apple.developer.aps-environment`
-  where iOS says `aps-environment`, which is why they are two targets and not one.
-  The widget extension makes three direct calls of its own with no SDK: `cognito-idp` `InitiateAuth`
-  (`REFRESH_TOKEN_AUTH`), `cognito-identity` `GetCredentialsForIdentity`, and a SigV4-signed DynamoDB
-  `Query` of `status#` rows under the same device role.
-  The device role may also `DeleteItem` on its own partition (sign-out removes the phone's
-  `device#` rows first; mark-unread and delete-thread remove `read#` and `msg#` rows). `hey help`,
-  `hey help <cmd>`, `hey <cmd> --help`, `hey help --json` and `hey guide` render from
-  `src/hey-help.ts`; a command exists there iff it is dispatched.
+- **hey** — **HTTPS to `https://hey.drovr.app/mcp`** through `src/hey-http.ts`, as the user in
+  `~/.config/hey/credentials.json`. See Notifications. The Go `hey` CLI on this Mac comes from the
+  hey repo's release (`https://drovr.app/cli/`).
 - **ssh** — only for a program with a `host`: `ssh -o BatchMode=yes <target> cat|rm -f|true`
   through `runSsh`, bounded, to read a hosted cycle's report and transcript back and to probe the
   box before waking it. drovr never runs a cycle's work over ssh; the terminal is orca's.

@@ -10,24 +10,16 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "test": "node --test test/*.spec.ts lambda/hey/*.spec.ts lambda/hey-mcp/*.spec.ts lambda/hey-mcp-edge/*.spec.ts",
-    "check-types": "tsc --noEmit",
-    "build:lambda": "esbuild lambda/hey-mcp/index.ts --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=lambda/hey-mcp/dist/index.mjs && esbuild lambda/hey-mcp-edge/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=lambda/hey-mcp-edge/dist/index.js",
-    "build:cli": "scripts/release-hey.sh",
-    "test:cli": "cd cli/hey && test -z \"$(gofmt -l .)\" && go vet ./... && go test ./... && if command -v staticcheck >/dev/null; then staticcheck ./...; fi",
-    "conform:cli": "scripts/conform-hey.sh"
+    "test": "node --test test/*.spec.ts",
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.1152.0",
-    "@aws-sdk/client-sns": "^3.1152.0",
-    "@aws-sdk/lib-dynamodb": "^3.1152.0",
-    "@aws-sdk/util-dynamodb": "^3.996.9",
-    "@modelcontextprotocol/sdk": "1.30.0",
     "@types/node": "^22.0.0",
-    "esbuild": "^0.28.2",
     "typescript": "^5.6.0"
-  }
+  },
+  "license": "MIT",
+  "repository": "github:cadam11/drovr"
 }
