@@ -43,8 +43,24 @@ $EDITOR ~/.drovr/control.json     # add a program
 node src/cli.ts service install   # writes the launchd plist and loads it
 ```
 
-Requires Node >= 24 (runs TypeScript directly, no build step), `teamclaude` on PATH, and `aice`
-if a program publishes pages.
+## What you need
+
+- **Node 24 or newer.** drovr runs its TypeScript directly; there is no build step.
+- **[teamclaude](https://github.com/albertnahas/teamclaude)** on PATH. drovr reads
+  `teamclaude status --json` once a tick for the pooled quota and launches every cycle through
+  `teamclaude run`. It never changes a teamclaude setting.
+- **[Orca](https://www.stably.ai)**, open. Each cycle is an interactive terminal in the program's
+  own Orca worktree, which is how you can read and talk to a cycle while it runs.
+- **The `project-loop` skill** in the runner's Claude Code. It is the other half of this system:
+  it owns what a cycle does and ends the cycle with `drovr report`.
+
+Two more things are optional, and both are paid products that add to the free base:
+
+- **[hey](https://hey.drovr.app)** carries drovr's alerts to your phone and waits for your answer.
+  Without it, alerts are log lines. With it, run `hey login` once on this Mac and set
+  `control.notifyTo` to your handle.
+- **[aice](https://aice-x.com)** hosts a program's pages and its asks page. Without it, asks live
+  in a markdown file in the program's checkout (below), and nothing else changes.
 
 `service install` bakes in the PATH of the shell that runs it, since launchd starts with a bare
 one that lacks `~/Library/pnpm` and similar. It also **reloads** an already-loaded agent —
@@ -107,8 +123,7 @@ service reports the literal `launchctl bootstrap` line, not "run the bootstrap l
 
 ```bash
 drovr add <name> <path> [--priority n] [--deadline YYYY-MM-DD]
-                        [--asks <page>] [--status-page <page>]
-                        [--no-aice] [--no-direnv]
+                        [--asks <page> | --asks-file <path> | --no-aice] [--no-direnv]
 drovr rm <name>          # stops tracking; ledger history is kept
 drovr host <name> --environment <id> --ssh <user@host> --cwd </path/on/box> [--wake '<cmd>']
                          # run its cycles on a paired remote Orca runtime (see Remote hosts)
@@ -118,13 +133,15 @@ drovr host <name> --clear
 Example:
 
 ```bash
-drovr add mrr ~/code/mrr --priority 3 --asks craig/asks.html
+drovr add mrr ~/code/mrr --priority 3 --no-aice            # asks in ~/code/mrr/.drovr/asks.md
+drovr add mrr ~/code/mrr --priority 3 --asks craig/asks.html   # asks on the repo's aice install
 ```
 
 The path must exist and the name must be unique; the whole control file is validated before the
-change lands. Since the aice install comes from the repo's own `.envrc`, a new program usually
-needs nothing else — use `--no-aice` for one with no aice install at all, and `--asks` only once
-the program has an asks page (leave it unset and onboarding creates one).
+change lands. `--no-aice` puts the program's asks in `.drovr/asks.md` under its path
+(`--asks-file` names another file). With aice, the install comes from the repo's own `.envrc`, so
+a program usually needs nothing else; `--asks` names its asks page once it has one (leave it
+unset and onboarding creates one).
 
 The first tick after adding runs an **onboarding cycle**: it reconstructs state from tickets,
 git, docs and any existing aice pages, publishes the program bundle, raises one ask describing
@@ -167,11 +184,13 @@ a cycle already in flight.
     {
       "name": "aice-x",
       "cwd": "/Users/cadam/code/aice-x/aice",
-      "aice": {
-        "asksPage": "craig/loop-asks.html",
-        "statusPage": "craig/drovr-aice-x.html",
-        "publishArgs": ["--agent", "claude"]
-      }
+      "aice": { "asksPage": "craig/loop-asks.html" }
+    },
+    {
+      "name": "mrr",
+      "cwd": "/Users/cadam/code/mrr",
+      "aice": null,
+      "asksFile": ".drovr/asks.md"
     }
   ]
 }
@@ -346,14 +365,19 @@ program its day. The blocked backoff is what bounds those instead.
 A cycle that exits `blocked` has nothing left it can do without an answer. drovr then:
 
 - **Backs off** rather than burning a cycle every tick to rediscover the same question.
-- **Polls the asks page** for a reply. Any note newer than the blocked cycle ends the wait at
-  once — no command needed.
-- **Texts you** (`phoneNumber`) once the asks have gone unanswered for `nudgeAfterMinutes`
-  (default 4h). One text per ask, never one per tick.
+- **Polls the asks** for a reply. Any answer newer than the blocked cycle ends the wait at once,
+  no command needed.
+- **Messages you** through hey once the asks have gone unanswered for `nudgeAfterMinutes`
+  (default 4h), when `notifyTo` is set. One message per ask, never one per tick.
 
-> Polling needs **shared notes turned on** for that page — it is owner-only, from the page own
-> notes widget. Until it is on, `aice notes list` returns nothing whatever you write, and the
-> status line says so. Answer and run `drovr start <program>` in the meantime.
+**The asks file.** Without aice, a program's asks are a markdown file in its checkout,
+`.drovr/asks.md` by default: one task item per ask, `- [ ]` while open, with the agent's context
+indented beneath. You answer by writing under the item and ticking it `- [x]`. drovr counts the
+unchecked items as open and reads the file's modification time as your latest activity.
+
+**The asks page.** With aice, polling needs **shared notes turned on** for that page (owner-only,
+from the page's own notes widget). Until it is on, `aice notes list` returns nothing whatever you
+write, and the status line says so. Answer and run `drovr start <program>` in the meantime.
 
 ## Kicking one off by hand
 
@@ -463,25 +487,20 @@ Every write is validated before it lands, so a mistyped edit is refused rather t
 control file the next tick cannot parse. `x` signals the worker's whole process group, so the
 cycle goes down with it instead of being orphaned.
 
-## aice installs
+## aice installs (optional)
 
-Each program targets its own aice install, selected by `AICE_BASE_URL`. Token caches must not
-share a directory — a login to one install would clobber the others — so `configDir` sets
-`AICE_CONFIG_DIR` per program. Both are exported into the cycle process too, so the loop agent
-publishes to the right place without knowing any of this.
+[aice](https://aice-x.com) hosts a program's pages and its asks page. Each program targets its
+own install, selected by `AICE_BASE_URL` in the repo's `.envrc`, which direnv supplies to the
+cycle. Token caches must not share a directory, since a login to one install would clobber the
+others, so `.envrc` sets `AICE_CONFIG_DIR` per program too. drovr itself only ever reads an asks
+page's notes; it publishes nothing.
 
 ```json
-"aice": {
-  "baseUrl": "https://sunnyt.aicex.app",
-  "configDir": "~/.config/aice-sunnyt",
-  "asksPage": "craig/asks.html",
-  "statusPage": "craig/drovr-status.html",
-  "publishArgs": ["--agent", "claude"]
-}
+"aice": { "asksPage": "craig/asks.html" }
 ```
 
-`asksPage` may be null for a program that has no asks page yet; onboarding creates one.
-Each install needs a one-time login:
+`asksPage` may be null for a program that has no asks page yet; onboarding creates one. Each
+install needs a one-time login:
 
 ```bash
 AICE_BASE_URL=https://joinery.aicex.app AICE_CONFIG_DIR=~/.config/aice-joinery aice login
