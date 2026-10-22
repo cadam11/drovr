@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { readFile, stat } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { Program } from './control.ts';
@@ -123,6 +125,22 @@ const TTL_MS = 60_000;
  * briefly: a watch frame redraws every few seconds and must not shell out per
  * program each time.
  */
+/**
+ * The no-aice source: a markdown file in the program's checkout, one task item per ask. Open
+ * while unchecked; the file's mtime is the latest human activity, since a person answers by
+ * editing it. A path that resolves outside cwd is not followed.
+ */
+export const readAsksFile = async (cwd: string, file: string): Promise<AsksState | null> => {
+  const root = resolve(cwd);
+  const path = resolve(root, file);
+  if (!path.startsWith(root + sep)) return null;
+  const read = await Promise.all([readFile(path, 'utf8'), stat(path)]).catch(() => null);
+  if (read === null) return null;
+  const [text, info] = read;
+  const open = text.split(/\r?\n/).filter((line) => /^\s*[-*]\s+\[ \]\s/.test(line)).length;
+  return { shared: true, latestAt: info.mtimeMs, openThreads: open };
+};
+
 export const readAsks = async (program: Program, now = Date.now()): Promise<AsksState | null> => {
   const cached = cache.get(program.name);
   if (cached !== undefined && now - cached.at < TTL_MS) return cached.state;
@@ -132,7 +150,9 @@ export const readAsks = async (program: Program, now = Date.now()): Promise<Asks
 };
 
 const readAsksUncached = async (program: Program): Promise<AsksState | null> => {
-  if (program.aice?.asksPage == null) return null;
+  if (program.aice?.asksPage == null) {
+    return program.asksFile === null ? null : readAsksFile(program.cwd, program.asksFile);
+  }
 
   const { page, prefix } = splitPage(program.aice.asksPage);
   const parsed = await notesJson(program.cwd, ['list', page, ...prefixArgs(prefix)])

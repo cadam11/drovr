@@ -18,3 +18,40 @@ test('only the first segment is the prefix', () => {
     prefix: 'craig',
   });
 });
+
+import { mkdtempSync, writeFileSync, utimesSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { readAsksFile } from '../src/asks.ts';
+
+const dirWith = (name: string, text: string): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'asks-'));
+  writeFileSync(join(dir, name), text);
+  return dir;
+};
+
+test('an asks file counts unchecked items as open and reports its mtime', async () => {
+  const dir = dirWith('asks.md', '# Asks\n\n- [ ] Which region?\n  context here\n- [x] Keep the old name?\n  yes, keep it\n- [ ] Ship on Friday?\n');
+  utimesSync(join(dir, 'asks.md'), new Date('2026-10-22T10:00:00Z'), new Date('2026-10-22T10:00:00Z'));
+  assert.deepEqual(await readAsksFile(dir, 'asks.md'), {
+    shared: true,
+    latestAt: Date.parse('2026-10-22T10:00:00Z'),
+    openThreads: 2,
+  });
+});
+
+test('a file with only answered items has no open threads', async () => {
+  const dir = dirWith('asks.md', '- [X] done\r\n- [x] also done\r\n');
+  const state = await readAsksFile(dir, 'asks.md');
+  assert.equal(state?.openThreads, 0);
+});
+
+test('a missing asks file reads as nothing, not an error', async () => {
+  const dir = dirWith('other.md', '');
+  assert.equal(await readAsksFile(dir, 'asks.md'), null);
+});
+
+test('an asks file outside the program directory is not followed', async () => {
+  const dir = dirWith('asks.md', '- [ ] x\n');
+  assert.equal(await readAsksFile(join(dir, 'sub'), '../asks.md'), null);
+});
