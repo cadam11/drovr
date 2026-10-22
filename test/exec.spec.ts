@@ -65,5 +65,5 @@ test('runBounded preserves the child stdout on an ordinary non-zero exit', async
 
 test('explainSpawn passes a non-ENOENT error through unchanged', () => {
   const original = new Error('something else');
-  assert.equal(explainSpawn('herdr', original), original);
+  assert.equal(explainSpawn('orca', original), original);
 });

@@ -50,9 +50,9 @@ test('an unreadable file is null rather than a throw inside the tick', () => {
   assert.equal(remembered, null);
 });
 
-test("herdr's old pane file shape is null, so a stale w3W:pT id is never sent to orca", () => {
+test('an unrecognised terminal file shape is null, so a stale id is never sent to orca', () => {
   const remembered = withHome(
-    (home) => writeTerminal(home, 'aice-x', JSON.stringify({ paneId: 'w3W:pT' })),
+    (home) => writeTerminal(home, 'aice-x', JSON.stringify({ paneId: 'old-shape' })),
     () => rememberedTerminal('aice-x'),
   );
   assert.equal(remembered, null);
