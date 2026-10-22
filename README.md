@@ -46,10 +46,10 @@ node src/cli.ts service install   # writes the launchd plist and loads it
 ## What you need
 
 - **Node 24 or newer.** drovr runs its TypeScript directly; there is no build step.
-- **[teamclaude](https://github.com/albertnahas/teamclaude)** on PATH. drovr reads
+- **[teamclaude](https://github.com/KarpelesLab/teamclaude)** on PATH. drovr reads
   `teamclaude status --json` once a tick for the pooled quota and launches every cycle through
   `teamclaude run`. It never changes a teamclaude setting.
-- **[Orca](https://www.stably.ai)**, open. Each cycle is an interactive terminal in the program's
+- **[Orca](https://www.onorca.dev/)**, open. Each cycle is an interactive terminal in the program's
   own Orca worktree, which is how you can read and talk to a cycle while it runs.
 - **The `project-loop` skill** in the runner's Claude Code. It is the other half of this system:
   it owns what a cycle does and ends the cycle with `drovr report`.
