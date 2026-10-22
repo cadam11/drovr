@@ -74,7 +74,11 @@ type Status struct {
 	SwitchThresholds map[string]float64
 }
 
-type Thresholds struct{ Session, General, Fable *float64 }
+type Thresholds struct {
+	Session *float64 `json:"session"`
+	General *float64 `json:"general"`
+	Fable   *float64 `json:"fable"`
+}
 
 // SwitchThresholds resolves as teamclaude's own thresholdFor does: the account's own, else
 // the fleet's per-bucket table, else the fleet number. Nil when teamclaude reports none.
