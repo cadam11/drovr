@@ -131,11 +131,11 @@ func TestParseAndISO(t *testing.T) {
 		ms   Millis
 		ok   bool
 	}{
-		{"2026-08-22T12:00:00.000Z", 1787745600000, true},
-		{"2026-08-22T12:00:00Z", 1787745600000, true},
-		{"2026-08-22T12:00:00.123456Z", 1787745600123, true},
-		{"2026-08-22T07:00:00-05:00", 1787745600000, true},
-		{"2026-08-22", 1787702400000, true},
+		{"2026-08-22T12:00:00.000Z", 1787400000000, true},
+		{"2026-08-22T12:00:00Z", 1787400000000, true},
+		{"2026-08-22T12:00:00.123456Z", 1787400000123, true},
+		{"2026-08-22T07:00:00-05:00", 1787400000000, true},
+		{"2026-08-22", 1787356800000, true},
 		{"not a date", 0, false},
 		{"", 0, false},
 	}
@@ -145,10 +145,10 @@ func TestParseAndISO(t *testing.T) {
 			t.Errorf("Parse(%q) = %d,%v want %d,%v", c.in, got, ok, c.ms, c.ok)
 		}
 	}
-	if got := ISO(1787745600123); got != "2026-08-22T12:00:00.123Z" {
+	if got := ISO(1787400000123); got != "2026-08-22T12:00:00.123Z" {
 		t.Errorf("ISO = %q", got)
 	}
-	if got := ISO(1787745600000); got != "2026-08-22T12:00:00.000Z" {
+	if got := ISO(1787400000000); got != "2026-08-22T12:00:00.000Z" {
 		t.Errorf("ISO whole second = %q", got)
 	}
 }
@@ -713,12 +713,12 @@ import (
 	"github.com/cadam11/drovr/internal/fixtures"
 )
 
-const minimal = `{"currentAccount":"a","accounts":[{"name":"a","disabled":false,"quota":{"unified5h":null,"unified5hReset":null,"unified7d":0.1,"unified7dReset":1787745600000,"unified7dFable":0.1,"unified7dFableReset":"1787745600000"},"rateLimitedUntil":%s,"pausedUntil":null}]}`
+const minimal = `{"currentAccount":"a","accounts":[{"name":"a","disabled":false,"quota":{"unified5h":null,"unified5hReset":null,"unified7d":0.1,"unified7dReset":1787400000000,"unified7dFable":0.1,"unified7dFableReset":"1787400000000"},"rateLimitedUntil":%s,"pausedUntil":null}]}`
 
 func TestEpochCoercion(t *testing.T) {
 	cases := map[string]*int64{
-		`null`: nil, `1787745600000`: ptr(1787745600000), `"1787745600000"`: ptr(1787745600000),
-		`"2026-08-22T12:00:00.000Z"`: ptr(1787745600000), `"soon"`: nil, `"  1787745600000 "`: ptr(1787745600000),
+		`null`: nil, `1787400000000`: ptr(1787400000000), `"1787400000000"`: ptr(1787400000000),
+		`"2026-08-22T12:00:00.000Z"`: ptr(1787400000000), `"soon"`: nil, `"  1787400000000 "`: ptr(1787400000000),
 	}
 	for in, want := range cases {
 		s, err := Parse([]byte(strings.Replace(minimal, "%s", in, 1)))
@@ -729,7 +729,7 @@ func TestEpochCoercion(t *testing.T) {
 		if (got == nil) != (want == nil) || (got != nil && *got != *want) {
 			t.Errorf("rateLimitedUntil %s → %v want %v", in, got, want)
 		}
-		if r := s.Accounts[0].Quota.Unified7dFableReset; r == nil || *r != 1787745600000 {
+		if r := s.Accounts[0].Quota.Unified7dFableReset; r == nil || *r != 1787400000000 {
 			t.Errorf("string reset not coerced: %v", r)
 		}
 	}
@@ -1021,14 +1021,14 @@ func TestCountsFixtures(t *testing.T) {
 
 func TestTickStamp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "last-tick.json")
-	if err := StampTick(path, 1787745600000); err != nil {
+	if err := StampTick(path, 1787400000000); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
 	if string(b) != "{\"at\":\"2026-08-22T12:00:00.000Z\"}\n" {
 		t.Fatalf("%q", b)
 	}
-	if at, ok := ReadTickStamp(path); !ok || at != 1787745600000 {
+	if at, ok := ReadTickStamp(path); !ok || at != 1787400000000 {
 		t.Fatal(at, ok)
 	}
 	os.WriteFile(path, []byte(`{"at":"never"}`), 0o644)
