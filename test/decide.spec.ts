@@ -241,8 +241,8 @@ test('the coupled pool holds the loop and the note names who is pinned by what',
   // shares one pool, and repeating the same sentence on every row is what the
   // reason/note split exists to stop.
   assert.match(decision.note ?? '', /no account has room in all three buckets/);
-  assert.match(decision.note ?? '', /session on craig\.adam and karen\.adam/);
-  assert.match(decision.note ?? '', /fable is full on craig/);
+  assert.match(decision.note ?? '', /session on first and second/);
+  assert.match(decision.note ?? '', /fable is full on fourth/);
   assert.match(decision.reason, /a start needs 1\.00/);
   // watch.ts's REASON_BUDGET: what its wrapped detail lines preserve, whatever the
   // window. The reason and the note are drawn on separate lines, so each gets the budget.

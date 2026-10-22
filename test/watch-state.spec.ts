@@ -124,7 +124,7 @@ for (const width of [60, 72, 100, 120]) {
     // The coupling lives on the shared capacityNote line beside the bars now, printed
     // once however many programs there are — not on every program row.
     assert.match(flat, /no account has room in all three buckets/, 'the shared note was clipped');
-    assert.match(flat, /karen\.adam/, 'the note lost its last account name');
+    assert.match(flat, /second/, 'the note lost its last account name');
     // The keybar is drawn last, so wrapped reasons eating the frame shows up here first.
     // Narrow frames abbreviate every key to its first token, so `q quit` becomes `q`.
     assert.match(flat, width < 72 ? /(^|\s)q(\s|$)/ : /q quit/, 'the keybar was pushed out of the frame');
