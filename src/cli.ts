@@ -439,6 +439,8 @@ const addProgram = (rest: string[]): void => {
   if (!existsSync(absolute)) throw new Error(`${absolute} does not exist`);
 
   const asksPage = flag(rest, 'asks') ?? null;
+  const noAice = rest.includes('--no-aice');
+  const asksFile = flag(rest, 'asks-file') ?? (noAice ? '.drovr/asks.md' : null);
 
   mutate((control) => {
     const programs = Array.isArray(control.programs) ? control.programs : [];
@@ -452,7 +454,8 @@ const addProgram = (rest: string[]): void => {
       deadline: flag(rest, 'deadline') ?? null,
       ...(flag(rest, 'model') === undefined ? {} : { model: flag(rest, 'model') }),
       ...(rest.includes('--no-direnv') ? { useDirenv: false } : {}),
-      ...(rest.includes('--no-aice') ? { aice: null } : { aice: { asksPage } }),
+      ...(noAice ? { aice: null } : { aice: { asksPage } }),
+      asksFile,
     });
     control.programs = programs;
   });
