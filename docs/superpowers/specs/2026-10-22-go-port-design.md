@@ -27,9 +27,9 @@ test in the TS suite and stays one in Go.
 |---|---|---|
 | Where the code lives | Same repo. `go.mod` at the root, module `github.com/cadam11/drovr`, `main.go` at the root and packages under `internal/`. The TS tree stays until cut-over, then is deleted in one commit. | One history, one README, one issue tracker. Root module means `go build .` and `go install github.com/cadam11/drovr@latest` both work with no path to remember. |
 | Targets | `darwin_arm64` only. | drovr runs beside Orca and teamclaude on the Mac. Hosted programs run their *cycles* elsewhere; the supervisor never does. Intel and Linux are non-goals until someone asks (Craig, 2026-10-22: "meh"). |
-| Where binaries are hosted | Both (Craig, 2026-10-22). GitHub Releases on `cadam11/drovr`, one tag per version (`v0.2.0`), assets `drovr_darwin_arm64.tar.gz` and `sha256sums.txt`, is the source the formula downloads from. The same archive and a `drovr-manifest.json` are also published at `https://drovr.app/cli/` beside hey's binaries by the hey repo's `cli.tf`, so the product page can link a file it owns. | Releases are free, need no tofu, and are what a public project's users expect. drovr.app/cli is the mirror the page points at; it lags a release by one tofu apply in the hey repo, which is Craig's act. |
+| Where binaries are hosted | GitHub Releases on `cadam11/drovr`, one tag per version (`v0.2.0`), assets `drovr_darwin_arm64.tar.gz` and `sha256sums.txt`; the formula downloads from there. `https://drovr.app/cli/drovr_darwin_arm64.tar.gz` and `/cli/drovr-sha256sums.txt` also work, as **302 redirects** to the latest Release asset from the existing CloudFront Function in the hey repo (two more lines in it), so the product page links a drovr.app URL and no hey deploy ever needs a drovr build. | "Both" (Craig, 2026-10-22) without the cross-repo step: mirroring the bytes through hey's `cli.tf` would make every hey `tofu plan` fail until drovr's release script had run in a sibling checkout, because that file treats every artifact as required on purpose. A redirect costs nothing and always points at the newest release. |
 | Homebrew | A tap, `cadam11/homebrew-tap`, formula `drovr` with the Release URL and sha256 (arm64 only). Install line: `brew install cadam11/tap/drovr`. | A core formula needs notability drovr does not have; a tap is a one-file repo the release script rewrites. |
-| Release tooling | A 40-line `scripts/release.sh` modelled on hey's `release-hey.sh`: deterministic build (`-trimpath -ldflags "-s -w -X main.version=…"`, pinned mtime, `tar --uid 0`, `gzip -n`) into `dist/cli/`, then `gh release create` and a commit to the tap. The hey repo's `cli.tf` reads the same `dist/cli/` from a sibling checkout for the drovr.app mirror. | goreleaser would do the same in 80 lines of YAML plus a dependency. Not worth it for one target. |
+| Release tooling | A 40-line `scripts/release.sh` modelled on hey's `release-hey.sh`: deterministic build (`-trimpath -ldflags "-s -w -X main.version=…"`, pinned mtime, `tar --uid 0`, `gzip -n`) into `dist/cli/`, then `gh release create` and a commit to the tap. Nothing in the hey repo changes per release. | goreleaser would do the same in 80 lines of YAML plus a dependency. Not worth it for one target. |
 | Version | `VERSION` file at the root, read by the script, stamped into the binary; `drovr version` prints it. The TS CLI never had a version; `0.2.0` is the first Go release. | Same as hey. The commit is not the version. |
 | Dependencies | `golang.org/x/term` for raw mode and the terminal size, nothing else. JSON, HTTP, subprocess, file locking all come from the standard library. | Raw mode on macOS needs termios ioctls; `x/term` is the maintained wrapper and drags in only `x/sys`. Zod has no Go equivalent and needs none (see Validation). |
 | Go version | 1.26, same as the hey CLI. | One toolchain on this Mac. |
@@ -162,8 +162,8 @@ strictly more than the last, and the first four are usable before any TUI exists
    `mode`, `reserve`, `pause`, `resume`, `cadence`, `ledger`, `release`, `usage`, `init`,
    `version`. Oracle diff green for every `--json` command.
 6. **watch.** `frame`, layout, keys, mouse, preview, the detach to `tick`/`start`.
-7. **Release and cut-over.** `scripts/release.sh`, the tap, `v0.2.0`, the drovr.app/cli mirror
-   objects in the hey repo's `cli.tf`; README install becomes
+7. **Release and cut-over.** `scripts/release.sh`, the tap, `v0.2.0`, the two redirect lines in
+   the hey repo's CloudFront Function; README install becomes
    `brew install cadam11/tap/drovr` then `drovr init && drovr service install`; the drovr.app
    page's four commands change (hey repo); the shadow label removed; `src/`, `test/`,
    `package.json`, `tsconfig.json` and the pnpm lockfile deleted; CLAUDE.md conventions
@@ -212,7 +212,7 @@ program keep working; a user who downgrades to the Node tree sees the same files
 
 ## Answered 2026-10-22
 
-1. Binaries: GitHub Releases **and** the drovr.app/cli mirror.
+1. Binaries: GitHub Releases, with drovr.app/cli URLs redirecting to them (a side agent's note the same day: mirroring the bytes through hey's `cli.tf` would tie every hey plan to a drovr build).
 2. Intel: no.
 3. `0.2.0` waits for watch parity.
 
