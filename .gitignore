@@ -11,3 +11,5 @@ ios/Hey/HeyMac/Info.plist
 ios/Hey/HeyMac/HeyMac.entitlements
 cli/hey/hey
 .envrc
+/drovr
+/dist/
