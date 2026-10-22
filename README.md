@@ -43,6 +43,8 @@ $EDITOR ~/.drovr/control.json     # add a program
 node src/cli.ts service install   # writes the launchd plist and loads it
 ```
 
+A Go build of drovr is in progress (`go build .`); it is not yet what the service runs. The install above is the one that works today.
+
 ## What you need
 
 - **Node 24 or newer.** drovr runs its TypeScript directly; there is no build step.

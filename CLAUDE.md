@@ -334,6 +334,12 @@ recreation is gone on purpose. Pushing is Craig's act.
   uses real temp files because those functions write Craig's live config.
 - `pnpm check-types` is the gate. Editor diagnostics lag behind edits — trust `tsc`.
 - Comments explain *why*, never *what*. Most functions should not have one.
+- **Two implementations live here until the Go port cuts over** (spec `docs/superpowers/specs/2026-10-22-go-port-design.md`).
+  `src/` is what launchd runs. `internal/` is the Go port, one package per TS module. The TS is the oracle:
+  `scripts/record-fixtures.sh` replays the TS suite with `DROVR_RECORD` set and writes `testdata/recorded/`,
+  which the Go tests read; `conformance_test.go` diffs the two CLIs on `testdata/home`. A behaviour change
+  lands in the TS first, with its test, then `scripts/record-fixtures.sh`, then the Go — never the Go alone,
+  and never a hand-edited fixture. Gates: `go test ./... && go vet ./... && gofmt -l .` beside `pnpm check-types`.
 
 ## Interfaces to other tools
 
