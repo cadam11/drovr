@@ -121,26 +121,30 @@ const cache = new Map<string, { at: number; state: AsksState | null }>();
 const TTL_MS = 60_000;
 
 /**
- * Reads through direnv so the program's own aice install and login apply. Cached
- * briefly: a watch frame redraws every few seconds and must not shell out per
- * program each time.
- */
-/**
  * The no-aice source: a markdown file in the program's checkout, one task item per ask. Open
  * while unchecked; the file's mtime is the latest human activity, since a person answers by
- * editing it. A path that resolves outside cwd is not followed.
+ * editing it. The guard is lexical (symlinks are not resolved): a path whose resolved form is
+ * outside cwd is not read. Only a missing file is "nothing"; any other failure is thrown.
  */
 export const readAsksFile = async (cwd: string, file: string): Promise<AsksState | null> => {
   const root = resolve(cwd);
   const path = resolve(root, file);
   if (!path.startsWith(root + sep)) return null;
-  const read = await Promise.all([readFile(path, 'utf8'), stat(path)]).catch(() => null);
+  const read = await Promise.all([readFile(path, 'utf8'), stat(path)]).catch((error: unknown) => {
+    if ((error as { code?: string }).code === 'ENOENT') return null;
+    throw error;
+  });
   if (read === null) return null;
   const [text, info] = read;
-  const open = text.split(/\r?\n/).filter((line) => /^\s*[-*]\s+\[ \]\s/.test(line)).length;
+  const open = text.split(/\r?\n/).filter((line) => /^\s*[-*]\s+\[ \](\s|$)/.test(line)).length;
   return { shared: true, latestAt: info.mtimeMs, openThreads: open };
 };
 
+/**
+ * Reads through direnv so the program's own aice install and login apply. Cached
+ * briefly: a watch frame redraws every few seconds and must not shell out per
+ * program each time.
+ */
 export const readAsks = async (program: Program, now = Date.now()): Promise<AsksState | null> => {
   const cached = cache.get(program.name);
   if (cached !== undefined && now - cached.at < TTL_MS) return cached.state;
@@ -151,7 +155,9 @@ export const readAsks = async (program: Program, now = Date.now()): Promise<Asks
 
 const readAsksUncached = async (program: Program): Promise<AsksState | null> => {
   if (program.aice?.asksPage == null) {
-    return program.asksFile === null ? null : readAsksFile(program.cwd, program.asksFile);
+    // The file lives in the runner's checkout, which for a hosted program is on the box.
+    if (program.asksFile === null || program.host !== null) return null;
+    return readAsksFile(program.cwd, program.asksFile);
   }
 
   const { page, prefix } = splitPage(program.aice.asksPage);

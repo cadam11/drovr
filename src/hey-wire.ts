@@ -34,7 +34,6 @@ export const prefsShape = z.object({ quietHours: quietHoursShape.nullable(), awa
 export type Prefs = z.infer<typeof prefsShape>;
 
 const MAX_ICON_DATA_CHARS = 32 * 1024;
-const MAX_SUMMARY_CHARS = 500;
 const MAX_URL_CHARS = 2048;
 const DATA_PNG_PREFIX = 'data:image/png;base64,';
 

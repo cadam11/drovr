@@ -145,7 +145,7 @@ export const COMMANDS: Command[] = [
       { flag: '--priority <n>', describes: 'lower keeps running deeper into a draining pool (default 0)' },
       { flag: '--deadline <YYYY-MM-DD>', describes: 'promotes one priority step inside the horizon' },
       { flag: '--asks <page>', describes: 'aice asks page (the hosted option, aice-x.com); omit and onboarding creates one' },
-      { flag: '--asks-file <path>', describes: 'markdown asks file relative to the path (default .drovr/asks.md with --no-aice)' },
+      { flag: '--asks-file <path>', describes: 'markdown asks file relative to the path (default .drovr/asks.md with --no-aice); local programs only' },
       { flag: '--no-aice', describes: 'the program has no aice install; asks live in the file' },
       { flag: '--no-direnv', describes: 'do not run the cycle through direnv exec' },
       { flag: '--model <alias>', describes: 'runner model for this program (default fable)' },

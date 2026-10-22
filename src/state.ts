@@ -10,6 +10,7 @@ import { aiceBaseUrl, readPreview, runnerIsPresent } from './orca.ts';
 import { phonePrefs, type PhonePrefs } from './nudge.ts';
 import { holder } from './lock.ts';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { paths } from './paths.ts';
 import type { Preview } from './preview.ts';
 import { serviceState } from './service.ts';
@@ -325,7 +326,7 @@ export const collectState = async (
       const base = await aiceBaseUrl(program);
       if (base !== null) asksUrls.set(program.name, `${base}/${program.aice.asksPage}`);
     }
-    else if (program.asksFile !== null) asksUrls.set(program.name, `file://${resolve(program.cwd, program.asksFile)}`);
+    else if (program.asksFile !== null && program.host === null) asksUrls.set(program.name, pathToFileURL(resolve(program.cwd, program.asksFile)).href);
     // aiceBaseUrl above keeps its own cache and is a map lookup after the first frame,
     // so the asks links stay fresh for a program added mid-session either way.
     if (reused !== null) return;

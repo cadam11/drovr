@@ -19,10 +19,10 @@ test('only the first segment is the prefix', () => {
   });
 });
 
-import { mkdtempSync, writeFileSync, utimesSync } from 'node:fs';
+import { chmodSync, mkdtempSync, writeFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readAsksFile } from '../src/asks.ts';
+import { readAsks, readAsksFile } from '../src/asks.ts';
 
 const dirWith = (name: string, text: string): string => {
   const dir = mkdtempSync(join(tmpdir(), 'asks-'));
@@ -54,4 +54,21 @@ test('a missing asks file reads as nothing, not an error', async () => {
 test('an asks file outside the program directory is not followed', async () => {
   const dir = dirWith('asks.md', '- [ ] x\n');
   assert.equal(await readAsksFile(join(dir, 'sub'), '../asks.md'), null);
+});
+
+test('a bare item with nothing after the box still counts as open', async () => {
+  const dir = dirWith('asks.md', '- [ ]\n- [ ] \n');
+  assert.equal((await readAsksFile(dir, 'asks.md'))?.openThreads, 2);
+});
+
+test('an unreadable asks file is an error, not an empty answer', async () => {
+  const dir = dirWith('asks.md', '- [ ] x\n');
+  chmodSync(join(dir, 'asks.md'), 0o000);
+  await assert.rejects(readAsksFile(dir, 'asks.md'), /EACCES|EPERM/);
+});
+
+test('a hosted program has no local asks file to read', async () => {
+  const dir = dirWith('.drovr-asks.md', '- [ ] x\n');
+  const program = { name: 'h', cwd: dir, aice: null, asksFile: '.drovr-asks.md', host: { environment: 'e', ssh: 'u@h', cwd: '/srv/h', drovrHome: null, claude: null, wake: null } };
+  assert.equal(await readAsks(program as never, 1), null);
 });

@@ -220,8 +220,8 @@ test('an account only contributes what its own tightest bucket allows', () => {
 });
 
 test('with every account at zero the binding bucket is the one that recovers first', () => {
-  // session pins the two propra accounts and recovers in hours; fable pins
-  // memberjunction and is days away. Reporting fable would read as a write-off.
+  // session pins the first two accounts and recovers in hours; fable pins
+  // the fourth and is days away. Reporting fable would read as a write-off.
   const pool = poolFrom(coupled(), { weekly: 0.55, session: 0.4 }, NOW);
   const funding = cyclesFundableFrom(pool, COUPLED_COST, 0);
   assert.equal(funding.binding, 'session');
@@ -252,8 +252,8 @@ test('the coupled pool holds the loop and the note names who is pinned by what',
 
 test('at zero the reported bucket is the soonest reset, not whichever account is listed first', () => {
   // Every account funds zero, so "the account with the most to give" degenerates to the
-  // first one — and here that is memberjunction, pinned on fable with a weekly reset 60h
-  // out. The propra account is pinned on the 5h window and recovers in two. Reporting fable
+  // first one — and here that is the fourth account, pinned on fable with a weekly reset 60h
+  // out. The first account is pinned on the 5h window and recovers in two. Reporting fable
   // would read as the week written off; CLAUDE.md calls getting this wrong actively
   // misleading, and it is what earliestRecoveryAt is read from.
   const fablePinnedFirst = status([
