@@ -26,14 +26,14 @@ test in the TS suite and stays one in Go.
 | Decision | Choice | Why |
 |---|---|---|
 | Where the code lives | Same repo. `go.mod` at the root, module `github.com/cadam11/drovr`, `main.go` at the root and packages under `internal/`. The TS tree stays until cut-over, then is deleted in one commit. | One history, one README, one issue tracker. Root module means `go build .` and `go install github.com/cadam11/drovr@latest` both work with no path to remember. |
-| Targets | `darwin_arm64` and `darwin_amd64` only. | drovr runs beside Orca and teamclaude on the Mac. Hosted programs run their *cycles* elsewhere; the supervisor never does. Linux is a non-goal until Orca runs there. |
-| Where binaries are hosted | GitHub Releases on `cadam11/drovr`, one tag per version (`v0.2.0`), assets `drovr_darwin_arm64.tar.gz`, `drovr_darwin_amd64.tar.gz`, `sha256sums.txt`. | The repo is public, so Releases are free, need no tofu, and keep drovr's artifacts out of hey's infra. The drovr.app page links to the latest release. **Alternative:** publish to drovr.app/cli beside hey's binaries from the hey repo's `cli.tf`; rejected because it makes a public project's release depend on a private repo's apply. |
-| Homebrew | A tap, `cadam11/homebrew-tap`, formula `drovr` with the two per-arch URLs and sha256s. Install line: `brew install cadam11/tap/drovr`. | A core formula needs notability drovr does not have; a tap is a one-file repo the release script rewrites. |
-| Release tooling | A 40-line `scripts/release.sh` modelled on hey's `release-hey.sh`: deterministic build (`-trimpath -ldflags "-s -w -X main.version=…"`, pinned mtime, `tar --uid 0`, `gzip -n`), then `gh release create` and a commit to the tap. | goreleaser would do the same in 80 lines of YAML plus a dependency. Not worth it for two targets. |
+| Targets | `darwin_arm64` only. | drovr runs beside Orca and teamclaude on the Mac. Hosted programs run their *cycles* elsewhere; the supervisor never does. Intel and Linux are non-goals until someone asks (Craig, 2026-10-22: "meh"). |
+| Where binaries are hosted | Both (Craig, 2026-10-22). GitHub Releases on `cadam11/drovr`, one tag per version (`v0.2.0`), assets `drovr_darwin_arm64.tar.gz` and `sha256sums.txt`, is the source the formula downloads from. The same archive and a `drovr-manifest.json` are also published at `https://drovr.app/cli/` beside hey's binaries by the hey repo's `cli.tf`, so the product page can link a file it owns. | Releases are free, need no tofu, and are what a public project's users expect. drovr.app/cli is the mirror the page points at; it lags a release by one tofu apply in the hey repo, which is Craig's act. |
+| Homebrew | A tap, `cadam11/homebrew-tap`, formula `drovr` with the Release URL and sha256 (arm64 only). Install line: `brew install cadam11/tap/drovr`. | A core formula needs notability drovr does not have; a tap is a one-file repo the release script rewrites. |
+| Release tooling | A 40-line `scripts/release.sh` modelled on hey's `release-hey.sh`: deterministic build (`-trimpath -ldflags "-s -w -X main.version=…"`, pinned mtime, `tar --uid 0`, `gzip -n`) into `dist/cli/`, then `gh release create` and a commit to the tap. The hey repo's `cli.tf` reads the same `dist/cli/` from a sibling checkout for the drovr.app mirror. | goreleaser would do the same in 80 lines of YAML plus a dependency. Not worth it for one target. |
 | Version | `VERSION` file at the root, read by the script, stamped into the binary; `drovr version` prints it. The TS CLI never had a version; `0.2.0` is the first Go release. | Same as hey. The commit is not the version. |
 | Dependencies | `golang.org/x/term` for raw mode and the terminal size, nothing else. JSON, HTTP, subprocess, file locking all come from the standard library. | Raw mode on macOS needs termios ioctls; `x/term` is the maintained wrapper and drags in only `x/sys`. Zod has no Go equivalent and needs none (see Validation). |
 | Go version | 1.26, same as the hey CLI. | One toolchain on this Mac. |
-| `drovr watch` | Full parity in the first release: alternate screen, SGR mouse, keybar hit map, the lot. It is the last phase, so a release without it is possible if it drags. | Craig uses watch daily; a plainer one would be a regression he would notice first. |
+| `drovr watch` | Full parity in the first release: alternate screen, SGR mouse, keybar hit map, the lot. `0.2.0` waits for it (Craig, 2026-10-22). | Craig uses watch daily; a plainer one would be a regression he would notice first. |
 | Launchd | The plist's `ProgramArguments` become `[<binary path>, "tick"]`; `nodeBin` and `cliPath` go. `service install` writes it from `os.Executable()` resolved through symlinks, so a brew upgrade that moves the binary needs a re-run, which `service status` detects by comparing the plist's path with its own. | The absolute-node-path trap in README goes away with the node. |
 
 ## Shape
@@ -162,7 +162,8 @@ strictly more than the last, and the first four are usable before any TUI exists
    `mode`, `reserve`, `pause`, `resume`, `cadence`, `ledger`, `release`, `usage`, `init`,
    `version`. Oracle diff green for every `--json` command.
 6. **watch.** `frame`, layout, keys, mouse, preview, the detach to `tick`/`start`.
-7. **Release and cut-over.** `scripts/release.sh`, the tap, `v0.2.0`; README install becomes
+7. **Release and cut-over.** `scripts/release.sh`, the tap, `v0.2.0`, the drovr.app/cli mirror
+   objects in the hey repo's `cli.tf`; README install becomes
    `brew install cadam11/tap/drovr` then `drovr init && drovr service install`; the drovr.app
    page's four commands change (hey repo); the shadow label removed; `src/`, `test/`,
    `package.json`, `tsconfig.json` and the pnpm lockfile deleted; CLAUDE.md conventions
@@ -203,16 +204,22 @@ program keep working; a user who downgrades to the Node tree sees the same files
 - Any behaviour change, however small, including ones the trap table would welcome. They go
   in after cut-over as their own commits with their own tests, on a tree where the port is no
   longer a variable.
-- Linux or Windows targets.
+- Intel, Linux or Windows targets.
 - Replacing orca, teamclaude or the `hey` binary; drovr still shells out to all three.
 - A Go module API for anyone else. Everything is `internal/`.
 - Signed or notarized binaries. Homebrew-installed binaries run without Gatekeeper prompts;
   a bare download from Releases needs `xattr -d com.apple.quarantine`, which the README says.
 
-## Open questions for Craig
+## Answered 2026-10-22
 
-1. GitHub Releases plus a tap, or drovr.app/cli beside hey's binaries? (Spec says Releases.)
-2. `darwin_amd64` worth building? (Spec says yes; it is one more line in the loop and Intel
-   Macs still run Orca.)
-3. Watch parity in the first release, or ship phases 1 to 5 as `0.2.0` and watch as `0.3.0`?
-   (Spec says parity, last phase; the split is free to take later.)
+1. Binaries: GitHub Releases **and** the drovr.app/cli mirror.
+2. Intel: no.
+3. `0.2.0` waits for watch parity.
+
+## Plans
+
+Three plans, written one at a time so each can name the Go signatures the previous one landed:
+
+- **E1** phases 1 and 2: skeleton, the read side, the decision core, shared fixtures.
+- **E2** phases 3 and 4: adapters, tick, cycle, shadow service.
+- **E3** phases 5 to 7: the rest of the CLI, watch, release, cut-over.
