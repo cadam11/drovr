@@ -3,7 +3,11 @@ package exec
 import (
 	"context"
 	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -52,5 +56,58 @@ func TestRunBoundedFailureNamesCommandAndStderr(t *testing.T) {
 	_, err = RunBounded(context.Background(), "sh", []string{"-c", "exit 1"}, Bounds{Timeout: time.Second, Label: "quiet thing"})
 	if err == nil || err.Error() != "Command failed: quiet thing" {
 		t.Fatalf("%q", err)
+	}
+}
+
+func readLog(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestDetachReturnsAtOnceInItsOwnSession(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "w.log")
+	if err := os.WriteFile(log, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	pid, err := Detach("sh", []string{"-c", "echo started; sleep 0.3; echo done"}, log)
+	if err != nil || pid <= 0 {
+		t.Fatal(pid, err)
+	}
+	if waited := time.Since(start); waited > 200*time.Millisecond {
+		t.Fatalf("Detach waited %v for a child it must not wait on", waited)
+	}
+	if pgid, err := syscall.Getpgid(pid); err != nil || pgid != pid {
+		t.Errorf("child is not a session leader: pgid %d pid %d err %v", pgid, pid, err)
+	}
+	for i := 0; i < 40 && !strings.Contains(readLog(t, log), "done"); i++ {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := readLog(t, log); got != "old\nstarted\ndone\n" {
+		t.Fatalf("log = %q, want the child's output appended", got)
+	}
+}
+
+func TestDetachExplainsAMissingBinary(t *testing.T) {
+	t.Setenv("PATH", "/nonexistent")
+	_, err := Detach("definitely-not-here", nil, filepath.Join(t.TempDir(), "w.log"))
+	if err == nil || !strings.Contains(err.Error(), "definitely-not-here is not on PATH") {
+		t.Fatalf("%v", err)
+	}
+}
+
+func TestRunBoundedToALogWithEnv(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "h.log")
+	r, err := RunBounded(context.Background(), "sh", []string{"-c", "echo $DROVR_PROGRAM; echo err >&2"},
+		Bounds{Timeout: 2 * time.Second, LogPath: log, Env: []string{"DROVR_PROGRAM=alpha"}})
+	if err != nil || r.Stdout != "" || r.Stderr != "" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if got := readLog(t, log); got != "alpha\nerr\n" {
+		t.Fatalf("log = %q", got)
 	}
 }

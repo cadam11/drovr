@@ -21,6 +21,11 @@ type Bounds struct {
 	Timeout time.Duration
 	Cwd     string
 	Label   string
+	// LogPath appends stdout and stderr to this file instead of capturing them (Result is
+	// then empty): a headless runner prints for hours, far more than belongs in memory.
+	LogPath string
+	// Env is added to the parent's environment, never a replacement for it.
+	Env []string
 }
 
 type Result struct{ Stdout, Stderr string }
@@ -75,8 +80,19 @@ func RunBounded(ctx context.Context, bin string, args []string, b Bounds) (Resul
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second
+	if len(b.Env) > 0 {
+		cmd.Env = append(os.Environ(), b.Env...)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if b.LogPath != "" {
+		log, err := openLog(b.LogPath)
+		if err != nil {
+			return Result{}, err
+		}
+		defer log.Close()
+		cmd.Stdout, cmd.Stderr = log, log
+	}
 	err := cmd.Run()
 	r := Result{Stdout: stdout.String(), Stderr: stderr.String()}
 	if err == nil {
@@ -89,6 +105,33 @@ func RunBounded(ctx context.Context, bin string, args []string, b Bounds) (Resul
 		return r, ExplainSpawn(bin, err)
 	}
 	return r, &ExitError{Err: err, Stdout: r.Stdout, Stderr: r.Stderr, Code: exitCode(err), Msg: failedMsg(bin, args, b, r.Stderr)}
+}
+
+func openLog(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+}
+
+// Detach starts the run-cycle worker and lets go of it. A cycle runs for hours and must
+// outlive the tick that admitted it, which is why this takes no context and no timeout and
+// is not RunBounded: nothing here waits, so nothing here can hold the tick lock. Its own
+// session keeps a launchd teardown of the tick's process group from reaching it.
+func Detach(bin string, args []string, logPath string) (int, error) {
+	log, err := openLog(logPath)
+	if err != nil {
+		return 0, err
+	}
+	defer log.Close() // the child holds its own copy of the descriptor
+	cmd := osexec.Command(bin, args...)
+	cmd.Stdout, cmd.Stderr = log, log // Stdin nil is /dev/null
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return 0, ExplainSpawn(bin, err)
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Process.Release(); err != nil {
+		return pid, err
+	}
+	return pid, nil
 }
 
 func shownCommand(bin string, args []string, b Bounds) string {

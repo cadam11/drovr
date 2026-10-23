@@ -1,6 +1,10 @@
 package epoch
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestParseAndISO(t *testing.T) {
 	cases := []struct {
@@ -27,5 +31,17 @@ func TestParseAndISO(t *testing.T) {
 	}
 	if got := ISO(1787400000000); got != "2026-08-22T12:00:00.000Z" {
 		t.Errorf("ISO whole second = %q", got)
+	}
+}
+
+func TestStampedPrefixesEveryWrite(t *testing.T) {
+	var b strings.Builder
+	w := Stamped(&b, func() Millis { return 1787400000123 })
+	fmt.Fprintln(w, "alpha: GO — fine")
+	fmt.Fprintln(w, "alpha is busy\n  look:  orca terminal switch --terminal term_1")
+	want := "2026-08-22T12:00:00.123Z alpha: GO — fine\n" +
+		"2026-08-22T12:00:00.123Z alpha is busy\n  look:  orca terminal switch --terminal term_1\n"
+	if b.String() != want {
+		t.Fatalf("%q", b.String())
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/big"
 	"strings"
+	"unicode/utf16"
 )
 
 // ToFixed is Number.prototype.toFixed: it rounds the exact binary value half-up,
@@ -44,3 +45,18 @@ func Round4(v float64) float64 { return RoundHalfUp(v*10000) / 10000 }
 
 // RoundHalfUp is Math.round: ties go toward +Infinity, so -2.5 -> -2.
 func RoundHalfUp(v float64) float64 { return math.Floor(v + 0.5) }
+
+// Slice is String.prototype.slice(0, n): the first n UTF-16 code units, so a length cap
+// agrees with the TS one on non-ASCII text. Deviation: a cut through a surrogate pair leaves
+// JS holding a lone high surrogate, which a Go string cannot carry as text; it is dropped
+// here, so the Go result is one unit shorter in exactly that case.
+func Slice(s string, n int) string {
+	u := utf16.Encode([]rune(s))
+	if n >= len(u) {
+		return s
+	}
+	if n > 0 && utf16.IsSurrogate(rune(u[n-1])) && u[n-1] < 0xdc00 {
+		n--
+	}
+	return string(utf16.Decode(u[:max(n, 0)]))
+}

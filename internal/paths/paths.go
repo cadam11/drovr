@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 )
 
-type Paths struct{ Base, Control, Cycles, Decisions, Usage, LastTick, TickFailure, TickLock, Logs string }
+type Paths struct {
+	Base, Control, Cycles, Decisions, DecisionsShadow, Usage, LastTick, TickFailure, TickLock, TickShadowLock, Logs string
+}
 
 // Root honours a present-but-empty DROVR_HOME as empty, as Node's `??` does.
 func Root() string {
@@ -23,15 +25,17 @@ func Root() string {
 func New() Paths {
 	base := Root()
 	return Paths{
-		Base:        base,
-		Control:     filepath.Join(base, "control.json"),
-		Cycles:      filepath.Join(base, "cycles.jsonl"),
-		Decisions:   filepath.Join(base, "decisions.jsonl"),
-		Usage:       filepath.Join(base, "usage.jsonl"),
-		LastTick:    filepath.Join(base, "last-tick.json"),
-		TickFailure: filepath.Join(base, "tick-failure.json"),
-		TickLock:    filepath.Join(base, "tick.lock"),
-		Logs:        filepath.Join(base, "logs"),
+		Base:            base,
+		Control:         filepath.Join(base, "control.json"),
+		Cycles:          filepath.Join(base, "cycles.jsonl"),
+		Decisions:       filepath.Join(base, "decisions.jsonl"),
+		DecisionsShadow: filepath.Join(base, "decisions-shadow.jsonl"),
+		Usage:           filepath.Join(base, "usage.jsonl"),
+		LastTick:        filepath.Join(base, "last-tick.json"),
+		TickFailure:     filepath.Join(base, "tick-failure.json"),
+		TickLock:        filepath.Join(base, "tick.lock"),
+		TickShadowLock:  filepath.Join(base, "tick-shadow.lock"),
+		Logs:            filepath.Join(base, "logs"),
 	}
 }
 
@@ -45,6 +49,19 @@ func (p Paths) LastCycle(program string) string {
 func (p Paths) StateFile(program string) string {
 	return filepath.Join(p.ProgramState(program), "state.json")
 }
+func (p Paths) CycleTerminal(program string) string {
+	return filepath.Join(p.ProgramState(program), "cycle-terminal.json")
+}
+func (p Paths) CurrentCycle(program string) string {
+	return filepath.Join(p.ProgramState(program), "current-cycle.json")
+}
+func (p Paths) Nudged(program string) string {
+	return filepath.Join(p.ProgramState(program), "nudged.json")
+}
+func (p Paths) ProfileSeeded(program string) string {
+	return filepath.Join(p.ProgramState(program), "profile-seeded.json")
+}
+func (p Paths) WorkerLog(program string) string { return filepath.Join(p.Logs, program+"-worker.log") }
 
 // EnsureDirs creates the logs dir and, for a non-empty program, its state dir.
 func EnsureDirs(p Paths, program string) error {

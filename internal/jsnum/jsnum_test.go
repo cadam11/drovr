@@ -34,3 +34,19 @@ func TestRound4AndHalfUp(t *testing.T) {
 		t.Errorf("RoundHalfUp(2.5) = %v", got)
 	}
 }
+
+// The last two cases cut through a surrogate pair. JS keeps the lone high surrogate; Go
+// drops it (see Slice).
+func TestSliceCountsUTF16Units(t *testing.T) {
+	cases := []struct {
+		in   string
+		n    int
+		want string
+	}{{"abcdef", 3, "abc"}, {"ab", 5, "ab"}, {"é✳x", 2, "é✳"}, {"a🦾b", 3, "a🦾"}, {"", 4, ""},
+		{"a🦾b", 2, "a"}, {"🦾", 1, ""}}
+	for _, c := range cases {
+		if got := Slice(c.in, c.n); got != c.want {
+			t.Errorf("Slice(%q,%d) = %q want %q", c.in, c.n, got, c.want)
+		}
+	}
+}

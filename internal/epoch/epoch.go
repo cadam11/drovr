@@ -1,7 +1,10 @@
 // Package epoch is the Date.parse / toISOString subset drovr uses; instants are epoch millis.
 package epoch
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 type Millis = int64
 
@@ -29,3 +32,20 @@ func MustParse(s string) Millis {
 func ISO(ms Millis) string { return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z") }
 
 func Now() Millis { return time.Now().UnixMilli() }
+
+type stamped struct {
+	w   io.Writer
+	now func() Millis
+}
+
+// cli.ts's stampConsole prefixes each console call, not each line; one Fprintln per message
+// keeps the two the same, so a multi-line message carries one stamp.
+func (s stamped) Write(p []byte) (int, error) {
+	if _, err := io.WriteString(s.w, ISO(s.now())+" "); err != nil {
+		return 0, err
+	}
+	return s.w.Write(p)
+}
+
+// Stamped writes "<ISO> " before every Write call.
+func Stamped(w io.Writer, now func() Millis) io.Writer { return stamped{w, now} }
