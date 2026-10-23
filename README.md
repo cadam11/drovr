@@ -377,9 +377,8 @@ A cycle that exits `blocked` has nothing left it can do without an answer. drovr
 `.drovr/asks.md` by default: one task item per ask, `- [ ]` while open, with the agent's context
 indented beneath. You answer by writing under the item and ticking it `- [x]`. drovr counts the
 unchecked items as open and reads the file's modification time as your latest activity. The
-loop agent writes the file when its skill knows the path; until the project-loop skill carries
-that, the agent raises asks in its report and you keep the file by hand. A program with a `host`
-has its checkout on the box, so the file is not read for it.
+bundled project-loop skill writes the file (see `skill/`). A program with a `host` has its
+checkout on the box, so the file is not read for it.
 
 **The asks page.** With aice, polling needs **shared notes turned on** for that page (owner-only,
 from the page's own notes widget). Until it is on, `aice notes list` returns nothing whatever you

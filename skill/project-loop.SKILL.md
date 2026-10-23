@@ -47,7 +47,7 @@ Durable means an artifact outside the conversation, routed by lifetime:
 | Briefs and subagent reports | files on disk |
 | Questions awaiting the operator, with their context | the program's asks page or asks file (below) — answers arrive there; update it whenever the queue changes |
 
-**REQUIRED SUB-SKILL:** Use the `pre-compact` skill for deciding what is conversation-only versus re-derivable, for routing by lifetime, and for verifying a claim is actually durable before asserting it. Do not re-derive its rules here.
+If you have a `pre-compact` skill, use it here for deciding what is conversation-only versus re-derivable, for routing by lifetime, and for verifying a claim is actually durable before asserting it. Without one, apply those three tests by hand.
 
 **Bootstrap block.** Keep, at the top of the program's plan/notes file, a block a fresh loop agent reads to resume: the objective, the ordered pointers to read (five or fewer), the current milestone, and the exact next action with its required verification. Reading that block is the entire cost of resuming. Update it at the end of every cycle and whenever the next action changes — a stale next action is the one failure that makes a clear expensive.
 
