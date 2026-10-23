@@ -45,3 +45,18 @@ func TestStampedPrefixesEveryWrite(t *testing.T) {
 		t.Fatalf("%q", b.String())
 	}
 }
+
+type countingWriter struct{ writes []string }
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.writes = append(c.writes, string(p))
+	return len(p), nil
+}
+
+func TestStampedIsOneWritePerMessage(t *testing.T) {
+	var c countingWriter
+	n, err := Stamped(&c, func() Millis { return 1787400000123 }).Write([]byte("alpha: GO\n"))
+	if err != nil || n != len("alpha: GO\n") || len(c.writes) != 1 || c.writes[0] != "2026-08-22T12:00:00.123Z alpha: GO\n" {
+		t.Fatalf("%d %v %q", n, err, c.writes)
+	}
+}

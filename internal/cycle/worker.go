@@ -207,13 +207,19 @@ func (w Worker) watchOrRun(ctx context.Context, program control.Program, o opene
 	return Outcome{Finished: true, Detail: err.Error()}
 }
 
-// readReportOrWarn: a throw here would skip the end record and leave the cycle open in the
-// ledger, charged as running against the pool forever.
 func (w Worker) readReportOrWarn(ctx context.Context, program control.Program) *Report {
-	r, err := ReadReport(ctx, SourceFor(w.Paths, program))
+	return ReadReportOrWarn(ctx, w.Paths, program, w.Err)
+}
+
+// ReadReportOrWarn is both tick-side readers' and the worker's: each must make progress past a
+// malformed last-cycle.json. In the worker a throw skips the end record and charges the cycle
+// as running forever; in the tick it stops everything after it, admission included, every
+// tick until someone deletes the file by hand. Logged and read as absent.
+func ReadReportOrWarn(ctx context.Context, p paths.Paths, program control.Program, log io.Writer) *Report {
+	r, err := ReadReport(ctx, SourceFor(p, program))
 	if err != nil {
-		// swallowed: a throw here skips the end record and charges the cycle as running forever
-		fmt.Fprintf(w.Err, "ignoring unreadable cycle report for %s: %s\n", program.Name, err)
+		// swallowed: logged; a malformed report costs one program's reading, never the pass
+		fmt.Fprintf(log, "ignoring unreadable cycle report for %s: %s\n", program.Name, err)
 		return nil
 	}
 	return r

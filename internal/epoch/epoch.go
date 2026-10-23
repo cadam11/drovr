@@ -40,11 +40,12 @@ type stamped struct {
 
 // cli.ts's stampConsole prefixes each console call, not each line; one Fprintln per message
 // keeps the two the same, so a multi-line message carries one stamp.
+// One Write per message: the tick and its detached workers append to the same log under
+// O_APPEND, and a stamp written separately could land between another process's stamp and line.
 func (s stamped) Write(p []byte) (int, error) {
-	if _, err := io.WriteString(s.w, ISO(s.now())+" "); err != nil {
-		return 0, err
-	}
-	return s.w.Write(p)
+	line := append([]byte(ISO(s.now())+" "), p...)
+	n, err := s.w.Write(line)
+	return max(0, min(len(p), n-(len(line)-len(p)))), err
 }
 
 // Stamped writes "<ISO> " before every Write call.
