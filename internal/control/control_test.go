@@ -149,3 +149,18 @@ func TestEffectivePriorityFixtures(t *testing.T) {
 		fixtures.Equal(t, c.Name, got, c.Output)
 	}
 }
+
+func TestCostOf(t *testing.T) {
+	c := Cost{Fable: 1, General: 2, Session: 3}
+	for b, want := range map[Bucket]float64{"fable": 1, "general": 2, "session": 3} {
+		if got := c.Of(b); got != want {
+			t.Errorf("Of(%s) = %v", b, got)
+		}
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("an unknown bucket must panic: it is a programming error")
+		}
+	}()
+	c.Of("weekly")
+}

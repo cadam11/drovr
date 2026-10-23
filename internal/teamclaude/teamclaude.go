@@ -3,7 +3,6 @@
 package teamclaude
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/cadam11/drovr/internal/epoch"
 	"github.com/cadam11/drovr/internal/exec"
+	"github.com/cadam11/drovr/internal/shape"
 )
 
 // statusTimeout: Read runs first in both tick and collectState, so an unbounded one was the
@@ -186,157 +186,47 @@ func parseEpochText(text string) *epoch.Millis {
 	return nil
 }
 
-// decoder keeps the first refusal so each shape reads as one straight list of fields in
-// zod's order; unknown keys are stripped, as zod's .object() does.
-type decoder struct {
-	fields map[string]json.RawMessage
-	path   string
-	err    error
-}
-
-func newDecoder(raw json.RawMessage, path string) (*decoder, error) {
-	var fields map[string]json.RawMessage
-	if isNull(raw) {
-		return nil, fmt.Errorf("%s: expected object, received null", orRoot(path))
-	}
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, fmt.Errorf("%s: expected object: %v", orRoot(path), err)
-	}
-	return &decoder{fields: fields, path: path}, nil
-}
-
-func orRoot(path string) string {
-	if path == "" {
-		return "(root)"
-	}
-	return path
-}
-
-func isNull(raw json.RawMessage) bool { return bytes.Equal(bytes.TrimSpace(raw), []byte("null")) }
-
-func (d *decoder) at(key string) string {
-	if d.path == "" {
-		return key
-	}
-	return d.path + "." + key
-}
-
-func (d *decoder) fail(err error) {
-	if d.err == nil {
-		d.err = err
-	}
-}
-
-func into[T any](d *decoder, key string, raw json.RawMessage, dst *T) {
-	if err := json.Unmarshal(raw, dst); err != nil {
-		d.fail(fmt.Errorf("%s: %v", d.at(key), err))
-	}
-}
-
-// required refuses absent and null alike: a zod field with no default and no .nullable().
-func required[T any](d *decoder, key string, dst *T) {
-	raw, ok := d.fields[key]
-	if d.err != nil {
-		return
-	}
-	if !ok || isNull(raw) {
-		d.fail(fmt.Errorf("%s: required", d.at(key)))
-		return
-	}
-	into(d, key, raw, dst)
-}
-
-// present refuses absence only; null decodes to the zero value (nil for pointers, and for
-// epochMs its own null).
-func present[T any](d *decoder, key string, dst *T) {
-	raw, ok := d.fields[key]
-	if d.err != nil {
-		return
-	}
-	if !ok {
-		d.fail(fmt.Errorf("%s: required", d.at(key)))
-		return
-	}
-	into(d, key, raw, dst)
-}
-
-// optional keeps dst's default when absent; null is refused, the field not being nullable.
-func optional[T any](d *decoder, key string, dst *T) {
-	raw, ok := d.fields[key]
-	if !ok || d.err != nil {
-		return
-	}
-	if isNull(raw) {
-		d.fail(fmt.Errorf("%s: expected a value, received null", d.at(key)))
-		return
-	}
-	into(d, key, raw, dst)
-}
-
-// nullable: absent and null both leave dst at its nil default.
-func nullable[T any](d *decoder, key string, dst *T) {
-	if raw, ok := d.fields[key]; ok && d.err == nil {
-		into(d, key, raw, dst)
-	}
-}
-
-func presentEpoch(d *decoder, key string) *epoch.Millis {
+func requiredNullableEpoch(d *shape.Object, key string) *epoch.Millis {
 	var e epochMs
-	present(d, key, &e)
+	shape.RequiredNullable(d, key, &e)
 	return e.v
 }
 
-// each decodes a required array element by element, naming the failing index.
-func each[T any](d *decoder, key string, raw json.RawMessage, parse func(json.RawMessage, string) (T, error)) []T {
-	var items []json.RawMessage
-	into(d, key, raw, &items)
-	out := make([]T, 0, len(items))
-	for i, item := range items {
-		if d.err != nil {
-			return nil
-		}
-		v, err := parse(item, fmt.Sprintf("%s[%d]", d.at(key), i))
-		d.fail(err)
-		out = append(out, v)
-	}
-	return out
-}
-
 func parseStatus(raw json.RawMessage) (Status, error) {
-	d, err := newDecoder(raw, "")
+	d, err := shape.Decode(raw, "")
 	if err != nil {
 		return Status{}, err
 	}
 	var s Status
-	present(d, "currentAccount", &s.CurrentAccount)
+	shape.RequiredNullable(d, "currentAccount", &s.CurrentAccount)
 	var accounts json.RawMessage
-	required(d, "accounts", &accounts)
-	if d.err == nil {
-		s.Accounts = each(d, "accounts", accounts, parseAccount)
+	shape.Required(d, "accounts", &accounts)
+	if d.Err == nil {
+		s.Accounts = shape.Each(d, "accounts", accounts, parseAccount)
 	}
 	var routes json.RawMessage
-	optional(d, "routes", &routes)
+	shape.Optional(d, "routes", &routes)
 	s.Routes = []Route{}
-	if routes != nil && d.err == nil {
-		s.Routes = each(d, "routes", routes, parseRoute)
+	if routes != nil && d.Err == nil {
+		s.Routes = shape.Each(d, "routes", routes, parseRoute)
 	}
-	nullable(d, "switchThreshold", &s.SwitchThreshold)
+	shape.NullableDefault(d, "switchThreshold", &s.SwitchThreshold)
 	s.SwitchThresholds = parseThresholdTable(d)
-	return s, d.err
+	return s, d.Err
 }
 
 // parseThresholdTable decodes through pointers because a JSON null inside a
 // map[string]float64 silently becomes 0, where zod's record of numbers refuses it.
-func parseThresholdTable(d *decoder) map[string]float64 {
+func parseThresholdTable(d *shape.Object) map[string]float64 {
 	var raw map[string]*float64
-	nullable(d, "switchThresholds", &raw)
-	if raw == nil || d.err != nil {
+	shape.NullableDefault(d, "switchThresholds", &raw)
+	if raw == nil || d.Err != nil {
 		return nil
 	}
 	out := make(map[string]float64, len(raw))
 	for _, key := range slices.Sorted(maps.Keys(raw)) {
 		if raw[key] == nil {
-			d.fail(fmt.Errorf("%s.%s: expected number", d.at("switchThresholds"), key))
+			d.Fail(fmt.Errorf("%s.%s: expected number", d.At("switchThresholds"), key))
 			return nil
 		}
 		out[key] = *raw[key]
@@ -345,85 +235,85 @@ func parseThresholdTable(d *decoder) map[string]float64 {
 }
 
 func parseAccount(raw json.RawMessage, path string) (Account, error) {
-	d, err := newDecoder(raw, path)
+	d, err := shape.Decode(raw, path)
 	if err != nil {
 		return Account{}, err
 	}
 	a := Account{Type: "oauth"}
-	required(d, "name", &a.Name)
-	optional(d, "type", &a.Type)
-	nullable(d, "orgName", &a.OrgName)
-	nullable(d, "status", &a.Status)
-	optional(d, "sessions", &a.Sessions)
-	required(d, "disabled", &a.Disabled)
+	shape.Required(d, "name", &a.Name)
+	shape.Optional(d, "type", &a.Type)
+	shape.NullableDefault(d, "orgName", &a.OrgName)
+	shape.NullableDefault(d, "status", &a.Status)
+	shape.Optional(d, "sessions", &a.Sessions)
+	shape.Required(d, "disabled", &a.Disabled)
 	var quota json.RawMessage
-	required(d, "quota", &quota)
-	if d.err == nil {
-		q, err := parseQuota(quota, d.at("quota"))
-		d.fail(err)
+	shape.Required(d, "quota", &quota)
+	if d.Err == nil {
+		q, err := parseQuota(quota, d.At("quota"))
+		d.Fail(err)
 		a.Quota = q
 	}
 	parseUsage(d, &a)
-	a.RateLimitedUntil = presentEpoch(d, "rateLimitedUntil")
-	a.PausedUntil = presentEpoch(d, "pausedUntil")
-	nullable(d, "switchThreshold", &a.SwitchThreshold)
-	return a, d.err
+	a.RateLimitedUntil = requiredNullableEpoch(d, "rateLimitedUntil")
+	a.PausedUntil = requiredNullableEpoch(d, "pausedUntil")
+	shape.NullableDefault(d, "switchThreshold", &a.SwitchThreshold)
+	return a, d.Err
 }
 
-func parseUsage(d *decoder, a *Account) {
+func parseUsage(d *shape.Object, a *Account) {
 	var usage json.RawMessage
-	optional(d, "usage", &usage)
-	if usage == nil || d.err != nil {
+	shape.Optional(d, "usage", &usage)
+	if usage == nil || d.Err != nil {
 		return
 	}
-	u, err := newDecoder(usage, d.at("usage"))
+	u, err := shape.Decode(usage, d.At("usage"))
 	if err != nil {
-		d.fail(err)
+		d.Fail(err)
 		return
 	}
-	nullable(u, "lastUsed", &a.Usage.LastUsed)
-	d.fail(u.err)
+	shape.NullableDefault(u, "lastUsed", &a.Usage.LastUsed)
+	d.Fail(u.Err)
 }
 
 func parseQuota(raw json.RawMessage, path string) (Quota, error) {
-	d, err := newDecoder(raw, path)
+	d, err := shape.Decode(raw, path)
 	if err != nil {
 		return Quota{}, err
 	}
 	var q Quota
-	present(d, "unified5h", &q.Unified5h)
-	q.Unified5hReset = presentEpoch(d, "unified5hReset")
-	present(d, "unified7d", &q.Unified7d)
-	q.Unified7dReset = presentEpoch(d, "unified7dReset")
-	present(d, "unified7dFable", &q.Unified7dFable)
-	q.Unified7dFableReset = presentEpoch(d, "unified7dFableReset")
-	nullable(d, "unifiedStatus", &q.UnifiedStatus)
-	return q, d.err
+	shape.RequiredNullable(d, "unified5h", &q.Unified5h)
+	q.Unified5hReset = requiredNullableEpoch(d, "unified5hReset")
+	shape.RequiredNullable(d, "unified7d", &q.Unified7d)
+	q.Unified7dReset = requiredNullableEpoch(d, "unified7dReset")
+	shape.RequiredNullable(d, "unified7dFable", &q.Unified7dFable)
+	q.Unified7dFableReset = requiredNullableEpoch(d, "unified7dFableReset")
+	shape.NullableDefault(d, "unifiedStatus", &q.UnifiedStatus)
+	return q, d.Err
 }
 
 func parseRoute(raw json.RawMessage, path string) (Route, error) {
-	d, err := newDecoder(raw, path)
+	d, err := shape.Decode(raw, path)
 	if err != nil {
 		return Route{}, err
 	}
 	r := Route{Accounts: []RouteAccount{}}
-	required(d, "name", &r.Name)
+	shape.Required(d, "name", &r.Name)
 	var accounts json.RawMessage
-	optional(d, "accounts", &accounts)
-	if accounts != nil && d.err == nil {
-		r.Accounts = each(d, "accounts", accounts, parseRouteAccount)
+	shape.Optional(d, "accounts", &accounts)
+	if accounts != nil && d.Err == nil {
+		r.Accounts = shape.Each(d, "accounts", accounts, parseRouteAccount)
 	}
-	nullable(d, "target", &r.Target)
-	return r, d.err
+	shape.NullableDefault(d, "target", &r.Target)
+	return r, d.Err
 }
 
 func parseRouteAccount(raw json.RawMessage, path string) (RouteAccount, error) {
-	d, err := newDecoder(raw, path)
+	d, err := shape.Decode(raw, path)
 	if err != nil {
 		return RouteAccount{}, err
 	}
 	var a RouteAccount
-	required(d, "name", &a.Name)
-	required(d, "eligible", &a.Eligible)
-	return a, d.err
+	shape.Required(d, "name", &a.Name)
+	shape.Required(d, "eligible", &a.Eligible)
+	return a, d.Err
 }

@@ -1,15 +1,15 @@
 package control
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/cadam11/drovr/internal/shape"
 )
 
 var cadencePattern = regexp.MustCompile(`^\d+[mhd]$`)
@@ -41,125 +41,35 @@ func Read(path string) (Control, error) {
 	return Parse(data)
 }
 
-// decoder keeps the first refusal so a shape reads as one straight list of fields.
-type decoder struct {
-	fields map[string]json.RawMessage
-	path   string
-	err    error
-}
-
-func newDecoder(raw json.RawMessage, path string) (*decoder, error) {
-	var fields map[string]json.RawMessage
-	if isNull(raw) {
-		return nil, fmt.Errorf("%s: expected object, received null", orRoot(path))
-	}
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, fmt.Errorf("%s: expected object: %v", orRoot(path), err)
-	}
-	return &decoder{fields: fields, path: path}, nil
-}
-
-func orRoot(path string) string {
-	if path == "" {
-		return "(root)"
-	}
-	return path
-}
-
-func (d *decoder) at(key string) string {
-	if d.path == "" {
-		return key
-	}
-	return d.path + "." + key
-}
-
-func (d *decoder) fail(err error) {
-	if d.err == nil {
-		d.err = err
-	}
-}
-
-// present is false for absent and for null; callers that must refuse null check first.
-func (d *decoder) present(key string) (json.RawMessage, bool) {
-	raw, ok := d.fields[key]
-	return raw, ok && !isNull(raw) && d.err == nil
-}
-
-func (d *decoder) check(key string, ok bool, why string) {
-	if !ok {
-		d.fail(fmt.Errorf("%s: %s", d.at(key), why))
-	}
-}
-
-func isNull(raw json.RawMessage) bool { return bytes.Equal(bytes.TrimSpace(raw), []byte("null")) }
-
-func into[T any](d *decoder, key string, raw json.RawMessage, dst *T) {
-	if err := json.Unmarshal(raw, dst); err != nil {
-		d.fail(fmt.Errorf("%s: %v", d.at(key), err))
-	}
-}
-
-// required refuses absent and null alike, as zod does for a field with no default.
-func required[T any](d *decoder, key string, dst *T) {
-	raw, ok := d.fields[key]
-	if !ok || isNull(raw) {
-		d.fail(fmt.Errorf("%s: required", d.at(key)))
-		return
-	}
-	if d.err == nil {
-		into(d, key, raw, dst)
-	}
-}
-
-// optional keeps dst's default when absent; null is refused because the field is not nullable.
-func optional[T any](d *decoder, key string, dst *T) {
-	raw, ok := d.fields[key]
-	if !ok || d.err != nil {
-		return
-	}
-	if isNull(raw) {
-		d.fail(fmt.Errorf("%s: expected a value, received null", d.at(key)))
-		return
-	}
-	into(d, key, raw, dst)
-}
-
-// nullable decodes into a pointer, so JSON null and absent both leave the default nil.
-func nullable[T any](d *decoder, key string, dst **T) {
-	if raw, ok := d.present(key); ok {
-		into(d, key, raw, dst)
-	}
-}
-
 func parseControl(raw json.RawMessage) (Control, error) {
-	d, err := newDecoder(raw, "")
+	d, err := shape.Decode(raw, "")
 	if err != nil {
 		return Control{}, err
 	}
 	c := defaultControl()
-	optional(d, "mode", &c.Mode)
-	d.check("mode", slices.Contains(Modes, c.Mode), fmt.Sprintf("invalid enum value %q, expected off | low | normal | away", c.Mode))
-	nullable(d, "pauseUntil", &c.PauseUntil)
+	shape.Optional(d, "mode", &c.Mode)
+	shape.OneOf(d, "mode", c.Mode, Modes)
+	shape.NullableDefault(d, "pauseUntil", &c.PauseUntil)
 	parseCeilings(d, &c)
-	optional(d, "reserveCycles", &c.ReserveCycles)
-	optional(d, "priorityStepCycles", &c.PriorityStepCycles)
-	optional(d, "maxCyclesPerDay", &c.MaxCyclesPerDay)
-	optional(d, "maxCycleHours", &c.MaxCycleHours)
-	optional(d, "tickBudgetMinutes", &c.TickBudgetMinutes)
-	optional(d, "maxConcurrentCycles", &c.MaxConcurrentCycles)
-	optional(d, "deadlineHorizonDays", &c.DeadlineHorizonDays)
-	optional(d, "contextCeilingTokens", &c.ContextCeilingTokens)
-	optional(d, "crashWindowMinutes", &c.CrashWindowMinutes)
-	nullable(d, "notifyTo", &c.NotifyTo)
-	optional(d, "nudgeAfterMinutes", &c.NudgeAfterMinutes)
-	optional(d, "blockedBackoffMinutes", &c.BlockedBackoffMinutes)
-	optional(d, "stuckCycleThreshold", &c.StuckCycleThreshold)
-	optional(d, "stallNudgeMinutes", &c.StallNudgeMinutes)
-	optional(d, "maxStallNudges", &c.MaxStallNudges)
-	optional(d, "blockedAlertMinutes", &c.BlockedAlertMinutes)
+	shape.Optional(d, "reserveCycles", &c.ReserveCycles)
+	shape.Optional(d, "priorityStepCycles", &c.PriorityStepCycles)
+	shape.Optional(d, "maxCyclesPerDay", &c.MaxCyclesPerDay)
+	shape.Optional(d, "maxCycleHours", &c.MaxCycleHours)
+	shape.Optional(d, "tickBudgetMinutes", &c.TickBudgetMinutes)
+	shape.Optional(d, "maxConcurrentCycles", &c.MaxConcurrentCycles)
+	shape.Optional(d, "deadlineHorizonDays", &c.DeadlineHorizonDays)
+	shape.Optional(d, "contextCeilingTokens", &c.ContextCeilingTokens)
+	shape.Optional(d, "crashWindowMinutes", &c.CrashWindowMinutes)
+	shape.NullableDefault(d, "notifyTo", &c.NotifyTo)
+	shape.Optional(d, "nudgeAfterMinutes", &c.NudgeAfterMinutes)
+	shape.Optional(d, "blockedBackoffMinutes", &c.BlockedBackoffMinutes)
+	shape.Optional(d, "stuckCycleThreshold", &c.StuckCycleThreshold)
+	shape.Optional(d, "stallNudgeMinutes", &c.StallNudgeMinutes)
+	shape.Optional(d, "maxStallNudges", &c.MaxStallNudges)
+	shape.Optional(d, "blockedAlertMinutes", &c.BlockedAlertMinutes)
 	parseSeedCost(d, &c)
 	parsePrograms(d, &c)
-	return c, d.err
+	return c, d.Err
 }
 
 func defaultControl() Control {
@@ -173,64 +83,64 @@ func defaultControl() Control {
 	}
 }
 
-func parseCeilings(d *decoder, c *Control) {
+func parseCeilings(d *shape.Object, c *Control) {
 	var entries map[string]json.RawMessage
-	optional(d, "ceilings", &entries)
-	if entries == nil || d.err != nil {
+	shape.Optional(d, "ceilings", &entries)
+	if entries == nil || d.Err != nil {
 		return
 	}
 	c.Ceilings = make(map[string]Ceiling, len(entries))
 	for mode, raw := range entries {
-		ceiling, err := parseCeiling(raw, d.at("ceilings")+"."+mode)
-		d.fail(err)
+		ceiling, err := parseCeiling(raw, d.At("ceilings")+"."+mode)
+		d.Fail(err)
 		c.Ceilings[mode] = ceiling
 	}
 }
 
 func parseCeiling(raw json.RawMessage, path string) (Ceiling, error) {
-	d, err := newDecoder(raw, path)
+	d, err := shape.Decode(raw, path)
 	if err != nil {
 		return Ceiling{}, err
 	}
 	var c Ceiling
-	required(d, "weekly", &c.Weekly)
-	required(d, "session", &c.Session)
-	return c, d.err
+	shape.Required(d, "weekly", &c.Weekly)
+	shape.Required(d, "session", &c.Session)
+	return c, d.Err
 }
 
-func parseSeedCost(d *decoder, c *Control) {
+func parseSeedCost(d *shape.Object, c *Control) {
 	var raw json.RawMessage
-	optional(d, "seedCycleCost", &raw)
-	if raw == nil || d.err != nil {
+	shape.Optional(d, "seedCycleCost", &raw)
+	if raw == nil || d.Err != nil {
 		return
 	}
-	seed, err := newDecoder(raw, d.at("seedCycleCost"))
+	seed, err := shape.Decode(raw, d.At("seedCycleCost"))
 	if err != nil {
-		d.fail(err)
+		d.Fail(err)
 		return
 	}
-	required(seed, "fable", &c.SeedCycleCost.Fable)
-	required(seed, "general", &c.SeedCycleCost.General)
-	required(seed, "session", &c.SeedCycleCost.Session)
-	d.fail(seed.err)
+	shape.Required(seed, "fable", &c.SeedCycleCost.Fable)
+	shape.Required(seed, "general", &c.SeedCycleCost.General)
+	shape.Required(seed, "session", &c.SeedCycleCost.Session)
+	d.Fail(seed.Err)
 }
 
-func parsePrograms(d *decoder, c *Control) {
+func parsePrograms(d *shape.Object, c *Control) {
 	var entries []json.RawMessage
-	optional(d, "programs", &entries)
-	if entries == nil || d.err != nil {
+	shape.Optional(d, "programs", &entries)
+	if entries == nil || d.Err != nil {
 		return
 	}
 	c.Programs = make([]Program, 0, len(entries))
 	for i, raw := range entries {
-		p, err := parseProgram(raw, fmt.Sprintf("%s[%d]", d.at("programs"), i))
-		d.fail(err)
+		p, err := parseProgram(raw, fmt.Sprintf("%s[%d]", d.At("programs"), i))
+		d.Fail(err)
 		c.Programs = append(c.Programs, p)
 	}
 }
 
 func parseProgram(raw json.RawMessage, path string) (Program, error) {
-	d, err := newDecoder(raw, path)
+	d, err := shape.Decode(raw, path)
 	if err != nil {
 		return Program{}, err
 	}
@@ -239,68 +149,68 @@ func parseProgram(raw json.RawMessage, path string) (Program, error) {
 		Model: "fable", UseDirenv: true, Runner: "orca", CyclePrompt: "/project-loop {program}",
 		SessionName: "{program} program runner",
 	}
-	required(d, "name", &p.Name)
-	required(d, "cwd", &p.Cwd)
-	nullable(d, "description", &p.Description)
-	d.check("description", p.Description == nil || len(utf16.Encode([]rune(*p.Description))) <= 500, "must contain at most 500 character(s)")
+	shape.Required(d, "name", &p.Name)
+	shape.Required(d, "cwd", &p.Cwd)
+	shape.NullableDefault(d, "description", &p.Description)
+	d.Check("description", p.Description == nil || len(utf16.Encode([]rune(*p.Description))) <= 500, "must contain at most 500 character(s)")
 	p.Host = parseHostField(d)
-	optional(d, "cycleCommand", &p.CycleCommand)
-	optional(d, "enabled", &p.Enabled)
-	optional(d, "model", &p.Model)
-	optional(d, "useDirenv", &p.UseDirenv)
-	optional(d, "runner", &p.Runner)
-	d.check("runner", p.Runner == "orca" || p.Runner == "headless", fmt.Sprintf("invalid enum value %q, expected orca | headless", p.Runner))
-	optional(d, "cyclePrompt", &p.CyclePrompt)
-	optional(d, "sessionName", &p.SessionName)
-	nullable(d, "maxCyclesPerDay", &p.MaxCyclesPerDay)
-	optional(d, "priority", &p.Priority)
-	nullable(d, "deadline", &p.Deadline)
-	nullable(d, "pauseUntil", &p.PauseUntil)
-	nullable(d, "cadence", &p.Cadence)
-	d.check("cadence", p.Cadence == nil || cadencePattern.MatchString(*p.Cadence), "cadence must look like 30m, 12h, or 7d")
+	shape.Optional(d, "cycleCommand", &p.CycleCommand)
+	shape.Optional(d, "enabled", &p.Enabled)
+	shape.Optional(d, "model", &p.Model)
+	shape.Optional(d, "useDirenv", &p.UseDirenv)
+	shape.Optional(d, "runner", &p.Runner)
+	shape.OneOf(d, "runner", p.Runner, []string{"orca", "headless"})
+	shape.Optional(d, "cyclePrompt", &p.CyclePrompt)
+	shape.Optional(d, "sessionName", &p.SessionName)
+	shape.NullableDefault(d, "maxCyclesPerDay", &p.MaxCyclesPerDay)
+	shape.Optional(d, "priority", &p.Priority)
+	shape.NullableDefault(d, "deadline", &p.Deadline)
+	shape.NullableDefault(d, "pauseUntil", &p.PauseUntil)
+	shape.NullableDefault(d, "cadence", &p.Cadence)
+	d.Check("cadence", p.Cadence == nil || cadencePattern.MatchString(*p.Cadence), "cadence must look like 30m, 12h, or 7d")
 	p.Aice = parseAiceField(d)
-	nullable(d, "asksFile", &p.AsksFile)
-	return p, d.err
+	shape.NullableDefault(d, "asksFile", &p.AsksFile)
+	return p, d.Err
 }
 
-func parseHostField(d *decoder) *Host {
-	raw, ok := d.present("host")
+func parseHostField(d *shape.Object) *Host {
+	raw, ok := d.Present("host")
 	if !ok {
 		return nil
 	}
-	h, err := parseHost(raw, d.at("host"))
-	d.fail(err)
+	h, err := parseHost(raw, d.At("host"))
+	d.Fail(err)
 	return &h
 }
 
 func parseHost(raw json.RawMessage, path string) (Host, error) {
-	d, err := newDecoder(raw, path)
+	d, err := shape.Decode(raw, path)
 	if err != nil {
 		return Host{}, err
 	}
 	h := Host{DrovrHome: "~/.drovr", Claude: "~/.local/bin/claude"}
-	required(d, "environment", &h.Environment)
-	required(d, "ssh", &h.SSH)
-	required(d, "cwd", &h.Cwd)
-	d.check("cwd", d.err != nil || strings.HasPrefix(h.Cwd, "/"), "host.cwd must be an absolute path on the box")
-	optional(d, "drovrHome", &h.DrovrHome)
-	optional(d, "claude", &h.Claude)
-	nullable(d, "wake", &h.Wake)
-	return h, d.err
+	shape.Required(d, "environment", &h.Environment)
+	shape.Required(d, "ssh", &h.SSH)
+	shape.Required(d, "cwd", &h.Cwd)
+	d.Check("cwd", d.Err != nil || strings.HasPrefix(h.Cwd, "/"), "host.cwd must be an absolute path on the box")
+	shape.Optional(d, "drovrHome", &h.DrovrHome)
+	shape.Optional(d, "claude", &h.Claude)
+	shape.NullableDefault(d, "wake", &h.Wake)
+	return h, d.Err
 }
 
-func parseAiceField(d *decoder) *Aice {
-	raw, ok := d.present("aice")
+func parseAiceField(d *shape.Object) *Aice {
+	raw, ok := d.Present("aice")
 	if !ok {
 		return nil
 	}
-	a, err := newDecoder(raw, d.at("aice"))
+	a, err := shape.Decode(raw, d.At("aice"))
 	if err != nil {
-		d.fail(err)
+		d.Fail(err)
 		return nil
 	}
 	var out Aice
-	nullable(a, "asksPage", &out.AsksPage)
-	d.fail(a.err)
+	shape.NullableDefault(a, "asksPage", &out.AsksPage)
+	d.Fail(a.Err)
 	return &out
 }

@@ -72,6 +72,24 @@ type Cost struct {
 	Session float64 `json:"session"`
 }
 
+// Bucket names one of the three simultaneously binding quota buckets.
+type Bucket string
+
+var Buckets = []Bucket{"fable", "general", "session"}
+
+// Of panics on an unknown bucket: every Bucket is one of Buckets, so another is a bug.
+func (c Cost) Of(b Bucket) float64 {
+	switch b {
+	case "fable":
+		return c.Fable
+	case "general":
+		return c.General
+	case "session":
+		return c.Session
+	}
+	panic("control: unknown bucket " + string(b))
+}
+
 type Control struct {
 	Mode                  Mode               `json:"mode"`
 	PauseUntil            *string            `json:"pauseUntil"`

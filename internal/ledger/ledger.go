@@ -13,6 +13,7 @@ import (
 
 	"github.com/cadam11/drovr/internal/control"
 	"github.com/cadam11/drovr/internal/epoch"
+	"github.com/cadam11/drovr/internal/shape"
 )
 
 type Cost = control.Cost
@@ -70,173 +71,74 @@ var failed = []string{"crash", "stalled"}
 
 func identity(c Cycle) string { return c.Program + "|" + c.StartedAt }
 
-// fields is one JSON object being checked against a zod shape; unknown keys are ignored,
-// which is zod's strip.
-type fields map[string]json.RawMessage
-
-func objectOf(raw json.RawMessage, path string) (fields, error) {
-	var f fields
-	if isNull(raw) {
-		return nil, fmt.Errorf("%s: expected object, received null", path)
-	}
-	if err := json.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("%s: expected object: %v", path, err)
-	}
-	return f, nil
-}
-
-func isNull(raw json.RawMessage) bool { return bytes.Equal(bytes.TrimSpace(raw), []byte("null")) }
-
-func into[T any](raw json.RawMessage, key string, dst *T) error {
-	if err := json.Unmarshal(raw, dst); err != nil {
-		return fmt.Errorf("%s: %v", key, err)
-	}
-	return nil
-}
-
-// required refuses absent and null alike, as zod does for a field with no default.
-func required[T any](f fields, key string, dst *T) error {
-	raw, ok := f[key]
-	if !ok || isNull(raw) {
-		return fmt.Errorf("%s: required", key)
-	}
-	return into(raw, key, dst)
-}
-
-// nullableRequired is zod's `.nullable()` with no default: null is a value, absent is not.
-func nullableRequired[T any](f fields, key string, dst **T) error {
-	raw, ok := f[key]
-	if !ok {
-		return fmt.Errorf("%s: required", key)
-	}
-	if isNull(raw) {
-		return nil
-	}
-	return into(raw, key, dst)
-}
-
-// nullableDefault is `.nullable().default(null)`: absent and null both leave nil.
-func nullableDefault[T any](f fields, key string, dst **T) error {
-	raw, ok := f[key]
-	if !ok || isNull(raw) {
-		return nil
-	}
-	return into(raw, key, dst)
-}
-
-// optional keeps dst's default when absent; null is refused because the field is not nullable.
-func optional[T any](f fields, key string, dst *T) error {
-	raw, ok := f[key]
-	if !ok {
-		return nil
-	}
-	if isNull(raw) {
-		return fmt.Errorf("%s: expected a value, received null", key)
-	}
-	return into(raw, key, dst)
-}
-
-func oneOf(key, value string, allowed []string) error {
-	if slices.Contains(allowed, value) {
-		return nil
-	}
-	return fmt.Errorf("%s: invalid enum value %q, expected %s", key, value, strings.Join(allowed, " | "))
-}
-
-func literalOne(f fields) error {
+func literalOne(o *shape.Object) {
 	var v float64
-	if err := required(f, "v", &v); err != nil {
-		return err
-	}
-	if v != 1 {
-		return fmt.Errorf("v: invalid literal value, expected 1")
-	}
-	return nil
+	shape.Required(o, "v", &v)
+	o.Check("v", o.Err != nil || v == 1, "invalid literal value, expected 1")
 }
 
 func parseCost(raw json.RawMessage, path string) (Cost, error) {
+	o, err := shape.Decode(raw, path)
+	if err != nil {
+		return Cost{}, err
+	}
 	var c Cost
-	f, err := objectOf(raw, path)
-	if err != nil {
-		return c, err
-	}
-	return c, firstErr(
-		prefixed(path, required(f, "fable", &c.Fable)),
-		prefixed(path, required(f, "general", &c.General)),
-		prefixed(path, required(f, "session", &c.Session)),
-	)
+	shape.Required(o, "fable", &c.Fable)
+	shape.Required(o, "general", &c.General)
+	shape.Required(o, "session", &c.Session)
+	return c, o.Err
 }
 
-func parseYield(raw json.RawMessage) (Yield, error) {
+func parseYield(raw json.RawMessage, path string) (Yield, error) {
+	o, err := shape.Decode(raw, path)
+	if err != nil {
+		return Yield{}, err
+	}
 	var y Yield
-	f, err := objectOf(raw, "yield")
-	if err != nil {
-		return y, err
-	}
-	return y, firstErr(
-		prefixed("yield", required(f, "ticketsMoved", &y.TicketsMoved)),
-		prefixed("yield", required(f, "prsOpened", &y.PrsOpened)),
-		prefixed("yield", required(f, "commits", &y.Commits)),
-	)
-}
-
-func prefixed(path string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%s.%w", path, err)
-}
-
-func firstErr(errs ...error) error {
-	for _, err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	shape.Required(o, "ticketsMoved", &y.TicketsMoved)
+	shape.Required(o, "prsOpened", &y.PrsOpened)
+	shape.Required(o, "commits", &y.Commits)
+	return y, o.Err
 }
 
 // nested decodes a nullable sub-object through its own shape, leaving nil for null.
-func nested[T any](f fields, key string, dst **T, parse func(json.RawMessage) (T, error)) error {
+func nested[T any](o *shape.Object, key string, dst **T, parse func(json.RawMessage, string) (T, error)) {
 	var raw *json.RawMessage
-	if err := nullableRequired(f, key, &raw); err != nil || raw == nil {
-		return err
+	shape.RequiredNullable(o, key, &raw)
+	if raw == nil || o.Err != nil {
+		return
 	}
-	value, err := parse(*raw)
+	value, err := parse(*raw, o.At(key))
+	o.Fail(err)
 	*dst = &value
-	return err
 }
 
 // ParseCycle mirrors cycleShape: known fields strictly, unknown keys stripped, defaults filled.
 func ParseCycle(data []byte) (Cycle, error) {
-	var c Cycle
-	f, err := objectOf(data, "(root)")
+	o, err := shape.Decode(data, "")
 	if err != nil {
 		return Cycle{}, err
 	}
-	c.V = 1
+	c := Cycle{V: 1}
 	var poolBefore json.RawMessage
-	err = firstErr(
-		literalOne(f),
-		required(f, "kind", &c.Kind),
-		required(f, "program", &c.Program),
-		required(f, "startedAt", &c.StartedAt),
-		nullableRequired(f, "endedAt", &c.EndedAt),
-		required(f, "exit", &c.Exit),
-		required(f, "poolBefore", &poolBefore),
-		nested(f, "poolAfter", &c.PoolAfter, func(raw json.RawMessage) (Cost, error) { return parseCost(raw, "poolAfter") }),
-		nullableRequired(f, "startupTokens", &c.StartupTokens),
-		nested(f, "yield", &c.Yield, parseYield),
-		optional(f, "asksRaised", &c.AsksRaised),
-		nullableDefault(f, "pauseUntil", &c.PauseUntil),
-		nullableDefault(f, "sessionId", &c.SessionID),
-		nullableDefault(f, "closing", &c.Closing),
-	)
-	if err != nil {
-		return Cycle{}, err
-	}
-	if err := firstErr(oneOf("kind", c.Kind, kinds), oneOf("exit", c.Exit, Exits)); err != nil {
-		return Cycle{}, err
+	literalOne(o)
+	shape.Required(o, "kind", &c.Kind)
+	shape.Required(o, "program", &c.Program)
+	shape.Required(o, "startedAt", &c.StartedAt)
+	shape.RequiredNullable(o, "endedAt", &c.EndedAt)
+	shape.Required(o, "exit", &c.Exit)
+	shape.Required(o, "poolBefore", &poolBefore)
+	nested(o, "poolAfter", &c.PoolAfter, parseCost)
+	shape.RequiredNullable(o, "startupTokens", &c.StartupTokens)
+	nested(o, "yield", &c.Yield, parseYield)
+	shape.Optional(o, "asksRaised", &c.AsksRaised)
+	shape.NullableDefault(o, "pauseUntil", &c.PauseUntil)
+	shape.NullableDefault(o, "sessionId", &c.SessionID)
+	shape.NullableDefault(o, "closing", &c.Closing)
+	shape.OneOf(o, "kind", c.Kind, kinds)
+	shape.OneOf(o, "exit", c.Exit, Exits)
+	if o.Err != nil {
+		return Cycle{}, o.Err
 	}
 	c.PoolBefore, err = parseCost(poolBefore, "poolBefore")
 	if err != nil {
@@ -246,25 +148,20 @@ func ParseCycle(data []byte) (Cycle, error) {
 }
 
 func parseDecision(data []byte) (Decision, error) {
-	var d Decision
-	f, err := objectOf(data, "(root)")
+	o, err := shape.Decode(data, "")
 	if err != nil {
-		return d, err
+		return Decision{}, err
 	}
-	d.V = 1
-	err = firstErr(
-		literalOne(f),
-		required(f, "at", &d.At),
-		required(f, "program", &d.Program),
-		required(f, "verdict", &d.Verdict),
-		required(f, "reason", &d.Reason),
-		nested(f, "pool", &d.Pool, func(raw json.RawMessage) (Cost, error) { return parseCost(raw, "pool") }),
-		nullableRequired(f, "cyclesFundable", &d.CyclesFundable),
-	)
-	if err != nil {
-		return d, err
-	}
-	return d, oneOf("verdict", d.Verdict, verdicts)
+	d := Decision{V: 1}
+	literalOne(o)
+	shape.Required(o, "at", &d.At)
+	shape.Required(o, "program", &d.Program)
+	shape.Required(o, "verdict", &d.Verdict)
+	shape.Required(o, "reason", &d.Reason)
+	nested(o, "pool", &d.Pool, parseCost)
+	shape.RequiredNullable(o, "cyclesFundable", &d.CyclesFundable)
+	shape.OneOf(o, "verdict", d.Verdict, verdicts)
+	return d, o.Err
 }
 
 // nonBlankLines numbers lines among the non-blank ones, as readCycles' filter-then-map does.
@@ -313,7 +210,10 @@ func AppendRecord(path string, record any) error {
 	}
 	_, writeErr := file.Write(buf.Bytes())
 	closeErr := file.Close()
-	return firstErr(writeErr, closeErr)
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
 
 // LatestEnds is the last end record per cycle identity, in first-seen order. Reconciliation
@@ -613,9 +513,12 @@ func ReadTickStamp(path string) (epoch.Millis, bool) {
 	if err != nil {
 		return 0, false
 	}
-	var stamp fields
+	o, err := shape.Decode(data, "")
+	if err != nil {
+		return 0, false
+	}
 	var raw string
-	if json.Unmarshal(data, &stamp) != nil || required(stamp, "at", &raw) != nil {
+	if shape.Required(o, "at", &raw); o.Err != nil {
 		return 0, false
 	}
 	return epoch.Parse(raw)

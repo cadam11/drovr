@@ -107,19 +107,6 @@ func FullReason(d Decision) string {
 	return d.Reason + " — " + *d.Note
 }
 
-func costOf(c ledger.Cost, b capacity.Bucket) float64 {
-	return [...]float64{c.Fable, c.General, c.Session}[bucketIndex(b)]
-}
-
-func bucketIndex(b capacity.Bucket) int {
-	for i, candidate := range capacity.Buckets {
-		if candidate == b {
-			return i
-		}
-	}
-	panic("decide: unknown bucket " + string(b))
-}
-
 func ratio(available, cost float64) float64 {
 	if cost <= 0 {
 		return math.Inf(1)
@@ -133,7 +120,7 @@ func ratio(available, cost float64) float64 {
 func fundingFor(a capacity.AccountHeadroom, cost ledger.Cost) AccountFunding {
 	var best AccountFunding
 	for i, b := range capacity.Buckets {
-		c := Cycles(ratio(a.Of(b), costOf(cost, b)))
+		c := Cycles(ratio(a.Of(b), cost.Of(b)))
 		if i == 0 || c < best.Cycles {
 			best = AccountFunding{Name: a.Name, Cycles: c, Binding: b, Routable: a.Routable}
 		}
@@ -230,9 +217,9 @@ func paceExceeded(in Input, pool capacity.Pool, cost ledger.Cost) (string, bool)
 	windowStart := float64(in.Now) - (weeklyWindowHours-hoursLeft)*3_600_000
 	spent := ledger.SpentSince(in.Cycles, windowStart, math.MaxInt64)
 	for _, b := range []capacity.Bucket{"fable", "general"} {
-		used := costOf(spent, b)
+		used := spent.Of(b)
 		allowance := pool.Of(b) + used
-		if used > math.Max(allowance*elapsed, costOf(cost, b)*paceBurstCycles) {
+		if used > math.Max(allowance*elapsed, cost.Of(b)*paceBurstCycles) {
 			return paceMessage(b, used, allowance, elapsed, hoursLeft), true
 		}
 	}

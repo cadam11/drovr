@@ -10,10 +10,9 @@ import (
 	"github.com/cadam11/drovr/internal/teamclaude"
 )
 
-// Bucket names one of the three simultaneously binding quota buckets.
-type Bucket string
+type Bucket = control.Bucket
 
-var Buckets = []Bucket{"fable", "general", "session"}
+var Buckets = control.Buckets
 
 type Ceilings = control.Ceiling
 

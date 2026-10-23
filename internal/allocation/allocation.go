@@ -58,18 +58,6 @@ func quotaOf(q teamclaude.Quota, b capacity.Bucket) *float64 {
 	panic("allocation: unknown bucket " + string(b))
 }
 
-func costOf(c ledger.Cost, b capacity.Bucket) float64 {
-	switch b {
-	case "fable":
-		return c.Fable
-	case "general":
-		return c.General
-	case "session":
-		return c.Session
-	}
-	panic("allocation: unknown bucket " + string(b))
-}
-
 func usedTotal(s teamclaude.Status, b capacity.Bucket, now epoch.Millis) float64 {
 	total := 0.0
 	for _, a := range s.Accounts {
@@ -94,7 +82,7 @@ func For(in Input) Allocation {
 	// Headroom comes from the pool, which clamps each account at its own ceiling; deriving it
 	// from ceiling x accounts - used would let one account's overspend eat another's.
 	headroom := math.Min(in.Pool.Of(in.Bucket), math.Max(0, total-used))
-	reserved := math.Min(float64(in.RunningCycles)*costOf(in.CycleCost, in.Bucket), headroom)
+	reserved := math.Min(float64(in.RunningCycles)*in.CycleCost.Of(in.Bucket), headroom)
 
 	return Allocation{
 		Bucket:            in.Bucket,
@@ -140,7 +128,7 @@ func SegmentsFor(status teamclaude.Status, pool capacity.Pool, cycles []ledger.C
 	spent := ledger.SpentSince(cycles, windowStart, math.MaxInt64)
 	bar := func(b capacity.Bucket) Allocation {
 		return roundAllocation(For(Input{
-			Status: status, Pool: pool, Bucket: b, SpentByPrograms: costOf(spent, b),
+			Status: status, Pool: pool, Bucket: b, SpentByPrograms: spent.Of(b),
 			RunningCycles: runningCycles, CycleCost: cost, Now: now,
 		}))
 	}
