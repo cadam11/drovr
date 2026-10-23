@@ -19,6 +19,7 @@ func TestRun(t *testing.T) {
 		{name: "no arguments", args: nil, wantOut: "drovr — capacity-aware", wantStderr: "\n"},
 		{name: "unregistered", args: []string{"nonsense"}, wantErr: "exit 1", wantOut: "drovr — capacity-aware", wantStderr: "unknown command \"nonsense\"\n\n"},
 		{name: "registered, unported", args: []string{"tidy", "x"}, wantErr: "drovr tidy is not ported to Go yet — run: node src/cli.ts tidy x"},
+		{name: "tick with a misspelt flag never runs a live tick", args: []string{"tick", "--shadwo"}, wantErr: "tick takes no arguments but --shadow"},
 		{name: "unknown topic", args: []string{"help", "nope"}, wantErr: "no command named \"nope\" — run `drovr help` for the list"},
 	}
 	for _, c := range cases {

@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cadam11/drovr/internal/control"
 	"github.com/cadam11/drovr/internal/epoch"
@@ -167,24 +166,12 @@ func numberArg(args []string, name string) (*float64, error) {
 
 const day = epoch.Millis(86_400_000)
 
-// isoMinutes is "2026-08-30T09:00Z", which Date.parse takes and epoch.Parse does not; the
-// TS names it as the form an agent waiting on a release date writes.
-const isoMinutes = "2006-01-02T15:04Z07:00"
-
-func parseInstant(raw string) (epoch.Millis, bool) {
-	if ms, ok := epoch.Parse(raw); ok {
-		return ms, true
-	}
-	t, err := time.Parse(isoMinutes, raw)
-	return t.UnixMilli(), err == nil
-}
-
 // parsePauseUntil takes "48h" and "2026-08-30T09:00Z" alike: an agent asking to soak thinks
 // in durations, one waiting for a release date thinks in dates. Bounded by MaxRestDays either
 // way, and a pause that is already over is refused rather than silently inert.
 func parsePauseUntil(raw string, now epoch.Millis) (string, error) {
 	limit := now + control.MaxRestDays*day
-	at, ok := parseInstant(raw)
+	at, ok := epoch.Parse(raw)
 	if durationWord.MatchString(raw) {
 		d, err := control.ParseDuration(raw)
 		// Too long to represent is JS's huge float, which the bound below refuses.

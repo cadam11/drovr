@@ -72,6 +72,10 @@ func dispatch(cmd string, rest []string, asJSON bool, stdout, stderr io.Writer) 
 	if cmd == "run-cycle" && len(rest) == 0 {
 		return errors.New("run-cycle needs a program name")
 	}
+	// A misspelt --shadow must not fall through to a live tick that admits real cycles.
+	if cmd == "tick" && slices.ContainsFunc(rest, func(a string) bool { return a != "--shadow" }) {
+		return errors.New("tick takes no arguments but --shadow")
+	}
 	if cmd == "tick" || cmd == "run-cycle" {
 		// The two commands that never run in front of a human: their lines land in a launchd
 		// log or a worker log, where an undated line cannot be matched to the ledger.

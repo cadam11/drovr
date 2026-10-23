@@ -8,7 +8,9 @@ import (
 
 type Millis = int64
 
-var layouts = []string{time.RFC3339Nano, "2006-01-02T15:04:05Z07:00", "2006-01-02"}
+// The minute-only form is "2026-08-30T09:00Z", which Date.parse takes: the form an agent
+// waiting on a release date writes.
+var layouts = []string{time.RFC3339Nano, "2006-01-02T15:04:05Z07:00", "2006-01-02T15:04Z07:00", "2006-01-02"}
 
 // Parse truncates sub-millisecond digits, as JS does. A date-only string is UTC.
 func Parse(s string) (Millis, bool) {

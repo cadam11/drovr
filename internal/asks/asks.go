@@ -122,7 +122,12 @@ var (
 // "nothing"; any other failure is returned.
 func ReadFile(cwd, file string) (*State, error) {
 	root := filepath.Clean(cwd)
-	path := filepath.Join(root, file)
+	// node's resolve() takes an absolute file as given; joining it under cwd would read a
+	// different file than the TS does.
+	path := filepath.Clean(file)
+	if !filepath.IsAbs(file) {
+		path = filepath.Join(root, file)
+	}
 	if !strings.HasPrefix(path, root+string(filepath.Separator)) {
 		return nil, nil
 	}

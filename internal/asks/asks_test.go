@@ -72,6 +72,16 @@ func TestReadFile(t *testing.T) {
 	if s, err := ReadFile(filepath.Join(dir, "sub"), "../asks.md"); s != nil || err != nil {
 		t.Errorf("outside cwd: %v %v", s, err)
 	}
+	// An absolute asksFile is taken as given, as node's resolve() does, and then guarded.
+	if s, err := ReadFile(dir, filepath.Join(dir, "asks.md")); err != nil || s == nil || s.OpenThreads != 4 {
+		t.Errorf("absolute inside cwd: %+v %v", s, err)
+	}
+	outside := dirWith(t, "asks.md", "- [ ] elsewhere\n")
+	os.MkdirAll(filepath.Join(dir, outside), 0o755)
+	os.WriteFile(filepath.Join(dir, outside, "asks.md"), []byte("- [ ] joined under cwd\n"), 0o644)
+	if s, err := ReadFile(dir, filepath.Join(outside, "asks.md")); s != nil || err != nil {
+		t.Errorf("absolute outside cwd is refused, never joined under it: %+v %v", s, err)
+	}
 	os.Chmod(filepath.Join(dir, "asks.md"), 0)
 	if _, err := ReadFile(dir, "asks.md"); err == nil {
 		t.Error("an unreadable file is an error, not an empty answer")

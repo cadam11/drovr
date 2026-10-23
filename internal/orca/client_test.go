@@ -289,3 +289,31 @@ func TestReadPreviewNeverFails(t *testing.T) {
 		t.Fatalf("%+v %v", p, w)
 	}
 }
+
+// The shadow tick holds a read-only client; every method that changes a terminal refuses
+// before it asks orca anything.
+func TestReadOnlyClientRefusesEveryWrite(t *testing.T) {
+	dir := shim(t, nil)
+	c, _ := client(t)
+	c.ReadOnly = true
+	ctx := context.Background()
+	writes := map[string]func() error{
+		"ReleaseRunner":      func() error { _, err := c.ReleaseRunner(ctx, "alpha", 0); return err },
+		"ReleaseLeftover":    func() error { _, err := c.ReleaseLeftover(ctx, "alpha", true); return err },
+		"TidyRunnerTerminal": func() error { _, err := c.TidyRunnerTerminal(ctx, "alpha"); return err },
+		"PromptRunner":       func() error { return c.PromptRunner(ctx, "alpha", "go") },
+		"InterruptRunner":    func() error { return c.InterruptRunner(ctx, "alpha") },
+		"StartCycleAgent": func() error {
+			_, err := c.StartCycleAgent(ctx, StartInput{Program: control.Program{Name: "alpha"}})
+			return err
+		},
+	}
+	for name, call := range writes {
+		if err := call(); err == nil || err.Error() != "orca client is read-only: "+name+" refused" {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if got := calls(t, dir); got != "" {
+		t.Fatalf("a read-only client called orca: %s", got)
+	}
+}
