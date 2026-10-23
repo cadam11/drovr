@@ -1,0 +1,5 @@
+#!/bin/sh
+# Test shim. Every argv is appended to $SSH_LOG; stdout is $SSH_STDOUT, exit code $SSH_CODE (default 0).
+echo "$*" >> "$SSH_LOG"
+printf '%s' "$SSH_STDOUT"
+exit "${SSH_CODE:-0}"
