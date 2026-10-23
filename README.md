@@ -43,7 +43,7 @@ $EDITOR ~/.drovr/control.json     # add a program
 node src/cli.ts service install   # writes the launchd plist and loads it
 ```
 
-A Go build of drovr is in progress (`go build .`); it is not yet what the service runs. The install above is the one that works today.
+A Go build of drovr (`go build .`) can run `tick`, `run-cycle`, `report`, `notify`, `service` and `status`; it is being proven beside the Node service with `drovr tick --shadow` and is not yet what launchd runs. The cut-over happens after a clean shadow day (E3). The install above is the one that works today.
 
 ## What you need
 

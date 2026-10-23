@@ -168,6 +168,11 @@ Never document a flag before implementing it — a help page that lies is worse 
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
+- **The Go tick, live or shadowed.** `drovr tick --shadow` and `drovr service install --shadow`
+  landed with plan E2, proven end to end in temp homes against shims; no shadow agent has been
+  installed (that is the operator's act: `drovr service install --shadow` from the Go binary), so
+  `scripts/shadow-diff.sh` has never read a real day, and no Go `run-cycle` has watched a real
+  runner. The Go hey client copies carry two upstream fixes (token echo) not yet released as a hey CLI.
 - **The send budget refusing a real sender.** `SEND_BUDGET_PER_HOUR` landed 2026-10-17, proven
   in the handler suite (the 31st refused, another label and the next hour unaffected) and through
   the router as a tool error; no live sender has reached 30 in an hour, so the `rate#` row, the
@@ -281,6 +286,8 @@ live on drovr's own install (drovr.aicex.app, supplied by the worktree's `.envrc
 created by the loop agent at onboarding. Its mechanical status page, `craig/loop-status.html`,
 is gone with every other drovr publisher.
 
+Once the Go binary is what launchd runs, the service no longer executes this working tree, so that reason goes; the worktree stays for the other one — two runners in one checkout race the git index.
+
 ## There is no web panel and no intents channel — do not rebuild either
 
 Removed 2026-09-04. A launchd agent published `assets/snapshot.json` to drovr.aicex.app every
@@ -318,6 +325,8 @@ removed aice publisher cost $22-26 a *day*. It stays acceptable only on those te
 overwritten, no fan-out, no second surface. A web page reading that row would be a new billing
 decision, not a free extension.
 
+The shadow tick adds a temporary cost: it calls hey's `prefs` once per pass, and at the 60 s shadow cadence that is roughly 43k Lambda invokes a month while it runs — inside the free tier, and a read, not a write. It goes away with the shadow label at cut-over.
+
 ## The remote
 
 `origin` is `git@github.com:cadam11/drovr.git`, recreated in 2026-10 with the hey paths filtered out
@@ -335,7 +344,7 @@ recreation is gone on purpose. Pushing is the maintainer's act.
 - `pnpm check-types` is the gate. Editor diagnostics lag behind edits — trust `tsc`.
 - Comments explain *why*, never *what*. Most functions should not have one.
 - **Two implementations live here until the Go port cuts over** (spec `docs/superpowers/specs/2026-10-22-go-port-design.md`).
-  `src/` is what launchd runs. `internal/` is the Go port, one package per TS module. The TS is the oracle:
+  `src/` is what launchd runs. `internal/` is the Go port; `drovr tick --shadow` runs it beside the live service under `tech.propra.drovr.shadow` (install: `drovr service install --shadow` from the Go binary), and `scripts/shadow-diff.sh --since <ISO>` pairs the two decision logs — a clean day is the cut-over gate. It exits 0 clean, 1 mismatches, 3 nothing to compare (`go run` shows 3 as 1). `go test ./... -count=1` also runs `scripts/shadowdiff`. One package per TS module. The TS is the oracle:
   `scripts/record-fixtures.sh` replays the TS suite with `DROVR_RECORD` set and writes `testdata/recorded/`,
   which the Go tests read; `conformance_test.go` diffs the two CLIs on `testdata/home`. A behaviour change
   lands in the TS first, with its test, then `scripts/record-fixtures.sh`, then the Go — never the Go alone,
