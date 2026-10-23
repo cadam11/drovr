@@ -85,7 +85,9 @@ func TestPoolContextAndRequiredFixtures(t *testing.T) {
 			Control json.RawMessage `json:"control"`
 			Rank    int             `json:"rank"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		ctl, err := control.Parse(in.Control)
 		if err != nil {
 			t.Fatal(err)

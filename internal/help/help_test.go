@@ -3,7 +3,9 @@ package help
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -29,9 +31,12 @@ func TestListMatchesOracle(t *testing.T) {
 	if err != nil {
 		t.Skip("node not on PATH")
 	}
+	if _, err := os.Stat("../../src/cli.ts"); err != nil {
+		t.Skip("TS tree absent")
+	}
 	want, err := exec.Command(node, "../../src/cli.ts", "help").Output()
 	if err != nil {
-		t.Skip("TS tree absent")
+		t.Fatalf("node: %v\n%s", err, stderrOf(err))
 	}
 	if got := RenderList() + "\n"; got != string(want) {
 		t.Fatalf("list differs from the Node CLI:\n%s", diffLines(got, string(want)))
@@ -44,9 +49,12 @@ func TestTreeMatchesOracle(t *testing.T) {
 	if err != nil {
 		t.Skip("node not on PATH")
 	}
+	if _, err := os.Stat("../../src/cli.ts"); err != nil {
+		t.Skip("TS tree absent")
+	}
 	want, err := exec.Command(node, "../../src/cli.ts", "help", "--json").Output()
 	if err != nil {
-		t.Skip("TS tree absent")
+		t.Fatalf("node: %v\n%s", err, stderrOf(err))
 	}
 	var got bytes.Buffer
 	enc := json.NewEncoder(&got)
@@ -69,4 +77,21 @@ func diffLines(got, want string) string {
 		}
 	}
 	return fmt.Sprintf("lengths differ: go %d lines, node %d", len(g), len(w))
+}
+
+// Columns are measured in characters: a flag with an em dash or an accent is wider in bytes
+// than on screen, and byte width pushed every description in the block right.
+func TestFlagColumnCountsCharactersNotBytes(t *testing.T) {
+	out := RenderCommand(Command{Usage: "drovr x", Summary: "s", Flags: []Flag{{Flag: "--éé", Describes: "a"}, {Flag: "--abc", Describes: "b"}}})
+	if !strings.Contains(out, "\n  --éé   a\n  --abc  b\n") {
+		t.Fatalf("%q", out)
+	}
+}
+
+func stderrOf(err error) []byte {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.Stderr
+	}
+	return nil
 }

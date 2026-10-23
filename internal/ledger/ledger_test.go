@@ -64,7 +64,9 @@ func TestEstimateCycleCostFixtures(t *testing.T) {
 			MinSamples int             `json:"minSamples"`
 			Fraction   float64         `json:"fraction"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		fixtures.Equal(t, c.Name, EstimateCycleCost(decodeCycles(t, in.Cycles), in.Seed, in.MinSamples, in.Fraction), c.Output)
 	}
 }
@@ -76,7 +78,9 @@ func TestChargeForRunningFixtures(t *testing.T) {
 			PoolNow Cost            `json:"poolNow"`
 			Cost    Cost            `json:"cost"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		fixtures.Equal(t, c.Name, ChargeForRunning(decodeCycles(t, in.Running), in.PoolNow, in.Cost), c.Output)
 	}
 }
@@ -88,7 +92,9 @@ func TestSpentSinceFixtures(t *testing.T) {
 			WindowStart float64         `json:"windowStart"`
 			Until       json.RawMessage `json:"until"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		until := epoch.Millis(math.MaxInt64)
 		if f := fixtures.Float(in.Until); !math.IsInf(f, 1) {
 			until = epoch.Millis(f)
@@ -104,7 +110,9 @@ func TestCountsFixtures(t *testing.T) {
 			Now      epoch.Millis    `json:"now"`
 			MaxHours float64         `json:"maxHours"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		fixtures.Equal(t, c.Name, InFlight(decodeCycles(t, in.Cycles), in.Now, in.MaxHours), c.Output)
 	}
 	for _, c := range fixtures.Load(t, "cyclesStartedSince") {
@@ -112,7 +120,9 @@ func TestCountsFixtures(t *testing.T) {
 			Cycles json.RawMessage `json:"cycles"`
 			Since  epoch.Millis    `json:"since"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		fixtures.Equal(t, c.Name, CyclesStartedSince(decodeCycles(t, in.Cycles), in.Since), c.Output)
 	}
 	for _, c := range fixtures.Load(t, "consecutiveFailures") {
@@ -121,21 +131,27 @@ func TestCountsFixtures(t *testing.T) {
 			Now           epoch.Millis    `json:"now"`
 			WindowMinutes float64         `json:"windowMinutes"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		fixtures.Equal(t, c.Name, ConsecutiveFailures(decodeCycles(t, in.Cycles), in.Now, in.WindowMinutes), c.Output)
 	}
 	for _, c := range fixtures.Load(t, "consecutiveZeroYield") {
 		var in struct {
 			Cycles json.RawMessage `json:"cycles"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		fixtures.Equal(t, c.Name, ConsecutiveZeroYield(decodeCycles(t, in.Cycles)), c.Output)
 	}
 	for _, c := range fixtures.Load(t, "unansweredAsks") {
 		var in struct {
 			Cycles json.RawMessage `json:"cycles"`
 		}
-		json.Unmarshal(c.Input, &in)
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
 		owed, ok := UnansweredAsks(decodeCycles(t, in.Cycles))
 		if !ok {
 			fixtures.Equal(t, c.Name, nil, c.Output)

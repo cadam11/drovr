@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 type Flag struct {
@@ -132,7 +133,7 @@ func pad(s string, width int) string { return fmt.Sprintf("%-*s", width, s) }
 func RenderList() string {
 	width := 0
 	for _, c := range Commands {
-		width = max(width, len(c.Name))
+		width = max(width, utf8.RuneCountInString(c.Name))
 	}
 	lines := []string{
 		"drovr — capacity-aware supervisor for long-horizon delivery loops",
@@ -171,7 +172,7 @@ func RenderCommand(c Command) string {
 	if c.Flags != nil {
 		width := 0
 		for _, f := range c.Flags {
-			width = max(width, len(f.Flag))
+			width = max(width, utf8.RuneCountInString(f.Flag))
 		}
 		parts = append(parts, "", "Flags:")
 		for _, f := range c.Flags {

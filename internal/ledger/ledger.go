@@ -87,13 +87,6 @@ func objectOf(raw json.RawMessage, path string) (fields, error) {
 
 func isNull(raw json.RawMessage) bool { return bytes.Equal(bytes.TrimSpace(raw), []byte("null")) }
 
-func at(path, key string) string {
-	if path == "" {
-		return key
-	}
-	return path + "." + key
-}
-
 func into[T any](raw json.RawMessage, key string, dst *T) error {
 	if err := json.Unmarshal(raw, dst); err != nil {
 		return fmt.Errorf("%s: %v", key, err)
