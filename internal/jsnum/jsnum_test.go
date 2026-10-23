@@ -50,3 +50,20 @@ func TestSliceCountsUTF16Units(t *testing.T) {
 		}
 	}
 }
+
+func TestStringIsJSNumberToString(t *testing.T) {
+	ninetyFive := 0.95 // a constant 1 - 0.95 folds exactly to 0.05; JS subtracts at runtime
+	cases := []struct {
+		v    float64
+		want string
+	}{
+		{0.1, "0.1"}, {8, "8"}, {0.25, "0.25"}, {1.5e-7, "1.5e-7"}, {1e21, "1e+21"}, {math.Copysign(0, -1), "0"},
+		{1e-6, "0.000001"}, {1e20, "100000000000000000000"}, {-2.5e-10, "-2.5e-10"}, {1 - ninetyFive, "0.050000000000000044"},
+		{math.NaN(), "NaN"}, {math.Inf(-1), "-Infinity"},
+	}
+	for _, c := range cases {
+		if got := String(c.v); got != c.want {
+			t.Errorf("String(%v) = %q want %q", c.v, got, c.want)
+		}
+	}
+}
