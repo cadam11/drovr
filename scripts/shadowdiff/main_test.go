@@ -45,6 +45,12 @@ func TestCompare(t *testing.T) {
 	if exitCode(compare(live[:1], shadow[:1], 0)) != 0 {
 		t.Fatal("a clean window exits 0")
 	}
+	if r := compare(nil, shadow, 0); exitCode(r) != 3 || r.Paired != 0 {
+		t.Fatal("no live lines compares nothing, which is not a clean day")
+	}
+	if exitCode(compare(live, shadow, epoch.MustParse("2026-10-24T00:00:00.000Z"))) != 3 {
+		t.Fatal("a --since past every live line compares nothing")
+	}
 }
 
 // A day of logs is read leniently: a torn or foreign line is counted and named, never fatal.

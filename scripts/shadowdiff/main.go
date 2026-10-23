@@ -104,10 +104,15 @@ func summary(r report) string {
 	return fmt.Sprintf("paired %d, unpaired %d, verdict %d, reason %d, numeric drift %d", r.Paired, r.Unpaired, r.Verdict, r.Reason, r.Drift)
 }
 
-// exitCode leaves drift out: it is listed for a human to glance at, not a failure.
+// exitCode leaves drift out: it is listed for a human to glance at, not a failure. Nothing
+// paired is its own code, never 0: exit 0 is the cut-over gate, and a day the Node tick was
+// down (or a --since past the newest live line) compared nothing and proves nothing.
 func exitCode(r report) int {
 	if r.Verdict+r.Reason+r.Unpaired > 0 {
 		return 1
+	}
+	if r.Paired == 0 {
+		return 3
 	}
 	return 0
 }
@@ -208,7 +213,18 @@ func judgeFiles(live, shadow []entry, sinceText string) int {
 	}
 	r := compare(live, shadow, since)
 	printReport(os.Stdout, r)
-	return exitCode(r)
+	// The newest live line makes a stale log visible: the default --since judges the day
+	// before it, which may be long gone.
+	newestText := "none"
+	if len(live) > 0 {
+		newestText = epoch.ISO(newest(live))
+	}
+	fmt.Printf("newest live decision %s, judged since %s\n", newestText, epoch.ISO(since))
+	code := exitCode(r)
+	if code == 3 {
+		fmt.Fprintln(os.Stderr, "nothing to compare: no live decision since --since was paired, so this proves nothing")
+	}
+	return code
 }
 
 func newest(entries []entry) epoch.Millis {
