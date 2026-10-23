@@ -57,9 +57,13 @@ func RememberedTerminal(p paths.Paths, program string, log io.Writer) *Remembere
 	return &r
 }
 
-// RememberTerminal writes in place, as the TS does; the program's state directory exists
-// by the time a cycle has a terminal to remember.
+// RememberTerminal writes in place, as the TS does. It makes the program's state directory
+// rather than trust a caller to have: a start that cannot remember its terminal leaves a
+// live runner un-watched.
 func RememberTerminal(p paths.Paths, program string, r Remembered) error {
+	if err := os.MkdirAll(p.ProgramState(program), 0o755); err != nil {
+		return err
+	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)

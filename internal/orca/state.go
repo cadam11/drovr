@@ -57,7 +57,7 @@ func AgentStateFrom(show, idle, exit json.RawMessage) (AgentState, error) {
 		exit = liveExitProbe
 	}
 	if gone, err := TerminalExited(exit); err != nil || gone {
-		return Gone, err
+		return goneOr(err)
 	}
 	settled, err := waitSatisfied(idle)
 	if err != nil {
@@ -67,6 +67,15 @@ func AgentStateFrom(show, idle, exit json.RawMessage) (AgentState, error) {
 		return Idle, nil
 	}
 	return Working, nil
+}
+
+// goneOr: a refusal on the exit probe that is not a timeout is orca failing, not the pty
+// ending, so it carries no state a careless caller could act on.
+func goneOr(err error) (AgentState, error) {
+	if err != nil {
+		return "", err
+	}
+	return Gone, nil
 }
 
 // PresentFrom is AgentStateFrom without the idle probe, which bills its full ceiling on a

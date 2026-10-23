@@ -66,6 +66,9 @@ func TestRefusalsOtherThanTimeoutThrow(t *testing.T) {
 	if _, err := TerminalExited(stale); err == nil || !strings.Contains(err.Error(), "terminal_handle_stale") {
 		t.Errorf("exit probe: %v", err)
 	}
+	if state, err := AgentStateFrom(claudeShown, idleSatisfied, stale); err == nil || state == Gone {
+		t.Errorf("a refused exit probe read as gone: %s %v", state, err)
+	}
 	if _, err := PresentFrom(claudeShown, stale); err == nil {
 		t.Error("presentFrom read a refusal as absent")
 	}

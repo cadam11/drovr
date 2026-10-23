@@ -1,0 +1,20 @@
+#!/bin/sh
+# Test shim. Answers from $ORCA_ANSWERS/<key>.json, where key is the first two words
+# ("terminal_show") plus, for `terminal wait`, the --for value ("terminal_wait_exit").
+# <key>.<n>.json answers the n-th call of that key when it exists; <key>.code is the exit
+# code (default 0). After `terminal send --text /exit`, show and the exit probe answer from
+# <key>.exited.json when it exists. Every argv is appended to $ORCA_ANSWERS/calls.log.
+dir="$ORCA_ANSWERS"
+echo "$*" >> "$dir/calls.log"
+key="$1_$2"
+if [ "$1 $2" = "terminal wait" ]; then
+  key="${key}_$(printf '%s\n' "$@" | sed -n '/^--for$/{n;p;}')"
+fi
+case " $* " in *" --text /exit "*) : > "$dir/exited" ;; esac
+n=$(( $(cat "$dir/$key.count" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$dir/$key.count"
+answer="$dir/$key.json"
+[ -f "$dir/$key.$n.json" ] && answer="$dir/$key.$n.json"
+[ -f "$dir/exited" ] && [ -f "$dir/$key.exited.json" ] && answer="$dir/$key.exited.json"
+cat "$answer" 2>/dev/null
+exit "$(cat "$dir/$key.code" 2>/dev/null || echo 0)"
