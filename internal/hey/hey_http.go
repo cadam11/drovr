@@ -467,15 +467,15 @@ func pollOnce(ctx context.Context, in pollInput) (kind string, creds credentials
 	if err != nil {
 		return "", credentials{}, err
 	}
-	if !json.Valid([]byte(text)) {
-		return "", credentials{}, fmt.Errorf("device token poll answered %d with something that is not JSON: %s", status, jsSlice(text, quotedBodyUnits))
-	}
 	if isOK(status) {
 		tokens, err := decodeTokens("device token poll", text)
 		if err != nil {
 			return "", credentials{}, err
 		}
 		return "tokens", credentialsFrom(tokens, in.issuer, in.now()), nil
+	}
+	if !json.Valid([]byte(text)) {
+		return "", credentials{}, fmt.Errorf("device token poll answered %d with something that is not JSON: %s", status, jsSlice(text, quotedBodyUnits))
 	}
 	refusal, ok := oauthErrorOf(text)
 	if !ok {

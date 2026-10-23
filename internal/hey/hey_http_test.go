@@ -259,6 +259,17 @@ func TestMalformedTokenResponseNeverEchoesTheTokens(t *testing.T) {
 	}
 }
 
+// The device poll's 200 carries live tokens too: truncated, it must not be quoted into the failure reason.
+func TestDevicePollMalformed200NeverEchoesTheBody(t *testing.T) {
+	body := `{"access_token":"SECRET-A","refresh_token":"SECRET-R","expires_in":36`
+	f := &fakeHTTP{answers: []*http.Response{respond(200, body)}}
+	device := deviceAuthorization{DeviceCode: "dev", UserCode: "X", ExpiresIn: 900, Interval: 5}
+	got, _ := pollDevice(t, context.Background(), f, device)
+	if got.outcome != "failed" || got.reason == "" || strings.Contains(got.reason, "SECRET-A") || strings.Contains(got.reason, body) {
+		t.Fatalf("got %+v", got)
+	}
+}
+
 func TestToolCallerRetriesOnceOn401ThenGivesUp(t *testing.T) {
 	f := &fakeHTTP{answers: []*http.Response{respond(401, ""), respond(200, tokenOK), respond(200, rpcOK)}}
 	call, _ := callerFor(t, f, ptr(validCreds()))
