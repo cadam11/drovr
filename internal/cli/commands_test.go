@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -110,5 +111,31 @@ func TestTickEnvShadowIsReadOnly(t *testing.T) {
 	}
 	if service.ShadowLogName != "tick-shadow" {
 		t.Fatal(service.ShadowLogName)
+	}
+}
+
+func TestInstallWarnings(t *testing.T) {
+	present := filepath.Join(t.TempDir(), "shadow.plist")
+	if err := os.WriteFile(present, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	absent := filepath.Join(t.TempDir(), "absent.plist")
+	cases := []struct {
+		name        string
+		a           agent
+		seconds     int
+		shadowPlist string
+		want        []string
+	}{
+		{"live over an installed shadow", agentFor(false), 600, present, []string{"warning: the shadow label tech.propra.drovr.shadow is installed; this replaces the live tick"}},
+		{"live with no shadow", agentFor(false), 600, absent, nil},
+		{"shadow at 60", agentFor(true), 60, present, nil},
+		{"shadow slower than the pairing window", agentFor(true), 61, present, []string{"warning: the shadow-diff pairing window assumes 60 s or less; 61 s will leave live decisions unpaired"}},
+	}
+	for _, c := range cases {
+		got, err := installWarnings(c.a, c.seconds, c.shadowPlist)
+		if err != nil || !slices.Equal(got, c.want) {
+			t.Errorf("%s: %q %v", c.name, got, err)
+		}
 	}
 }

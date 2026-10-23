@@ -91,6 +91,13 @@ func TestPlistNamesTheBinaryAndItsLogs(t *testing.T) {
 	if note, differs := BinaryMismatch(path, "/usr/local/bin/drovr"); !differs || note != "note: the launchd agent runs /opt/homebrew/bin/drovr but this is /usr/local/bin/drovr — re-run: drovr service install" {
 		t.Fatalf("%q", note)
 	}
+	node := filepath.Join(t.TempDir(), "node.plist")
+	if err := os.WriteFile(node, []byte(strings.Replace(got, "/opt/homebrew/bin/drovr", "/opt/homebrew/bin/node", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if note, differs := BinaryMismatch(node, "/usr/local/bin/drovr"); !differs || note != "note: the live tick is the Node service; this binary runs as the shadow until cut-over" {
+		t.Fatalf("a Node live tick is the shadow period, not a moved binary: %q", note)
+	}
 	if _, differs := BinaryMismatch(filepath.Join(t.TempDir(), "absent.plist"), "/usr/local/bin/drovr"); differs {
 		t.Fatal("no plist is not a moved binary")
 	}

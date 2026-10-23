@@ -145,11 +145,16 @@ func PlistBinary(plistPath string) (string, bool) {
 }
 
 // BinaryMismatch says when the agent would fire a different binary than the one running —
-// after a brew upgrade moved it, the tick keeps running the old one until reinstalled.
+// after a brew upgrade moved it, the tick keeps running the old one until reinstalled. A node
+// binary is the shadow period, not a move: telling the operator to reinstall there would
+// replace the Node service before any shadow day had been judged.
 func BinaryMismatch(plistPath, self string) (string, bool) {
 	bin, ok := PlistBinary(plistPath)
 	if !ok || bin == self {
 		return "", false
+	}
+	if filepath.Base(bin) == "node" {
+		return "note: the live tick is the Node service; this binary runs as the shadow until cut-over", true
 	}
 	return "note: the launchd agent runs " + bin + " but this is " + self + " — re-run: drovr service install", true
 }
