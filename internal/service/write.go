@@ -15,6 +15,10 @@ import (
 // decisions can be compared without it ever admitting a cycle.
 const ShadowLabel = "tech.propra.drovr.shadow"
 
+// ShadowLogName keeps the shadow's output out of tick.log and tick.err, which are the live
+// tick's record.
+const ShadowLogName = "tick-shadow"
+
 // ShadowIntervalSeconds is 60 so every live decision has a shadow decision from the minute
 // before it to be paired with.
 const ShadowIntervalSeconds = 60

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cadam11/drovr/internal/asks"
 	"github.com/cadam11/drovr/internal/capacity"
 	"github.com/cadam11/drovr/internal/control"
 	"github.com/cadam11/drovr/internal/decide"
@@ -17,6 +18,8 @@ import (
 	"github.com/cadam11/drovr/internal/jsnum"
 	"github.com/cadam11/drovr/internal/ledger"
 	"github.com/cadam11/drovr/internal/lock"
+	"github.com/cadam11/drovr/internal/nudge"
+	"github.com/cadam11/drovr/internal/orca"
 	"github.com/cadam11/drovr/internal/paths"
 	"github.com/cadam11/drovr/internal/service"
 	"github.com/cadam11/drovr/internal/status"
@@ -30,11 +33,22 @@ type Env struct {
 	Stdout, Stderr io.Writer
 	// TeamclaudeBin "" means `teamclaude` on PATH.
 	TeamclaudeBin string
+	Self          string // this binary, symlinks resolved: what a plist installed now would name
+	Host, Home    string
+	Caller        nudge.CallerFunc // nil is nudge.DefaultCaller
+}
+
+// Probes are the two per-program reads decide() takes beyond the pool. Runner nil is unknown
+// (headless, or orca did not answer), which never refuses a cycle.
+type Probes struct {
+	Asks   func(control.Program) (*asks.State, error)
+	Runner func(control.Program) *bool
 }
 
 // inputs is one read of the world; status and status --json render the same read.
 type inputs struct {
-	control control.Control
+	control control.Control // after the phone's Away
+	stored  control.Mode
 	status  teamclaude.Status
 	cycles  []ledger.Cycle
 	now     epoch.Millis
@@ -46,7 +60,7 @@ func Status(ctx context.Context, env Env, asJSON bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprint(env.Stderr, unreadCaveat(in.control))
+	warnBinaryMismatch(env)
 	var lockErr error
 	lockPid := func(name string) *int {
 		pid, ok, err := lock.Holder(env.Paths.ProgramLock(name))
@@ -58,7 +72,7 @@ func Status(ctx context.Context, env Env, asJSON bool) error {
 		}
 		return &pid
 	}
-	evaluations, err := EvaluateAll(in.control, in.status, in.cycles, in.now, lockPid)
+	evaluations, err := EvaluateAll(in.control, in.status, in.cycles, in.now, lockPid, liveProbes(ctx, env, in.now))
 	if err == nil {
 		err = lockErr
 	}
@@ -71,39 +85,34 @@ func Status(ctx context.Context, env Env, asJSON bool) error {
 	return renderText(env.Stdout, in, evaluations)
 }
 
-// unreadCaveat names the inputs the tick reads that this build skips until plan E2 ports
-// them; silent, it would print GO for a program the tick holds on a leftover runner.
-func unreadCaveat(c control.Control) string {
-	var skipped []string
-	if c.NotifyTo != nil {
-		skipped = append(skipped, "the phone's Away mode")
+// liveProbes read what cli.ts's evaluateAll reads: the asks page and the runner's full state,
+// idle probe included. A runner orca could not answer for is unknown, not absent.
+func liveProbes(ctx context.Context, env Env, now epoch.Millis) Probes {
+	reader := asks.NewReader()
+	client := orca.NewClient(env.Paths, env.Stderr)
+	return Probes{
+		Asks: func(p control.Program) (*asks.State, error) { return reader.Read(ctx, p, now) },
+		Runner: func(p control.Program) *bool {
+			state, err := client.RunnerState(ctx, p.Name)
+			if err != nil {
+				return nil // swallowed: TS .catch(() => null) — no answer is unknown, and decide reads nil as such
+			}
+			present := state != orca.Gone
+			return &present
+		},
 	}
-	orca, asks := false, false
-	for _, p := range c.Programs {
-		orca = orca || (p.Enabled && p.Runner == "orca")
-		asks = asks || (p.Enabled && (p.Aice != nil || p.AsksFile != nil))
-	}
-	if orca {
-		skipped = append(skipped, "orca runner state")
-	}
-	if asks {
-		skipped = append(skipped, "asks pages")
-	}
-	if len(skipped) == 0 {
-		return ""
-	}
-	list := skipped[len(skipped)-1]
-	if len(skipped) > 1 {
-		list = strings.Join(skipped[:len(skipped)-1], ", ") + " or " + list
-	}
-	return "note: this Go build does not yet read " + list + "; verdicts may differ from the launchd tick (see plan E2)\n"
 }
 
 func readInputs(ctx context.Context, env Env) (inputs, error) {
-	c, err := control.Read(env.Paths.Control)
+	stored, err := control.Read(env.Paths.Control)
 	if err != nil {
 		return inputs{}, err
 	}
+	phone := channel(env, stored.NotifyTo).PhonePrefs(ctx)
+	if phone.Warning != nil {
+		fmt.Fprintln(env.Stderr, *phone.Warning)
+	}
+	c := control.ApplyAwayMode(stored, phone.Away)
 	s, err := teamclaude.Read(ctx, env.TeamclaudeBin)
 	if err != nil {
 		return inputs{}, err
@@ -119,6 +128,7 @@ func readInputs(ctx context.Context, env Env) (inputs, error) {
 	}
 	return inputs{
 		control: c,
+		stored:  stored.Mode,
 		status:  s,
 		cycles:  cycles,
 		now:     now,
@@ -153,16 +163,30 @@ func tickLockHolder(p paths.Paths, now epoch.Millis) (*service.LockHolder, error
 
 // EvaluateAll decides in priority order, booking each admitted program as in flight, so the
 // list says what a tick would actually do rather than judging every program against an
-// empty pool. E1 has no asks or orca: nil is the TS's undefined, which never refuses.
-func EvaluateAll(c control.Control, s teamclaude.Status, cycles []ledger.Cycle, now epoch.Millis, lockPid func(string) *int) ([]status.Evaluation, error) {
+// empty pool. Every program's asks are read before any is decided, as the TS does.
+func EvaluateAll(c control.Control, s teamclaude.Status, cycles []ledger.Cycle, now epoch.Millis, lockPid func(string) *int, probes Probes) ([]status.Evaluation, error) {
 	ordered, err := control.ByPriority(c.Programs, now, c.DeadlineHorizonDays)
 	if err != nil {
 		return nil, err
 	}
+	answers := make([]*asks.State, len(ordered))
+	for i, program := range ordered {
+		if answers[i], err = probes.Asks(program); err != nil {
+			return nil, err
+		}
+	}
 	seen := append([]ledger.Cycle{}, cycles...)
 	out := make([]status.Evaluation, 0, len(ordered))
-	for _, program := range ordered {
-		d, err := decide.Decide(decide.Input{Status: s, Control: c, Cycles: seen, Program: program.Name, Now: now})
+	for i, program := range ordered {
+		in := decide.Input{Status: s, Control: c, Cycles: seen, Program: program.Name, Now: now}
+		if a := answers[i]; a != nil {
+			shared := a.Shared
+			in.AnsweredAt, in.AsksShared = a.LatestAt, &shared
+		}
+		if program.Runner == "orca" {
+			in.RunnerPresent = probes.Runner(program)
+		}
+		d, err := decide.Decide(in)
 		if err != nil {
 			return nil, err
 		}
@@ -180,16 +204,21 @@ func projectedStart(program string, now epoch.Millis) ledger.Cycle {
 
 func renderJSON(w io.Writer, in inputs, evaluations []status.Evaluation) error {
 	payload, err := status.Build(status.Input{
-		Control: in.control, StoredMode: in.control.Mode, Status: in.status, Cycles: in.cycles,
+		Control: in.control, StoredMode: in.stored, Status: in.status, Cycles: in.cycles,
 		Now: in.now, Evaluations: evaluations, Service: in.service,
 	})
 	if err != nil {
 		return err
 	}
+	return encodeJSON(w, payload)
+}
+
+// encodeJSON is JSON.stringify(v, null, 2) plus console.log's newline.
+func encodeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
-	return enc.Encode(payload)
+	return enc.Encode(v)
 }
 
 func renderText(w io.Writer, in inputs, evaluations []status.Evaluation) error {
@@ -205,7 +234,11 @@ func renderText(w io.Writer, in inputs, evaluations []status.Evaluation) error {
 	if paused {
 		pause = fmt.Sprintf(" (paused until %s)", *c.PauseUntil)
 	}
-	fmt.Fprintf(w, "mode: %s%s\n", c.Mode, pause)
+	phone := ""
+	if c.Mode != in.stored {
+		phone = " (phone)"
+	}
+	fmt.Fprintf(w, "mode: %s%s%s\n", c.Mode, phone, pause)
 	running := ledger.InFlight(in.cycles, in.now, c.MaxCycleHours)
 	if err := renderCapacity(w, in, running); err != nil {
 		return err

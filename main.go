@@ -13,9 +13,10 @@ import (
 	"strings"
 
 	"github.com/cadam11/drovr/internal/cli"
+	"github.com/cadam11/drovr/internal/cycle"
 	"github.com/cadam11/drovr/internal/epoch"
 	"github.com/cadam11/drovr/internal/help"
-	"github.com/cadam11/drovr/internal/paths"
+	"github.com/cadam11/drovr/internal/tick"
 )
 
 // version is stamped by scripts/release.sh with -ldflags "-X main.version=<VERSION>".
@@ -31,7 +32,7 @@ func main() {
 	if err == nil {
 		return
 	}
-	if !errors.As(err, new(exitOne)) {
+	if !errors.As(err, new(exitOne)) && !errors.Is(err, cli.ErrPrinted) && !errors.Is(err, cycle.ErrAlreadyRunning) {
 		fmt.Fprintln(os.Stderr, err)
 	}
 	os.Exit(1)
@@ -55,15 +56,53 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "version", "--version":
 		fmt.Fprintln(stdout, version)
 		return nil
-	case "status":
-		env := cli.Env{Paths: paths.New(), Now: epoch.Now, Stdout: stdout, Stderr: stderr}
-		return cli.Status(context.Background(), env, asJSON)
+	case "status", "report", "notify", "service", "tick", "run-cycle":
+		return dispatch(cmd, rest, asJSON, stdout, stderr)
 	}
 	if _, ok := help.Find(cmd); ok {
 		return notPorted(cmd, rest)
 	}
 	fmt.Fprintf(stderr, "unknown command \"%s\"\n\n", cmd)
 	fmt.Fprintln(stdout, help.RenderList())
+	return exitOne{}
+}
+
+func dispatch(cmd string, rest []string, asJSON bool, stdout, stderr io.Writer) error {
+	ctx := context.Background()
+	if cmd == "run-cycle" && len(rest) == 0 {
+		return errors.New("run-cycle needs a program name")
+	}
+	if cmd == "tick" || cmd == "run-cycle" {
+		// The two commands that never run in front of a human: their lines land in a launchd
+		// log or a worker log, where an undated line cannot be matched to the ledger.
+		stdout, stderr = epoch.Stamped(stdout, epoch.Now), epoch.Stamped(stderr, epoch.Now)
+	}
+	env, err := cli.NewEnv(stdout, stderr)
+	if err != nil {
+		return err
+	}
+	switch cmd {
+	case "status":
+		return cli.Status(ctx, env, asJSON)
+	case "report":
+		return cli.Report(env, rest)
+	case "notify":
+		return cli.Notify(ctx, env, rest, asJSON)
+	case "service":
+		return cli.Service(ctx, env, rest, asJSON)
+	case "tick":
+		return stampedFailure(stderr, tick.Run(ctx, cli.TickEnv(env, slices.Contains(rest, "--shadow"))))
+	}
+	return stampedFailure(stderr, cli.Worker(env).RunProgram(ctx, rest[0]))
+}
+
+// stampedFailure prints a tick or worker failure through the stamped writer, as the TS's
+// console.error does once stampConsole has run.
+func stampedFailure(stderr io.Writer, err error) error {
+	if err == nil || errors.Is(err, cycle.ErrAlreadyRunning) {
+		return err
+	}
+	fmt.Fprintln(stderr, err)
 	return exitOne{}
 }
 
