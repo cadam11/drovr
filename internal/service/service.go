@@ -1,5 +1,5 @@
 // Package service reads the launchd agent that fires the tick and says, in prose a reader
-// can act on, whether it is running. Writing and reloading the plist is not here yet.
+// can act on, whether it is running; write.go writes and reloads the plist.
 package service
 
 import (
