@@ -40,8 +40,9 @@ func TestDefaultsAndRefusals(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 	for in, path := range map[string]string{
-		`{"currentAccount":null,"accounts":[{"name":"a","quota":{}}]}`: "accounts[0].disabled",
-		`{"currentAccount":null}`:                                      "accounts",
+		`{"currentAccount":null,"accounts":[{"name":"a","quota":{}}]}`:                "accounts[0].disabled",
+		`{"currentAccount":null}`:                                                     "accounts",
+		`{"currentAccount":null,"accounts":[],"switchThresholds":{"unified5h":null}}`: "switchThresholds.unified5h: expected number",
 		`{"currentAccount":null,"accounts":[{"name":"a","disabled":false,"quota":{"unified5h":"lots","unified5hReset":null,"unified7d":null,"unified7dReset":null,"unified7dFable":null,"unified7dFableReset":null},"rateLimitedUntil":null,"pausedUntil":null}]}`: "accounts[0].quota.unified5h",
 	} {
 		if _, err := Parse([]byte(in)); err == nil || !strings.Contains(err.Error(), path) || !strings.HasPrefix(err.Error(), "teamclaude status did not match expected shape: ") {

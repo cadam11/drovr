@@ -80,3 +80,33 @@ func TestDescribeFunding(t *testing.T) {
 		}
 	}
 }
+
+// Until plan E2 the Go status skips inputs the tick reads; it has to say so, or it prints
+// GO for a program the tick holds.
+func TestStatusCaveatNamesWhatItCannotRead(t *testing.T) {
+	c, err := control.Read("../../testdata/home/control.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := unreadCaveat(c)
+	if !strings.Contains(fixture, "orca runner state") || strings.Contains(fixture, "Away") || strings.Contains(fixture, "asks") {
+		t.Fatalf("fixture caveat: %q", fixture)
+	}
+	to := "craig"
+	c.NotifyTo = &to
+	if got := unreadCaveat(c); !strings.HasPrefix(got, "note: this Go build does not yet read the phone's Away mode or orca runner state; ") || !strings.HasSuffix(got, "(see plan E2)\n") {
+		t.Fatalf("notifyTo caveat: %q", got)
+	}
+	c.NotifyTo = nil
+	for i := range c.Programs {
+		c.Programs[i].Runner = "headless"
+	}
+	if got := unreadCaveat(c); got != "" {
+		t.Fatalf("headless, no notifyTo: %q", got)
+	}
+	page := "craig/asks.html"
+	c.Programs[0].Aice = &control.Aice{AsksPage: &page}
+	if got := unreadCaveat(c); !strings.Contains(got, "read asks pages;") {
+		t.Fatalf("asks caveat: %q", got)
+	}
+}

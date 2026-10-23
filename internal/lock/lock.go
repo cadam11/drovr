@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"strings"
@@ -62,38 +63,44 @@ func parse(raw []byte) (Held, bool) {
 	return Held{Pid: pid, At: &ms}, true
 }
 
-// HeldBy is the live holder and when it took the lock; false when nothing holds it.
-func HeldBy(path string) (Held, bool) {
+// HeldBy is the live holder and when it took the lock; false when nothing holds it. Only a
+// missing file is unheld: an unreadable lock is never free to take (ruling 2026-10-22),
+// because Acquire would then write over a live holder and run two ticks at once.
+func HeldBy(path string) (Held, bool, error) {
 	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Held{}, false, nil
+	}
 	if err != nil {
-		return Held{}, false
+		return Held{}, false, err
 	}
 	held, ok := parse(raw)
 	if !ok || !isAlive(held.Pid) {
-		return Held{}, false
+		return Held{}, false, nil
 	}
-	return held, true
+	return held, true, nil
 }
 
-func Holder(path string) (int, bool) {
-	held, ok := HeldBy(path)
-	return held.Pid, ok
+func Holder(path string) (int, bool, error) {
+	held, ok, err := HeldBy(path)
+	return held.Pid, ok, err
 }
 
 // HeldForMs is how long the live holder has held it; false when nothing holds it or the
 // lock predates the timestamped format.
-func HeldForMs(path string, now epoch.Millis) (int64, bool) {
-	held, ok := HeldBy(path)
-	if !ok || held.At == nil {
-		return 0, false
+func HeldForMs(path string, now epoch.Millis) (int64, bool, error) {
+	held, ok, err := HeldBy(path)
+	if err != nil || !ok || held.At == nil {
+		return 0, false, err
 	}
-	return max(0, now-*held.At), true
+	return max(0, now-*held.At), true, nil
 }
 
 // Acquire returns false when a live process holds the lock; a stale lock is reclaimed.
 func Acquire(path string) (bool, error) {
-	if _, held := HeldBy(path); held {
-		return false, nil
+	_, held, err := HeldBy(path)
+	if err != nil || held {
+		return false, err
 	}
 	body := fmt.Sprintf(`{"pid":%d,"at":%d}`, os.Getpid(), epoch.Now())
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -105,7 +112,7 @@ func Acquire(path string) (bool, error) {
 // Release removes the lock only if this process wrote it.
 func Release(path string) error {
 	raw, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	if err != nil {

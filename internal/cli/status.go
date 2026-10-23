@@ -4,6 +4,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -45,14 +46,22 @@ func Status(ctx context.Context, env Env, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	fmt.Fprint(env.Stderr, unreadCaveat(in.control))
+	var lockErr error
 	lockPid := func(name string) *int {
-		pid, ok := lock.Holder(env.Paths.ProgramLock(name))
+		pid, ok, err := lock.Holder(env.Paths.ProgramLock(name))
+		if err != nil {
+			lockErr = errors.Join(lockErr, err)
+		}
 		if !ok {
 			return nil
 		}
 		return &pid
 	}
 	evaluations, err := EvaluateAll(in.control, in.status, in.cycles, in.now, lockPid)
+	if err == nil {
+		err = lockErr
+	}
 	if err != nil {
 		return err
 	}
@@ -60,6 +69,34 @@ func Status(ctx context.Context, env Env, asJSON bool) error {
 		return renderJSON(env.Stdout, in, evaluations)
 	}
 	return renderText(env.Stdout, in, evaluations)
+}
+
+// unreadCaveat names the inputs the tick reads that this build skips until plan E2 ports
+// them; silent, it would print GO for a program the tick holds on a leftover runner.
+func unreadCaveat(c control.Control) string {
+	var skipped []string
+	if c.NotifyTo != nil {
+		skipped = append(skipped, "the phone's Away mode")
+	}
+	orca, asks := false, false
+	for _, p := range c.Programs {
+		orca = orca || (p.Enabled && p.Runner == "orca")
+		asks = asks || (p.Enabled && (p.Aice != nil || p.AsksFile != nil))
+	}
+	if orca {
+		skipped = append(skipped, "orca runner state")
+	}
+	if asks {
+		skipped = append(skipped, "asks pages")
+	}
+	if len(skipped) == 0 {
+		return ""
+	}
+	list := skipped[len(skipped)-1]
+	if len(skipped) > 1 {
+		list = strings.Join(skipped[:len(skipped)-1], ", ") + " or " + list
+	}
+	return "note: this Go build does not yet read " + list + "; verdicts may differ from the launchd tick (see plan E2)\n"
 }
 
 func readInputs(ctx context.Context, env Env) (inputs, error) {
@@ -76,12 +113,16 @@ func readInputs(ctx context.Context, env Env) (inputs, error) {
 		return inputs{}, err
 	}
 	now := env.Now()
+	holder, err := tickLockHolder(env.Paths, now)
+	if err != nil {
+		return inputs{}, err
+	}
 	return inputs{
 		control: c,
 		status:  s,
 		cycles:  cycles,
 		now:     now,
-		service: status.ServiceInput{State: service.Current(), LastTickAt: lastTickAt(env.Paths), LockHolder: tickLockHolder(env.Paths, now)},
+		service: status.ServiceInput{State: service.Current(), LastTickAt: lastTickAt(env.Paths), LockHolder: holder},
 	}, nil
 }
 
@@ -97,17 +138,17 @@ func lastTickAt(p paths.Paths) *epoch.Millis {
 	return nil
 }
 
-func tickLockHolder(p paths.Paths, now epoch.Millis) *service.LockHolder {
-	held, ok := lock.HeldBy(p.TickLock)
-	if !ok {
-		return nil
+func tickLockHolder(p paths.Paths, now epoch.Millis) (*service.LockHolder, error) {
+	held, ok, err := lock.HeldBy(p.TickLock)
+	if err != nil || !ok {
+		return nil, err
 	}
 	h := &service.LockHolder{Pid: held.Pid}
 	if held.At != nil {
 		ms := max(0, now-*held.At)
 		h.HeldMs = &ms
 	}
-	return h
+	return h, nil
 }
 
 // EvaluateAll decides in priority order, booking each admitted program as in flight, so the

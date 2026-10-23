@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -48,21 +50,35 @@ func oracle(t *testing.T) (node string, env []string) {
 	return node, append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "DROVR_HOME="+home, "HOME="+home)
 }
 
+// runBoth compares stdout and the exit code only: stderr carries notes the Go build owes
+// until plan E2 (what it does not read yet), which are not part of the port target.
 func runBoth(t *testing.T, args ...string) (goOut, tsOut string) {
 	node, env := oracle(t)
 	g := exec.Command(goBin, args...)
 	g.Env = env
-	gb, err := g.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go: %v\n%s", err, gb)
-	}
+	gb, gerr, gcode := runCaptured(g)
 	n := exec.Command(node, append([]string{"src/cli.ts"}, args...)...)
 	n.Env = env
-	nb, err := n.CombinedOutput()
-	if err != nil {
-		t.Fatalf("node: %v\n%s", err, nb)
+	nb, nerr, ncode := runCaptured(n)
+	if gcode != 0 || ncode != 0 {
+		t.Fatalf("exit codes go %d node %d\n--- go stderr\n%s\n--- node stderr\n%s", gcode, ncode, gerr, nerr)
 	}
-	return string(gb), string(nb)
+	return gb, nb
+}
+
+func runCaptured(cmd *exec.Cmd) (stdout, stderr string, code int) {
+	var errBuf strings.Builder
+	cmd.Stderr = &errBuf
+	out, err := cmd.Output()
+	var ee *exec.ExitError
+	switch {
+	case errors.As(err, &ee):
+		code = ee.ExitCode()
+	case err != nil:
+		code = -1
+		errBuf.WriteString(err.Error())
+	}
+	return string(out), errBuf.String(), code
 }
 
 func TestStatusJSONMatchesOracle(t *testing.T) {

@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -319,8 +321,27 @@ func parseStatus(raw json.RawMessage) (Status, error) {
 		s.Routes = each(d, "routes", routes, parseRoute)
 	}
 	nullable(d, "switchThreshold", &s.SwitchThreshold)
-	nullable(d, "switchThresholds", &s.SwitchThresholds)
+	s.SwitchThresholds = parseThresholdTable(d)
 	return s, d.err
+}
+
+// parseThresholdTable decodes through pointers because a JSON null inside a
+// map[string]float64 silently becomes 0, where zod's record of numbers refuses it.
+func parseThresholdTable(d *decoder) map[string]float64 {
+	var raw map[string]*float64
+	nullable(d, "switchThresholds", &raw)
+	if raw == nil || d.err != nil {
+		return nil
+	}
+	out := make(map[string]float64, len(raw))
+	for _, key := range slices.Sorted(maps.Keys(raw)) {
+		if raw[key] == nil {
+			d.fail(fmt.Errorf("%s.%s: expected number", d.at("switchThresholds"), key))
+			return nil
+		}
+		out[key] = *raw[key]
+	}
+	return out
 }
 
 func parseAccount(raw json.RawMessage, path string) (Account, error) {

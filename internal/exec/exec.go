@@ -35,9 +35,12 @@ type ExitError struct {
 	Err            error
 	Stdout, Stderr string
 	Code           int
+	// Msg is Node's execFile wording, so a failed child reads the same from either CLI and
+	// names what failed instead of a bare "exit status 1".
+	Msg string
 }
 
-func (e *ExitError) Error() string { return e.Err.Error() }
+func (e *ExitError) Error() string { return e.Msg }
 func (e *ExitError) Unwrap() error { return e.Err }
 
 // ExplainSpawn names the binary, where it was looked for and the fix: launchd gives a tick
@@ -85,16 +88,28 @@ func RunBounded(ctx context.Context, bin string, args []string, b Bounds) (Resul
 	if errors.Is(err, osexec.ErrNotFound) {
 		return r, ExplainSpawn(bin, err)
 	}
-	return r, &ExitError{Err: err, Stdout: r.Stdout, Stderr: r.Stderr, Code: exitCode(err)}
+	return r, &ExitError{Err: err, Stdout: r.Stdout, Stderr: r.Stderr, Code: exitCode(err), Msg: failedMsg(bin, args, b, r.Stderr)}
+}
+
+func shownCommand(bin string, args []string, b Bounds) string {
+	if b.Label != "" {
+		return b.Label
+	}
+	return strings.TrimSpace(bin + " " + strings.Join(args, " "))
+}
+
+func failedMsg(bin string, args []string, b Bounds, stderr string) string {
+	msg := "Command failed: " + shownCommand(bin, args, b)
+	if s := strings.TrimSpace(stderr); s != "" {
+		msg += "\n" + s
+	}
+	return msg
 }
 
 // The child's stderr often says what it was waiting on (an ssh prompt, a pairing link),
 // so the last of it rides along.
 func timedOut(bin string, args []string, b Bounds, stderr string) error {
-	shown := b.Label
-	if shown == "" {
-		shown = bin + " " + strings.Join(args, " ")
-	}
+	shown := shownCommand(bin, args, b)
 	tail := ""
 	if s := strings.TrimSpace(stderr); s != "" {
 		lines := strings.Split(s, "\n")

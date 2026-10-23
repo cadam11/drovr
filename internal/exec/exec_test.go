@@ -38,3 +38,19 @@ func TestRunBoundedExplainsMissingBinary(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestRunBoundedFailureNamesCommandAndStderr(t *testing.T) {
+	_, err := RunBounded(context.Background(), "sh", []string{"-c", "echo out; echo 'proxy is down' >&2; exit 3"}, Bounds{Timeout: time.Second})
+	var ee *ExitError
+	if !errors.As(err, &ee) || ee.Code != 3 || ee.Stdout != "out\n" {
+		t.Fatalf("%v", err)
+	}
+	want := "Command failed: sh -c echo out; echo 'proxy is down' >&2; exit 3\nproxy is down"
+	if err.Error() != want {
+		t.Fatalf("got %q want %q", err.Error(), want)
+	}
+	_, err = RunBounded(context.Background(), "sh", []string{"-c", "exit 1"}, Bounds{Timeout: time.Second, Label: "quiet thing"})
+	if err == nil || err.Error() != "Command failed: quiet thing" {
+		t.Fatalf("%q", err)
+	}
+}
