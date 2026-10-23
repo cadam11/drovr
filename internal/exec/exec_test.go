@@ -74,7 +74,7 @@ func TestDetachReturnsAtOnceInItsOwnSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := time.Now()
-	pid, err := Detach("sh", []string{"-c", "echo started; sleep 0.3; echo done"}, log)
+	pid, err := Detach("sh", []string{"-c", "echo started; sleep 0.3; echo done"}, log, "", nil)
 	if err != nil || pid <= 0 {
 		t.Fatal(pid, err)
 	}
@@ -94,20 +94,34 @@ func TestDetachReturnsAtOnceInItsOwnSession(t *testing.T) {
 
 func TestDetachExplainsAMissingBinary(t *testing.T) {
 	t.Setenv("PATH", "/nonexistent")
-	_, err := Detach("definitely-not-here", nil, filepath.Join(t.TempDir(), "w.log"))
+	_, err := Detach("definitely-not-here", nil, filepath.Join(t.TempDir(), "w.log"), "", nil)
 	if err == nil || !strings.Contains(err.Error(), "definitely-not-here is not on PATH") {
 		t.Fatalf("%v", err)
 	}
 }
 
-func TestRunBoundedToALogWithEnv(t *testing.T) {
-	log := filepath.Join(t.TempDir(), "h.log")
-	r, err := RunBounded(context.Background(), "sh", []string{"-c", "echo $DROVR_PROGRAM; echo err >&2"},
-		Bounds{Timeout: 2 * time.Second, LogPath: log, Env: []string{"DROVR_PROGRAM=alpha"}})
-	if err != nil || r.Stdout != "" || r.Stderr != "" {
-		t.Fatalf("%+v %v", r, err)
+func TestDetachWithCwdAndEnvThenReap(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "h.log")
+	pid, err := Detach("sh", []string{"-c", "echo $DROVR_PROGRAM; pwd >&2; exit 3"}, log, dir, []string{"DROVR_PROGRAM=alpha"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := readLog(t, log); got != "alpha\nerr\n" {
+	exited, code := false, 0
+	for i := 0; i < 100 && !exited; i++ {
+		time.Sleep(10 * time.Millisecond)
+		if exited, code, err = Reap(pid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !exited || code != 3 {
+		t.Fatalf("exited %v code %d", exited, code)
+	}
+	real, _ := filepath.EvalSymlinks(dir)
+	if got := readLog(t, log); got != "alpha\n"+real+"\n" {
 		t.Fatalf("log = %q", got)
+	}
+	if exited, code, err := Reap(pid); !exited || code != -1 || err != nil {
+		t.Fatalf("a reaped pid is gone: %v %d %v", exited, code, err)
 	}
 }

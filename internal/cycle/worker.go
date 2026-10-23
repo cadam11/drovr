@@ -322,24 +322,52 @@ func (w Worker) ensureReachable(ctx context.Context, program control.Program, h 
 	return nil
 }
 
-// runHeadless is the fallback: claude -p to a log file, nothing to talk to. Unlike the TS
-// spawn it is bounded by maxCycleHours; a child that outlives it is a failed run.
+// runHeadless is the fallback: claude -p to a log file, nothing to talk to. The child is
+// detached and watched, never bounded: drovr never kills a cycle, so at maxCycleHours the
+// watch ends as abandoned and the child keeps running, exactly as an orca runner does.
 func (w Worker) runHeadless(ctx context.Context, program control.Program, startedAt string, l Limits) (Outcome, error) {
 	logPath := filepath.Join(w.Paths.Logs, program.Name+"-"+strings.ReplaceAll(startedAt, ":", "-")+".log")
 	argv := []string{"sh", "-c", Substitute(program.CycleCommand, program, IsOnboarding(w.Paths, program.Name))}
 	if program.UseDirenv {
 		argv = append([]string{"direnv", "exec", program.Cwd}, argv...)
 	}
-	bounds := exec.Bounds{Timeout: time.Duration(l.MaxHours * float64(time.Hour)), Cwd: program.Cwd, LogPath: logPath, Env: []string{"DROVR_PROGRAM=" + program.Name}}
-	_, err := exec.RunBounded(ctx, argv[0], argv[1:], bounds)
-	code := 0
-	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-		code, err = exitErr.Code, nil
-	}
+	pid, err := exec.Detach(argv[0], argv[1:], logPath, program.Cwd, []string{"DROVR_PROGRAM=" + program.Name})
 	if err != nil {
 		return Outcome{}, err
 	}
-	return Outcome{Finished: true, Detail: fmt.Sprintf("headless runner exited %d, log at %s", code, logPath)}, nil
+	return w.watchHeadless(ctx, program, pid, logPath, l)
+}
+
+// watchHeadless polls on the orca watch's cadence for the report or the child being gone.
+func (w Worker) watchHeadless(ctx context.Context, program control.Program, pid int, logPath string, l Limits) (Outcome, error) {
+	source := SourceFor(w.Paths, program)
+	deadline := w.Now() + epoch.Millis(l.MaxHours*3_600_000)
+	maxPolls := int(l.MaxHours*3600/pollInterval.Seconds()) + 1
+	for range maxPolls {
+		if w.Now() >= deadline {
+			break
+		}
+		w.Sleep(pollInterval)
+		text, err := source.Read(ctx)
+		if err != nil {
+			return Outcome{}, err
+		}
+		report, err := ReportFromPoll(text, source.Label)
+		if err != nil {
+			return Outcome{}, err
+		}
+		if report != nil {
+			return Outcome{Finished: true, Detail: "headless runner reported, log at " + logPath}, nil
+		}
+		exited, code, err := exec.Reap(pid)
+		if err != nil {
+			return Outcome{}, err
+		}
+		if exited {
+			return Outcome{Finished: true, Detail: fmt.Sprintf("headless runner exited %d, log at %s", code, logPath)}, nil
+		}
+	}
+	return outlivedWatch(l.MaxHours, fmt.Sprintf("its headless runner (pid %d, log at %s)", pid, logPath)), nil
 }
 
 type currentCycle struct {

@@ -57,7 +57,11 @@ func (w Worker) watchCycle(ctx context.Context, program string, source Source, l
 	// drovr has simply run out of watch. Saying "crash" here asserted that a cycle which
 	// often *had* delivered produced nothing, and discarded the quota sample of the longest
 	// and most expensive cycles there are. The tick reconciles a report that lands later.
-	return Outcome{Abandoned: true, Detail: fmt.Sprintf("still watching after %vh and the runner is still alive — %s's terminal left in place. Recorded as abandoned, not crashed; if it writes a report the next tick supersedes this record with the real outcome", l.MaxHours, program)}, nil
+	return outlivedWatch(l.MaxHours, program+"'s terminal"), nil
+}
+
+func outlivedWatch(maxHours float64, leftInPlace string) Outcome {
+	return Outcome{Abandoned: true, Detail: fmt.Sprintf("still watching after %vh and the runner is still alive — %s left in place. Recorded as abandoned, not crashed; if it writes a report the next tick supersedes this record with the real outcome", maxHours, leftInPlace)}
 }
 
 // poll reads the report, then the runner's state. Over ssh the report read can fail like an

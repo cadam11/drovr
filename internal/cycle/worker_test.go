@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -255,8 +256,9 @@ func TestBlockedRunnerIsAlertedOnceAndNeverNudged(t *testing.T) {
 	}
 }
 
-func TestHeadlessRunnerIsBoundedAndLogged(t *testing.T) {
+func TestHeadlessRunnerThatExitsWithoutAReportIsACrash(t *testing.T) {
 	r := newRig(t, `{"notifyTo":null,"programs":[{"name":"alpha","cwd":"/","useDirenv":false,"runner":"headless","cycleCommand":"echo \"$DROVR_PROGRAM {mode}\"; exit 3"}]}`, nil)
+	r.w.Sleep = func(time.Duration) { time.Sleep(10 * time.Millisecond) } // the child is real; give it time to exit
 	if err := r.w.RunProgram(context.Background(), "alpha"); err != nil {
 		t.Fatal(err)
 	}
@@ -267,6 +269,34 @@ func TestHeadlessRunnerIsBoundedAndLogged(t *testing.T) {
 	logs, _ := filepath.Glob(filepath.Join(r.p.Logs, "alpha-*.log"))
 	if body, _ := os.ReadFile(logs[0]); string(body) != "alpha onboard\n" {
 		t.Fatalf("%q", body)
+	}
+}
+
+// drovr never kills a cycle: past maxCycleHours the watch ends as abandoned and the child
+// keeps running.
+func TestHeadlessRunnerOutlivingTheWatchIsAbandonedNotKilled(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	r := newRig(t, fmt.Sprintf(`{"notifyTo":null,"maxCycleHours":0.05,"programs":[{"name":"alpha","cwd":"/","useDirenv":false,"runner":"headless","cycleCommand":"echo $$ > %s; exec sleep 30"}]}`, pidFile), nil)
+	r.w.Sleep = func(time.Duration) { time.Sleep(10 * time.Millisecond) }
+	if err := r.w.RunProgram(context.Background(), "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	var pid int
+	for i := 0; i < 100 && pid == 0; i++ {
+		b, _ := os.ReadFile(pidFile)
+		fmt.Sscan(string(b), &pid)
+		time.Sleep(20 * time.Millisecond)
+	}
+	if pid <= 0 {
+		t.Fatal("the stub never wrote its pid")
+	}
+	defer syscall.Kill(-pid, syscall.SIGKILL)
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("the headless child was killed: %v", err)
+	}
+	got := r.records(t)
+	if got[len(got)-1].Exit != "abandoned" {
+		t.Fatalf("%+v\n%s", got, r.errs)
 	}
 }
 

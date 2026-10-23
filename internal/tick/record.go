@@ -43,7 +43,7 @@ func Launch(env Env, program string) error {
 		return nil
 	}
 	log := env.Paths.WorkerLog(program)
-	pid, err := exec.Detach(env.Self, []string{"run-cycle", program}, log)
+	pid, err := exec.Detach(env.Self, []string{"run-cycle", program}, log, "", nil)
 	if err != nil {
 		return err
 	}
