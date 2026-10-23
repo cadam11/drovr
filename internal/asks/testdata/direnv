@@ -1,0 +1,7 @@
+#!/bin/sh
+# Test shim for `direnv exec <cwd> aice notes list <page> [--prefix p] --json`: logs argv and
+# prints $ASKS_STDOUT, exiting $ASKS_CODE (default 0); sleeps $ASKS_SLEEP seconds first.
+echo "$*" >> "$ASKS_LOG"
+[ -n "$ASKS_SLEEP" ] && sleep "$ASKS_SLEEP"
+printf '%s' "$ASKS_STDOUT"
+exit "${ASKS_CODE:-0}"
