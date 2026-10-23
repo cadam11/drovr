@@ -81,11 +81,12 @@ func channel(env Env, notifyTo *string) nudge.Channel {
 // passes died on a teamclaude payload and drovr decided nothing for an hour, its only trace a
 // line in tick.err. Wrapped around Tick rather than inside it so the tick lock is already
 // released before the send, and the original error is returned so the exit code still fails —
-// this reports the failure, it does not absorb it.
+// this reports the failure, it does not absorb it. A shadow failure is the error alone: the
+// episode marker and the alert belong to the live tick, which Craig depends on.
 func Run(ctx context.Context, env Env) error {
 	err := Tick(ctx, env)
-	if err == nil {
-		return nil
+	if err == nil || env.Shadow {
+		return err
 	}
 	began, markErr := RecordTickFailure(env.Paths.TickFailure, env.Now(), err)
 	if markErr != nil {
@@ -133,6 +134,9 @@ func ReleaseOverrunningTick(ctx context.Context, env Env, lockPath string, budge
 	fmt.Fprintln(env.Err, message)
 	if err := lock.Release(lockPath); err != nil {
 		fmt.Fprintf(env.Err, "could not release the tick lock: %s\n", err)
+	}
+	if env.Shadow {
+		return message // a stopped shadow costs a comparison, never a 4am text
 	}
 	// An unattended supervisor that has stopped must say so somewhere Craig sees at 4am.
 	c, err := control.Read(env.Paths.Control)
