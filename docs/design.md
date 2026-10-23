@@ -2,30 +2,30 @@
 
 ## The contract
 
-Craig's allocation policy, in his own terms. Every mechanism below serves one of these three
-sentences; when observed behaviour surprises him, check it against them before reaching for a
+The operator's allocation policy, in their own terms. Every mechanism below serves one of these three
+sentences; when observed behaviour surprises you, check it against them before reaching for a
 new mechanism — this intent has been re-derived from scratch by enough sessions that it now
 lives here.
 
 1. **When the pooled accounts have capacity, programs run.**
 2. **As capacity drains, lower-priority programs pause first.** The last fundable cycle always
    goes to the most important program (the priority waterline, below).
-3. **The mode ceiling is Craig's reserve.** He uses the same accounts by hand, so drovr never
-   pushes total usage past the ceiling — at `normal`, ~45% of every window stays his whatever
+3. **The mode ceiling is the operator's reserve.** They use the same accounts by hand, so drovr never
+   pushes total usage past the ceiling — at `normal`, ~45% of every window stays theirs whatever
    the programs do. (`reserveCycles` is a different thing despite the name: runway so an
-   admitted cycle can land, not Craig's share.)
+   admitted cycle can land, not the operator's share.)
 
 ## The problem
 
 A `/project-loop` program should run for weeks, autonomously, without burning a week's Anthropic
-quota in a day and without leaving no headroom for Craig's own foreground work.
+quota in a day and without leaving no headroom for the operator's own foreground work.
 
 Two things make that hard:
 
 1. **A session cannot clear its own context.** A loop that runs forever in one session eventually
    fills up and degrades.
 2. **Quota is multi-dimensional and shared.** Fable, general, and 5-hour buckets, across three
-   teamclaude accounts, consumed concurrently by both the loop and Craig.
+   teamclaude accounts, consumed concurrently by both the loop and the operator.
 
 ## The inversion
 
@@ -114,14 +114,14 @@ the reason string says so and names which bucket pins which accounts, because fr
 beside a healthy-looking verdict is exactly what got misread as capacity.
 
 An earlier draft solved the original coupling by calling `teamclaude disable` on such accounts. That was wrong:
-`disable` mutates global state shared with Craig's foreground sessions, and a supervisor that
-crashes between disable and enable silently takes an account away from him. Model the capacity
+`disable` mutates global state shared with the operator's foreground sessions, and a supervisor that
+crashes between disable and enable silently takes an account away from them. Model the capacity
 honestly instead of manipulating the pool.
 
 ### Learning F, G, S
 
 Since quota size is unknown, cycle cost is measured observationally: record the pool before and
-after each cycle; the delta is the cost. Craig's own usage during the cycle contaminates the
+after each cycle; the delta is the cost. The operator's own usage during the cycle contaminates the
 measurement, but it biases the estimate **upward**, which is the conservative direction. The
 estimate is a median over recent delivery cycles, seeded from config until three samples exist.
 
@@ -227,16 +227,16 @@ Without this gate a threshold-only policy burns Monday to Wednesday and idles Th
 
 The allowance is derived from the **pool**, not from the ceiling. An earlier version granted
 `weeklyCeiling × usableAccounts × elapsed` while measuring spend from drovr's ledger alone, so
-Craig's foreground work counted on neither side. That made the entitlement systematically too
+the operator's foreground work counted on neither side. That made the entitlement systematically too
 large and the gate could not fire: measured across 1008 decisions in the seven days to
 2026-08-26 it fired **zero** times, while the daily cap refused 267 cycles doing its job for it.
 
 Deriving the allowance from `pool + spent` puts both sides on the same basis — what drovr can
-actually reach. Craig's usage is already deducted per account by `capacity.ts`, so this gate
+actually reach. The operator's usage is already deducted per account by `capacity.ts`, so this gate
 inherits that clamp instead of re-deriving it, and inherits the min-of-sums rule with it. It also
-needs neither `weeklyCeiling` nor `usableAccounts`, because the pool encodes both. When Craig has
+needs neither `weeklyCeiling` nor `usableAccounts`, because the pool encodes both. When the operator has
 spent nothing the two formulations are identical, so the change is a generalisation rather than a
-different policy: it diverges exactly as far as he is actually consuming the pool.
+different policy: it diverges exactly as far as they are actually consuming the pool.
 
 The `cycleCost × 2` floor is the burst allowance. Linear entitlement from zero refuses the first
 cycle of every window — at 1% elapsed the line sits near zero while one finished cycle is already
@@ -248,7 +248,7 @@ and affordability already refuses when it binds.
 
 ## Ceilings are reserves
 
-`weeklyCeiling` caps **total** usage, not drovr's share. At `normal` (55%), Craig always has ~45%
+`weeklyCeiling` caps **total** usage, not drovr's share. At `normal` (55%), the operator always has ~45%
 of the week available regardless of what the loop does. Modes shift the ceiling: `low` 25%,
 `normal` 55%, `away` 85%.
 
@@ -272,7 +272,7 @@ Two reserves, not one: context (wind-down must fit) and quota (the cycle must be
 
 ## Concurrent programs
 
-Craig runs several independent programs at once — sunnyt (live paid SaaS, calendar-bound),
+An operator typically runs several independent programs at once — sunnyt (live paid SaaS, calendar-bound),
 aice-x (paid SaaS, pre-revenue), joinery (open source, nice to have). They share one quota pool,
 which forces three things:
 
@@ -304,7 +304,7 @@ What determines a program's share is which one happens to be free at each tick.
 So `priority` as a *sort key* is a deterministic tiebreak, exercised about once a week, not an
 entitlement. `docs/allocation-review.md` argues at length why a weighted fair-queuing layer over
 it would be machinery for contention that does not occur — the pool is not contested between
-programs, it is contested between drovr and Craig. That is what `usage.jsonl` exists to measure.
+programs, it is contested between drovr and the operator. That is what `usage.jsonl` exists to measure.
 
 ### The priority waterline
 
@@ -329,7 +329,7 @@ kept for: `room for 1.08 cycles, held back for sunnyt — joinery starts above 1
 
 This is not the fair-queuing the review rejected: no weights, no service history, no quantum.
 It is still admission-only — one more term in the bar a program must clear — and it converts
-`priority` from a knob that measured inert into the drain order Craig always meant by it.
+`priority` from a knob that measured inert into the drain order the operator always meant by it.
 
 ### Deadline as priority pressure
 
@@ -343,12 +343,12 @@ date stops mattering (by the program being finished or reconfigured).
 Two states stop a cycle dead and neither is a malfunction, so neither had any escalation.
 
 A runner **blocked on a dialog** — a bash-permission prompt, a trust question — is waiting on
-something only Craig can answer. It must never be nudged, because a prompt typed into a dialog
+something only the operator can answer. It must never be nudged, because a prompt typed into a dialog
 queues up behind it. That was correctly implemented as "do not nudge" and incorrectly implemented
 as "do nothing": every non-idle state fell through to `wait`. On 2026-08-27 sunnyt sat at a
 permission prompt for most of a 12.8-hour run, holding its pane and a concurrency slot, and was
 recorded as a crash at the end of it. Meanwhile an unanswered *ask* — the loop's softer,
-asynchronous question channel — had been texting him after 240 minutes for months. The hard
+asynchronous question channel — had been alerting them after 240 minutes for months. The hard
 blocker was the silent one.
 
 It now texts after `blockedAlertMinutes` (default 20), once per block, re-armed if the runner
@@ -415,7 +415,7 @@ The fix is not to steal the lock. Two concurrent ticks double-apply panel intent
 ledger, and a supervisor that quietly does a thing twice is worse than one that has stopped and
 said so. Instead the holder bounds *itself*: `tick()` arms a watchdog for
 `control.tickBudgetMinutes` (default 8, against a measured healthy pass of about 8 seconds), and a
-pass that overruns releases its own lock, texts Craig, and exits non-zero. The next firing then
+pass that overruns releases its own lock, alerts the operator, and exits non-zero. The next firing then
 finds a free lock.
 
 `process.exit` from a timer rather than a flag some later `await` checks, because an overrun is by
@@ -427,7 +427,7 @@ Three layers, in the order they engage:
 | Layer | Catches | Cost when it fires |
 |---|---|---|
 | `runBounded` ceilings | a hung child | that one call fails, the tick ends cleanly |
-| tick watchdog | a pass wedged for any other reason | one tick lost, lock freed, Craig texted |
+| tick watchdog | a pass wedged for any other reason | one tick lost, lock freed, operator alerted |
 | lock age in `service status` | a holder whose own watchdog did not fire | reported with the pid and `kill` command |
 
 The third is reporting rather than recovery, deliberately. Nothing left can resolve that state
@@ -451,15 +451,15 @@ Pages are **per program** — aice-x is itself a program. Programs live on diffe
 with the program entry in `control.json`. Checking N pages for N programs is deliberate.
 
 **Asks are write-through.** A cycle runs for hours; an ask discovered early and published at
-wind-down blocks Craig for the whole cycle, and a cycle that dies on a wall never publishes it.
+wind-down blocks the operator for the whole cycle, and a cycle that dies on a wall never publishes it.
 
 **Asks are non-blocking.** An ask parks that thread of work, not the cycle. The loop moves to the
 next backlog item and only stops when everything remaining is blocked — otherwise "raise an ask"
 becomes babysitting under another name.
 
-**`aice notes` is the inbound channel.** Craig answers in the page's notes; the next cycle reads
+**`aice notes` is the inbound channel.** The operator answers in the page's notes; the next cycle reads
 `aice notes list <page> --json` at scan, acts, and resolves the thread. Resolve state gives the
-loop a clean "has this been answered" test and Craig a record of which answers were consumed.
+loop a clean "has this been answered" test and the operator a record of which answers were consumed.
 (Shared notes must be toggled on by the page owner — a manual prerequisite.)
 
 ### Why authoring is dispatched, not templated
@@ -478,14 +478,14 @@ Two pieces of the templating argument survive:
 
 **status.html stays mechanical** because the supervisor must be able to render it when a cycle
 dies before it could publish. It's tabular anyway, so no judgement is lost — and the status page
-never silently goes stale at exactly the moment Craig would want to know.
+never silently goes stale at exactly the moment the operator would want to know.
 
 
 ## Visualising the allocation
 
-Craig needs to see, at a glance, how much capacity is reserved for his own use. Each quota
+The operator needs to see, at a glance, how much capacity is reserved for their own use. Each quota
 bucket divides into five segments that sum to the whole pool (N usable accounts = N.0):
-his spend, program spend, in-flight reservations, free-to-programs, and the slice held above
+their spend, program spend, in-flight reservations, free-to-programs, and the slice held above
 the ceiling that drovr can never reach.
 
 The subtle part is where headroom comes from. Computing it as `ceiling × accounts - used`
@@ -498,7 +498,7 @@ at its own ceiling and floors it at zero. `yoursReserved` becomes the remainder
 (`total - used - headroom`), so the bar stacks exactly and stays consistent by construction.
 
 Program spend is carved *out of* observed usage rather than added on top: what the ledger
-claims is subtracted from the bucket total, and the rest is attributed to Craig. A ledger that
+claims is subtracted from the bucket total, and the rest is attributed to the operator. A ledger that
 over-reports (an account dropped out of the pool mid-window) is clamped rather than inventing
 usage that is not there.
 
@@ -518,7 +518,7 @@ be babysitting.
 
 ## Gates, exhaustively
 
-The loop stops for Craig only when:
+The loop stops for the operator only when:
 
 1. **Onboarding** — one time, because everything downstream rests on the reconstruction.
 2. **Human-operator-only work** — prod soak, manual verification, anything it physically can't do.
@@ -604,4 +604,4 @@ box's requests land on the same accounts. If they do not, the cycle reads as nea
 - **Killing cycles.** The supervisor starts them; they end themselves.
 - **Pinning accounts** (`TC_ACCT`). The point is to spread across accounts.
 - **Mutating teamclaude state.** No `disable`/`enable`, no `priority`, no `probe` changes.
-- **Enforcing branch policy.** The `/project-loop` skill and Craig's own oversight own that.
+- **Enforcing branch policy.** The `/project-loop` skill and the operator's own oversight own that.

@@ -31,10 +31,10 @@ for a contention that does not occur.
 
 Meanwhile the unmanaged consumer is the *larger* consumer. Over the same window drovr's ledger
 records **1.02 account-units** of weekly Fable spend against a live pool reading of **2.19 units
-consumed** — Craig's own foreground sessions took **~1.17**, more than all three programs
+consumed** — the operator's own foreground sessions took **~1.17**, more than all three programs
 combined. The one thing drovr models with a hand-set constant is the majority of the load.
 
-> The pool is not contested between programs. It is contested between drovr and Craig.
+> The pool is not contested between programs. It is contested between drovr and the operator.
 
 ## Layer scorecard
 
@@ -68,7 +68,7 @@ entitlement = weeklyCeiling × usableAccounts × elapsed     ← total-pool basi
 spent       = Σ drovr's own cycle costs                     ← drovr-only basis
 ```
 
-`design.md` argues for the drovr-only numerator deliberately, so Craig's foreground work
+`design.md` argues for the drovr-only numerator deliberately, so the operator's foreground work
 constrains the pool through the ceiling without also counting against the loop's pace. That
 reasoning is sound — but the *denominator* was never moved to match. Entitlement is still
 computed as though drovr owns 55% of all three accounts for the whole week (1.65 units); drovr
@@ -98,7 +98,7 @@ The brief defers this to §16 as "longer-term chance-constrained planning". It s
 promoted, but not to that. Chance-constrained allocation is far more than this needs. The cheap
 version is already sitting in `allocation.ts`: `yoursSpent = usedTotal − programsSpent` is
 computed on every render and thrown away. Recording it per tick would give a directly observed
-distribution of Craig's burn rate — enough to answer "is 45% a reserve or a wish?" with a number
+distribution of the operator's burn rate — enough to answer "is 45% a reserve or a wish?" with a number
 instead of a mode name.
 
 That is a **measurement** change, not a policy change, and it is the one place in this brief
@@ -180,7 +180,7 @@ not being starved of capacity — it is failing to run.
 
 Three changes, in order, none of them a scheduler:
 
-1. **Record `yoursSpent` per tick** so the reserve can eventually be argued from Craig's observed
+1. **Record `yoursSpent` per tick** so the reserve can eventually be argued from the operator's observed
    burn rate rather than a mode name. Cheapest, and it addresses the only genuinely unmodelled
    consumer.
 2. **Resolve the pace gate** — delete it or re-base its entitlement. It currently reads as an
@@ -196,12 +196,12 @@ bucket where it means nothing: the 5h window refills four or five times a day an
 runner wait, while a dry weekly bucket is days and can genuinely kill a cycle. `reserveCycles`
 now applies to the weekly buckets only; session must still cover one whole cycle.
 
-Craig spotted this from the account bars alone — one account a third through its week with three
+The operator spotted this from the account bars alone — one account a third through its week with three
 days left, one fresh, one nearly reset — and read it as "plenty of capacity, crack on", against
-drovr saying WAIT. He was right, which is worth recording: the brief's feasibility-versus-pacing
+drovr saying WAIT. They were right, which is worth recording: the brief's feasibility-versus-pacing
 distinction (its section 4) is the same observation, and drovr had collapsed the two.
 
-Still unhandled, and his second point: **capacity is perishable and nothing notices underspend.**
+Still unhandled, and their second point: **capacity is perishable and nothing notices underspend.**
 The pace gate is a ceiling with no floor, so roughly 12 cycles of weekly capacity can evaporate
 unused with drovr reporting itself perfectly healthy.
 

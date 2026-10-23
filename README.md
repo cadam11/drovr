@@ -53,8 +53,9 @@ A Go build of drovr is in progress (`go build .`); it is not yet what the servic
   `teamclaude run`. It never changes a teamclaude setting.
 - **[Orca](https://www.onorca.dev/)**, open. Each cycle is an interactive terminal in the program's
   own Orca worktree, which is how you can read and talk to a cycle while it runs.
-- **The `project-loop` skill** in the runner's Claude Code. It is the other half of this system:
-  it owns what a cycle does and ends the cycle with `drovr report`.
+- **The [`project-loop` skill](skill/project-loop.SKILL.md)** in the runner's Claude Code. It is the other half of this system:
+  it owns what a cycle does and ends the cycle with `drovr report`. Install it with
+  `mkdir -p ~/.claude/skills/project-loop && cp skill/project-loop.SKILL.md ~/.claude/skills/project-loop/SKILL.md`.
 
 Two more things are optional, and both are paid products that add to the free base:
 
