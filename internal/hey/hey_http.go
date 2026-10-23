@@ -190,13 +190,24 @@ type oauthError struct {
 	Description *string `json:"error_description"`
 }
 
+// A 200 here carries live tokens, so unlike every other decode the error names the failing field
+// and never quotes the body: the reason is logged by the caller, and a token must never be.
 func decodeTokens(what, text string) (tokenResponse, error) {
 	if !json.Valid([]byte(text)) {
-		return tokenResponse{}, fmt.Errorf("%s answered 200 with something that is not JSON: %s", what, jsSlice(text, quotedBodyUnits))
+		return tokenResponse{}, fmt.Errorf("%s answered 200 with something that is not JSON", what)
 	}
-	return decodeInto(what, []byte(text), []string{"access_token", "refresh_token", "expires_in"}, false, func(t tokenResponse) error {
-		return errors.Join(nonEmpty("access_token", t.AccessToken), nonEmpty("refresh_token", t.RefreshToken))
-	})
+	var tokens tokenResponse
+	err := requireKeys([]byte(text), []string{"access_token", "refresh_token", "expires_in"}, false)
+	if err == nil {
+		err = json.Unmarshal([]byte(text), &tokens)
+	}
+	if err == nil {
+		err = errors.Join(nonEmpty("access_token", tokens.AccessToken), nonEmpty("refresh_token", tokens.RefreshToken))
+	}
+	if err != nil {
+		return tokenResponse{}, fmt.Errorf("hey %s answered with an unexpected shape (%s)", what, strings.ReplaceAll(err.Error(), "\n", "; "))
+	}
+	return tokens, nil
 }
 
 func credentialsFrom(tokens tokenResponse, issuer string, now time.Time) credentials {

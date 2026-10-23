@@ -15,10 +15,16 @@ func TestCopiesMatchTheHeyRepo(t *testing.T) {
 		home, _ := os.UserHomeDir()
 		repo = filepath.Join(home, "code", "hey")
 	}
+	dir := filepath.Join(repo, "cli", "hey")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("hey repo not at %s: %v", repo, err)
+	}
+	// A missing file inside a present repo is a drift, not an absent repo.
 	for _, f := range []string{"wire.go", "hey_http.go", "config.go", "jsonout.go", "wire_test.go", "hey_http_test.go", "config_test.go"} {
-		theirs, err := os.ReadFile(filepath.Join(repo, "cli", "hey", f))
+		theirs, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
-			t.Skipf("hey repo not at %s: %v", repo, err)
+			t.Errorf("%s: %v", f, err)
+			continue
 		}
 		ours, err := os.ReadFile(f)
 		if err != nil {

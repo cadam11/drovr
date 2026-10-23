@@ -238,6 +238,27 @@ func TestToolCallerRefreshesBeforeExpiryAndRewritesTheFile(t *testing.T) {
 	}
 }
 
+// A refresh's 200 carries live tokens and the caller logs the error as its reason: a malformed
+// one must name the field, never echo the tokens.
+func TestMalformedTokenResponseNeverEchoesTheTokens(t *testing.T) {
+	bodies := []string{
+		`{"access_token":"SECRET-A","refresh_token":"SECRET-R"}`,
+		`{"access_token":"SECRET-A","refresh_token":"SECRET-R","expires_in":"3600"}`,
+		`{"access_token":"","refresh_token":"SECRET-R","expires_in":3600}`,
+		`{"access_token":"SECRET-A","refresh_token":"SECRET-R","expires_in":36`,
+	}
+	for _, body := range bodies {
+		expiring := validCreds()
+		expiring.ExpiresAt = "2026-10-17T10:00:30.000Z"
+		f := &fakeHTTP{answers: []*http.Response{respond(200, body)}}
+		call, _ := callerFor(t, f, &expiring)
+		_, err := call(context.Background(), "send", toRequest{To: "craig"})
+		if err == nil || strings.Contains(err.Error(), "SECRET-A") || strings.Contains(err.Error(), "SECRET-R") {
+			t.Fatalf("%s: %v", body, err)
+		}
+	}
+}
+
 func TestToolCallerRetriesOnceOn401ThenGivesUp(t *testing.T) {
 	f := &fakeHTTP{answers: []*http.Response{respond(401, ""), respond(200, tokenOK), respond(200, rpcOK)}}
 	call, _ := callerFor(t, f, ptr(validCreds()))
