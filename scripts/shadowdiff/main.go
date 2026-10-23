@@ -50,6 +50,12 @@ var digits = regexp.MustCompile(`\d+`)
 
 func masked(s string) string { return digits.ReplaceAllString(s, "#") }
 
+// clockTokens are durations and percentages only: the wall-clock text in a reason. Any other
+// digit (a cycle count, a cap) still has to match exactly.
+var clockTokens = regexp.MustCompile(`\b\d+[mhd]\b|\b\d+%`)
+
+func clockMasked(s string) string { return clockTokens.ReplaceAllString(s, "#") }
+
 // compare pairs each live decision since `since` with the latest shadow decision for the same
 // program at or before it, within the window. Before, never after: a shadow pass after the
 // live one sees the cycle the live one just launched, and would disagree for that reason only.
@@ -85,7 +91,8 @@ func pairOf(list []entry, at, window epoch.Millis) *entry {
 
 // judge files one live decision. A reason mismatch that vanishes once every digit run is
 // masked is drift only when the pool moved between the two passes; over an identical pool
-// both ticks saw the same world, and a digit off is exactly the bug a port is likely to have.
+// both ticks saw the same world, so only durations and percentages are masked and any other
+// digit off is exactly the bug a port is likely to have.
 func judge(r *report, l entry, s *entry) {
 	if s == nil {
 		r.Unpaired++
@@ -93,13 +100,16 @@ func judge(r *report, l entry, s *entry) {
 		return
 	}
 	samePool := samePools(l.Pool, s.Pool)
+	// Over an identical pool the clock still moves: "more room in 43m", "raised 5m ago",
+	// "40% through the window" change between two passes whatever the headroom.
+	reasonsMatch := s.Reason == l.Reason || (samePool && clockMasked(s.Reason) == clockMasked(l.Reason))
 	kind := ""
 	switch {
 	case s.Verdict != l.Verdict:
 		kind, r.Verdict = "verdict", r.Verdict+1
-	case s.Reason != l.Reason && !samePool && masked(s.Reason) == masked(l.Reason):
+	case !reasonsMatch && !samePool && masked(s.Reason) == masked(l.Reason):
 		kind, r.Drift = "drift", r.Drift+1
-	case s.Reason != l.Reason:
+	case !reasonsMatch:
 		kind, r.Reason = "reason", r.Reason+1
 	case samePool && fundableDiffers(l.CyclesFundable, s.CyclesFundable):
 		kind, r.Numbers = "numbers", r.Numbers+1

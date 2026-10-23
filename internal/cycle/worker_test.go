@@ -300,6 +300,33 @@ func TestHeadlessRunnerOutlivingTheWatchIsAbandonedNotKilled(t *testing.T) {
 	}
 }
 
+// One unreadable report poll must not end the watch; maxPollFailures in a row is lost sight,
+// recorded as abandoned, with the child still running.
+func TestHeadlessUnreadableReportIsLostSightNotAnError(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	r := newRig(t, `{"notifyTo":null,"programs":[]}`, nil)
+	// A directory where the report belongs: every read of it fails.
+	cmd := fmt.Sprintf("echo $$ > %s; mkdir %s; exec sleep 30", pidFile, r.p.LastCycle("alpha"))
+	os.WriteFile(r.p.Control, []byte(fmt.Sprintf(`{"notifyTo":null,"maxCycleHours":1,"programs":[{"name":"alpha","cwd":"/","useDirenv":false,"runner":"headless","cycleCommand":%q}]}`, cmd)), 0o644)
+	r.w.Sleep = func(time.Duration) { time.Sleep(10 * time.Millisecond) }
+	if err := r.w.RunProgram(context.Background(), "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	var pid int
+	for i := 0; i < 100 && pid == 0; i++ {
+		b, _ := os.ReadFile(pidFile)
+		fmt.Sscan(string(b), &pid)
+		time.Sleep(20 * time.Millisecond)
+	}
+	if pid > 0 {
+		defer syscall.Kill(-pid, syscall.SIGKILL)
+	}
+	got := r.records(t)
+	if got[len(got)-1].Exit != "abandoned" || strings.Count(r.errs.String(), "could not read its report") != maxPollFailures {
+		t.Fatalf("%+v\n%s", got, r.errs)
+	}
+}
+
 // ssh answers only once $UP exists; the wake creates it.
 func TestEnsureReachableWakesAStoppedBox(t *testing.T) {
 	bin := t.TempDir()

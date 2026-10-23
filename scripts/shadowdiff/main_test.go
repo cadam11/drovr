@@ -107,6 +107,11 @@ func TestSamePoolAllowsNoDrift(t *testing.T) {
 	}{
 		{"digits differ, same pool", withPool(e(at, "a", "GO", "fundable: 1.25"), 0.4, nil), withPool(e(before, "a", "GO", "fundable: 1.20"), 0.4, nil), "reason"},
 		{"digits differ, pool moved", withPool(e(at, "a", "GO", "fundable: 1.25"), 0.4, nil), withPool(e(before, "a", "GO", "fundable: 1.20"), 0.5, nil), "drift"},
+		{"clock text moved, same pool", withPool(e(at, "a", "WAIT", "more room in 43m"), 0.4, nil), withPool(e(before, "a", "WAIT", "more room in 44m"), 0.4, nil), ""},
+		{"ask age moved, same pool", withPool(e(at, "a", "WAIT", "raised 5m ago"), 0.4, nil), withPool(e(before, "a", "WAIT", "raised 6m ago"), 0.4, nil), ""},
+		{"readiness hold, both pools null", e(at, "a", "WAIT", "rest ends in 2h, 40% through the window"), e(before, "a", "WAIT", "rest ends in 3h, 41% through the window"), ""},
+		{"cycles differ, same pool", withPool(e(at, "a", "GO", "room for 1.35 cycles"), 0.4, nil), withPool(e(before, "a", "GO", "room for 1.40 cycles"), 0.4, nil), "reason"},
+		{"count differs, same pool", withPool(e(at, "a", "WAIT", "cap is 2"), 0.4, nil), withPool(e(before, "a", "WAIT", "cap is 3"), 0.4, nil), "reason"},
 		{"fundable differs, same pool", withPool(e(at, "a", "GO", "r"), 0.4, ptr(1.25)), withPool(e(before, "a", "GO", "r"), 0.4, ptr(1.2)), "numbers"},
 		{"fundable within 1e-9, same pool", withPool(e(at, "a", "GO", "r"), 0.4, ptr(1.25)), withPool(e(before, "a", "GO", "r"), 0.4, ptr(1.25+1e-12)), ""},
 		{"fundable differs, pool moved", withPool(e(at, "a", "GO", "r"), 0.4, ptr(1.25)), withPool(e(before, "a", "GO", "r"), 0.5, ptr(1.2)), ""},

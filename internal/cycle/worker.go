@@ -343,6 +343,7 @@ func (w Worker) watchHeadless(ctx context.Context, program control.Program, pid 
 	source := SourceFor(w.Paths, program)
 	deadline := w.Now() + epoch.Millis(l.MaxHours*3_600_000)
 	maxPolls := int(l.MaxHours*3600/pollInterval.Seconds()) + 1
+	failures := 0
 	for range maxPolls {
 		if w.Now() >= deadline {
 			break
@@ -350,8 +351,14 @@ func (w Worker) watchHeadless(ctx context.Context, program control.Program, pid 
 		w.Sleep(pollInterval)
 		text, err := source.Read(ctx)
 		if err != nil {
-			return Outcome{}, err
+			// One failed poll must not end the watch, exactly as in watchCycle.
+			fmt.Fprintf(w.Err, "%s: could not read its report (%s) — still watching\n", program.Name, err)
+			if failures++; failures >= maxPollFailures {
+				return lostSight(program.Name, failures), nil
+			}
+			continue
 		}
+		failures = 0
 		report, err := ReportFromPoll(text, source.Label)
 		if err != nil {
 			return Outcome{}, err
