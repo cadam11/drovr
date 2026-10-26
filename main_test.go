@@ -18,7 +18,7 @@ func TestRun(t *testing.T) {
 		{name: "--version", args: []string{"--version"}, wantOut: "dev\n"},
 		{name: "no arguments", args: nil, wantOut: "drovr — capacity-aware", wantStderr: "\n"},
 		{name: "unregistered", args: []string{"nonsense"}, wantErr: "exit 1", wantOut: "drovr — capacity-aware", wantStderr: "unknown command \"nonsense\"\n\n"},
-		{name: "registered, unported", args: []string{"watch", "x"}, wantErr: "drovr watch is not ported to Go yet — run: node src/cli.ts watch x"},
+		{name: "watch refuses a non-integer before touching the terminal", args: []string{"watch", "x"}, wantErr: "the interval is a number of seconds, got \"x\""},
 		{name: "tick with a misspelt flag never runs a live tick", args: []string{"tick", "--shadwo"}, wantErr: "tick takes no arguments but --shadow"},
 		{name: "unknown topic", args: []string{"help", "nope"}, wantErr: "no command named \"nope\" — run `drovr help` for the list"},
 	}
