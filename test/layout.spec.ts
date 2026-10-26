@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clip, keybarKeyAt, keybarLines, visibleLength } from '../src/watch.ts';
+import { accountsLabel, clip, keybarKeyAt, keybarLines, visibleLength, wrapText } from '../src/watch.ts';
 
 const RED = '\x1b[31m';
 const OFF = '\x1b[0m';
@@ -68,4 +68,35 @@ test('every actionable key stays reachable by a click, even at narrow widths', (
   for (const key of [' ', 'm', 'p', 'r', 't', 'o', 'x', '?', 'q']) {
     assert.ok(found.has(key), `key ${JSON.stringify(key)} is not clickable anywhere`);
   }
+});
+
+test('the keybar wraps into at least one line at every golden width, and every line fits', () => {
+  for (const [width, narrow] of [[120, false], [100, false], [80, false], [71, true], [60, true], [24, true], [24, false], [71, false], [120, true]] as const) {
+    const lines = keybarLines(width, narrow);
+    assert.ok(lines.length >= 1);
+    lines.forEach((line, row) => {
+      assert.ok(visibleLength(line) <= width, `${width}/${narrow} row ${row}: ${line}`);
+      for (let column = 0; column < width; column += 1) keybarKeyAt(width, narrow, row, column);
+    });
+  }
+});
+
+test('wrapText breaks at spaces, caps its lines, and refuses a nonsense budget', () => {
+  assert.deepEqual(wrapText('short', 20, 3), ['short']);
+  assert.deepEqual(wrapText('one two three four five six', 10, 3), ['one two', 'three four', 'five six']);
+  assert.deepEqual(wrapText('one two three four five six', 10, 2), ['one two', 'three four five six']);
+  assert.deepEqual(wrapText('abcdefghijklmnop', 5, 4), ['abcde', 'fghij', 'klmno', 'p']);
+  assert.throws(() => wrapText('x', 0, 1));
+  assert.throws(() => wrapText('x', 1, 0));
+});
+
+test('accountsLabel names both numbers only when they differ', () => {
+  assert.equal(accountsLabel(3, 3), '3 accounts');
+  assert.equal(accountsLabel(1, 3), '1 of 3 accounts funding');
+});
+
+test('clip handles exact fit, a width of 1, and a trailing escape', () => {
+  assert.equal(clip('abc', 3), 'abc');
+  assert.ok(visibleLength(clip('abcd', 1)) <= 1);
+  assert.ok(visibleLength(clip('abcdef\x1b[31', 4)) <= 4);
 });

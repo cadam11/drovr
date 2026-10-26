@@ -408,3 +408,15 @@ test('childReason survives a thrown non-Error and an empty message', () => {
   assert.equal(childReason('orca is not on PATH'), 'orca is not on PATH');
   assert.equal(childReason(new Error('')), 'unknown error');
 });
+
+test('the frame renders at every width for the unclamped, roomy and tight cases', () => {
+  const state = craigsConfiguration();
+  for (const width of [24, 40, 71, 72, 100, 120, 200]) {
+    for (const rows of [undefined, 40, 24, 10]) {
+      const { text, hits } = frameWithHits(state, view, width, rows);
+      assert.equal(hits.length, text.split('\n').length);
+    }
+  }
+  const { hits } = frameWithHits(state, view, 100);
+  assert.ok(hits.some((hit) => hit !== null && 'asks' in hit));
+});

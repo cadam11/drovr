@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  t tick\u001b[2m · \u001b[0mo asks"
+  },
+  "output": 17
+}

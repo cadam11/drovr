@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[2mfirst and second\u001b[0m"
+  },
+  "output": 18
+}

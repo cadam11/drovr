@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  r refresh\u001b[2m · \u001b[0mt tick\u001b[2m · \u001b[0mo asks\u001b[2m · \u001b[0ms start\u001b[2m · \u001b[0mx interrupt\u001b[2m · \u001b[0ml release\u001b[2m · \u001b[0m? help\u001b[2m · \u001b[0mq quit"
+  },
+  "output": 83
+}

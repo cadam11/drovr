@@ -1,0 +1,221 @@
+{
+  "fn": "watch.frameWithHits",
+  "input": {
+    "state": {
+      "schemaVersion": 1,
+      "generatedAt": "2026-08-22T12:00:00.000Z",
+      "mode": "normal",
+      "modeFromPhone": false,
+      "pauseUntil": null,
+      "maxConcurrentCycles": 2,
+      "reserve": 0.45,
+      "cyclesInFlight": 0,
+      "service": {
+        "loaded": true,
+        "intervalSeconds": 600,
+        "lastTickAt": "2026-08-22T12:00:00.000Z",
+        "overdue": false
+      },
+      "pool": {
+        "usableAccounts": 3,
+        "fundingAccounts": 3,
+        "fable": 1.4,
+        "general": 1.4,
+        "session": 1.2
+      },
+      "bindingBucket": "session",
+      "cyclesFundable": 4.8,
+      "bindingRecoveryAt": "2026-08-22T14:00:00.000Z",
+      "capacityNote": "session is tightest, more room in 2h",
+      "hoursToWeeklyReset": 84,
+      "allocation": {
+        "fable": {
+          "bucket": "fable",
+          "total": 3,
+          "yoursSpent": 0.25,
+          "programsSpent": 0,
+          "programsReserved": 0,
+          "programsAvailable": 1.4,
+          "yoursReserved": 1.35
+        },
+        "general": {
+          "bucket": "general",
+          "total": 3,
+          "yoursSpent": 0.25,
+          "programsSpent": 0,
+          "programsReserved": 0,
+          "programsAvailable": 1.4,
+          "yoursReserved": 1.35
+        },
+        "session": {
+          "bucket": "session",
+          "total": 3,
+          "yoursSpent": 0,
+          "programsSpent": 0,
+          "programsReserved": 0,
+          "programsAvailable": 1.2,
+          "yoursReserved": 1.8
+        }
+      },
+      "programs": [
+        {
+          "name": "demo",
+          "enabled": true,
+          "priority": 0,
+          "verdict": "GO",
+          "reason": "room for 4.80 more cycles across 3 accounts (0 running)",
+          "kind": null,
+          "startedAt": null,
+          "pid": null,
+          "asksUrl": null,
+          "context": null,
+          "preview": null
+        }
+      ],
+      "accounts": [
+        {
+          "name": "a",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": true,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.05,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.05,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        },
+        {
+          "name": "b",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": false,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        },
+        {
+          "name": "c",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": false,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        }
+      ],
+      "recentCycles": []
+    },
+    "view": {
+      "selected": 0,
+      "message": "",
+      "confirmStop": false,
+      "confirmStart": false,
+      "help": true
+    },
+    "columns": 80
+  },
+  "output": {
+    "text": "  \u001b[1mdrovr watch\u001b[0m\n\n  \u001b[1mMode\u001b[0m — how much of each account's weekly quota programs may spend.\n  Whatever is left is held for you, no matter what they do.\n    \u001b[31moff\u001b[0m     nothing runs\n    \u001b[33mlow\u001b[0m     programs 25%, you keep 75%\n    \u001b[32mnormal\u001b[0m  programs 55%, you keep 45%\n    \u001b[36maway\u001b[0m    programs 85%, you keep 15% — for when you are gone\n  \u001b[2m< and > adjust the current mode by 5%.\u001b[0m\n\n  \u001b[1mVerdicts\u001b[0m\n    \u001b[32mGO\u001b[0m    starts on the next tick\n    \u001b[36mRUN\u001b[0m   running now — open its tab to read or talk to it\n    \u001b[33mWAIT\u001b[0m  transient; it retries by itself\n    \u001b[31mSTOP\u001b[0m  needs you — the reason says what\n\n  \u001b[1mBars\u001b[0m — one per quota bucket, each summing to the whole pool.\n    \u001b[35m▓\u001b[0m you spent\n    \u001b[32m█\u001b[0m programs spent\n    \u001b[36m▒\u001b[0m in flight\n    \u001b[90m░\u001b[0m free to programs\n    \u001b[35m·\u001b[0m held for you\n  \u001b[2mfable = the runner; general = subagents it spawns; 5h = the burst window.\u001b[0m\n  \u001b[2mAll three bind at once; the tightest decides.\u001b[0m\n\n  \u001b[1mKeys\u001b[0m\n    j k    select            space  enable/disable\n    [ ]    priority          o      open asks page\n    m      mode              < >    your reserve\n    p P    pause / extend    + -    concurrency cap\n    t      tick now          r      redraw\n    x      interrupt cycle   l      release a finished runner\n    q      quit\n  \u001b[2mMouse: click a program to select it, its asks link to open it, a key below to\u001b[0m…\n\n  \u001b[2mSized for 80×24+. Narrower shortens labels and bars; keys always show.\u001b[0m\n\n  \u001b[2m? or esc closes this\u001b[0m",
+    "hits": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "fn": "watch.keybarLines",
+  "input": {
+    "width": 24,
+    "narrow": false
+  },
+  "output": [
+    "  j/k select",
+    "  space enable",
+    "  [ ] priority",
+    "  m mode\u001b[2m · \u001b[0mp pause",
+    "  +/- cap",
+    "  < > reserve",
+    "  r refresh",
+    "  t tick\u001b[2m · \u001b[0mo asks",
+    "  s start",
+    "  x interrupt",
+    "  l release",
+    "  ? help\u001b[2m · \u001b[0mq quit"
+  ]
+}

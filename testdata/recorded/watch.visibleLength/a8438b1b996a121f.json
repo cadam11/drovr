@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[2msession is tightest, more room in 2h\u001b[0m"
+  },
+  "output": 38
+}

@@ -1,0 +1,295 @@
+{
+  "fn": "watch.frameWithHits",
+  "input": {
+    "state": {
+      "schemaVersion": 1,
+      "generatedAt": "2026-08-22T12:00:00.000Z",
+      "mode": "normal",
+      "modeFromPhone": false,
+      "pauseUntil": null,
+      "maxConcurrentCycles": 2,
+      "reserve": 0.45,
+      "cyclesInFlight": 0,
+      "service": {
+        "loaded": true,
+        "intervalSeconds": 600,
+        "lastTickAt": "2026-08-22T12:00:00.000Z",
+        "overdue": false
+      },
+      "pool": {
+        "usableAccounts": 3,
+        "fundingAccounts": 3,
+        "fable": 1.4,
+        "general": 1.4,
+        "session": 1.2
+      },
+      "bindingBucket": "session",
+      "cyclesFundable": 12,
+      "bindingRecoveryAt": "2026-08-22T14:00:00.000Z",
+      "capacityNote": "session is tightest, more room in 2h",
+      "hoursToWeeklyReset": 84,
+      "allocation": {
+        "fable": {
+          "bucket": "fable",
+          "total": 3,
+          "yoursSpent": 0,
+          "programsSpent": 0.25,
+          "programsReserved": 0,
+          "programsAvailable": 1.4,
+          "yoursReserved": 1.35
+        },
+        "general": {
+          "bucket": "general",
+          "total": 3,
+          "yoursSpent": 0,
+          "programsSpent": 0.25,
+          "programsReserved": 0,
+          "programsAvailable": 1.4,
+          "yoursReserved": 1.35
+        },
+        "session": {
+          "bucket": "session",
+          "total": 3,
+          "yoursSpent": 0,
+          "programsSpent": 0,
+          "programsReserved": 0,
+          "programsAvailable": 1.2,
+          "yoursReserved": 1.8
+        }
+      },
+      "programs": [
+        {
+          "name": "drovr",
+          "enabled": true,
+          "priority": 0,
+          "verdict": "GO",
+          "reason": "room for 12.00 more cycles across 3 accounts (0 running)",
+          "kind": null,
+          "startedAt": null,
+          "pid": null,
+          "asksUrl": "https://drovr.aicex.app/craig/loop-asks.html",
+          "context": null,
+          "preview": null
+        },
+        {
+          "name": "joinery",
+          "enabled": true,
+          "priority": 0,
+          "verdict": "GO",
+          "reason": "room for 11.00 more cycles across 3 accounts (1 running)",
+          "kind": null,
+          "startedAt": null,
+          "pid": null,
+          "asksUrl": "https://joinery.aicex.app/craig/loop-asks.html",
+          "context": null,
+          "preview": null
+        },
+        {
+          "name": "sunnyt",
+          "enabled": true,
+          "priority": 0,
+          "verdict": "WAIT",
+          "reason": "2 cycles ahead of it, cap is 2",
+          "kind": null,
+          "startedAt": null,
+          "pid": null,
+          "asksUrl": "https://sunnyt.aicex.app/craig/loop-asks.html",
+          "context": null,
+          "preview": null
+        }
+      ],
+      "accounts": [
+        {
+          "name": "a",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": true,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.05,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.05,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        },
+        {
+          "name": "b",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": false,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        },
+        {
+          "name": "c",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": false,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        }
+      ],
+      "recentCycles": [
+        {
+          "startedAt": "2026-08-22T07:00:00.000Z",
+          "program": "joinery",
+          "kind": "delivery",
+          "exit": "seam",
+          "asksRaised": 1
+        },
+        {
+          "startedAt": "2026-08-22T08:00:00.000Z",
+          "program": "sunnyt",
+          "kind": "delivery",
+          "exit": "seam",
+          "asksRaised": 1
+        },
+        {
+          "startedAt": "2026-08-22T09:00:00.000Z",
+          "program": "drovr",
+          "kind": "delivery",
+          "exit": "seam",
+          "asksRaised": 1
+        },
+        {
+          "startedAt": "2026-08-22T10:00:00.000Z",
+          "program": "joinery",
+          "kind": "delivery",
+          "exit": "seam",
+          "asksRaised": 1
+        },
+        {
+          "startedAt": "2026-08-22T11:00:00.000Z",
+          "program": "sunnyt",
+          "kind": "delivery",
+          "exit": "seam",
+          "asksRaised": 1
+        }
+      ]
+    },
+    "view": {
+      "selected": 0,
+      "message": "",
+      "confirmStop": false,
+      "confirmStart": false,
+      "help": false
+    },
+    "columns": 120
+  },
+  "output": {
+    "text": "\u001b[1mdrovr\u001b[0m  \u001b[2mmode normal\u001b[0m  \u001b[2m12:00:00\u001b[0m\n  \u001b[32m●\u001b[0m \u001b[2mloaded. Last tick recorded a decision 0m ago\u001b[0m\n\n  \u001b[1mALLOCATION\u001b[0m  \u001b[2m3 accounts · weekly resets in 84h\u001b[0m\n  \u001b[35m▓\u001b[0m \u001b[2myou spent\u001b[0m  \u001b[32m█\u001b[0m \u001b[2mprograms spent\u001b[0m  \u001b[36m▒\u001b[0m \u001b[2min flight\u001b[0m  \u001b[90m░\u001b[0m \u001b[2mfree to programs\u001b[0m  \u001b[35m·\u001b[0m \u001b[2mheld for you\u001b[0m\n\n  fable   7d \u001b[35m\u001b[0m\u001b[32m████████\u001b[0m\u001b[36m\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m\u001b[35m·········································\u001b[0m \u001b[2myou  45%\u001b[0m\n  general 7d \u001b[35m\u001b[0m\u001b[32m████████\u001b[0m\u001b[36m\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m\u001b[35m·········································\u001b[0m \u001b[2myou  45%\u001b[0m\n  session 5h \u001b[35m\u001b[0m\u001b[32m\u001b[0m\u001b[36m\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m\u001b[35m·······················································\u001b[0m \u001b[2myou  60%\u001b[0m\u001b[31m binds\u001b[0m\n  \u001b[2msession is tightest, more room in 2h\u001b[0m\n\n  \u001b[1mACCOUNTS\u001b[0m  \u001b[2mfable route has no target\u001b[0m\n    a \u001b[32mactive   \u001b[0m\u001b[2m5h\u001b[0m \u001b[32m\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 2h00m  \u001b[2mwk\u001b[0m \u001b[32m█\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 3d12h  \u001b[2mF7\u001b[0m \u001b[32m█\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 3d12h \n    b \u001b[32mactive   \u001b[0m\u001b[2m5h\u001b[0m \u001b[32m\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 2h00m  \u001b[2mwk\u001b[0m \u001b[32m██\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 3d12h  \u001b[2mF7\u001b[0m \u001b[32m██\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 3d12h \n    c \u001b[32mactive   \u001b[0m\u001b[2m5h\u001b[0m \u001b[32m\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 2h00m  \u001b[2mwk\u001b[0m \u001b[32m██\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 3d12h  \u001b[2mF7\u001b[0m \u001b[32m██\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░\u001b[0m 3d12h \n\n  \u001b[1mPROGRAMS\u001b[0m  \u001b[2m0/2 in flight\u001b[0m\n \u001b[36m▸\u001b[0m\u001b[2mp 0\u001b[0m \u001b[7mdrovr         \u001b[0m \u001b[32mGO  \u001b[0m  \u001b[2mroom for 12.00 more cycles across 3 accounts (0 running)\u001b[0m\n      \u001b]8;;https://drovr.aicex.app/craig/loop-asks.html\u001b\\\u001b[36mdrovr.aicex.app/craig/loop-asks.html\u001b[0m\u001b]8;;\u001b\\\n  \u001b[2mp 0\u001b[0m joinery        \u001b[32mGO  \u001b[0m  \u001b[2mroom for 11.00 more cycles across 3 accounts (1 running)\u001b[0m\n      \u001b]8;;https://joinery.aicex.app/craig/loop-asks.html\u001b\\\u001b[36mjoinery.aicex.app/craig/loop-asks.html\u001b[0m\u001b]8;;\u001b\\\n  \u001b[2mp 0\u001b[0m sunnyt         \u001b[33mWAIT\u001b[0m  \u001b[2m2 cycles ahead of it, cap is 2\u001b[0m\n      \u001b]8;;https://sunnyt.aicex.app/craig/loop-asks.html\u001b\\\u001b[36msunnyt.aicex.app/craig/loop-asks.html\u001b[0m\u001b]8;;\u001b\\\n\n  \u001b[1mRECENT\u001b[0m\n\u001b[2m  08-22 07:00  joinery   delivery   seam     asks=1\u001b[0m\n\u001b[2m  08-22 08:00  sunnyt    delivery   seam     asks=1\u001b[0m\n\u001b[2m  08-22 09:00  drovr     delivery   seam     asks=1\u001b[0m\n\u001b[2m  08-22 10:00  joinery   delivery   seam     asks=1\u001b[0m\n\u001b[2m  08-22 11:00  sunnyt    delivery   seam     asks=1\u001b[0m\n\n  \n  j/k select\u001b[2m · \u001b[0mspace enable\u001b[2m · \u001b[0m[ ] priority\u001b[2m · \u001b[0mm mode\u001b[2m · \u001b[0mp pause\u001b[2m · \u001b[0m+/- cap\u001b[2m · \u001b[0m< > reserve\u001b[2m · \u001b[0mr refresh\u001b[2m · \u001b[0mt tick\u001b[2m · \u001b[0mo asks\n  s start\u001b[2m · \u001b[0mx interrupt\u001b[2m · \u001b[0ml release\u001b[2m · \u001b[0m? help\u001b[2m · \u001b[0mq quit",
+    "hits": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "program": 0
+      },
+      {
+        "asks": 0
+      },
+      {
+        "program": 1
+      },
+      {
+        "asks": 1
+      },
+      {
+        "program": 2
+      },
+      {
+        "asks": 2
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "keybar": 0
+      },
+      {
+        "keybar": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "fn": "watch.clip",
+  "input": {
+    "text": "\u001b[31mhello\u001b[0m",
+    "width": 40
+  },
+  "output": "\u001b[31mhello\u001b[0m"
+}

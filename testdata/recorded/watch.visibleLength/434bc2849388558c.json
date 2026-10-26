@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[1mALLOCATION\u001b[0m  \u001b[2m0 of 3 accounts funding · weekly resets in 84h\u001b[0m"
+  },
+  "output": 60
+}

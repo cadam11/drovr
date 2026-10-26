@@ -1,0 +1,14 @@
+{
+  "fn": "watch.wrapText",
+  "input": {
+    "text": "abcdefghijklmnop",
+    "width": 5,
+    "maxLines": 4
+  },
+  "output": [
+    "abcde",
+    "fghij",
+    "klmno",
+    "p"
+  ]
+}

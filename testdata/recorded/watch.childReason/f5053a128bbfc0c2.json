@@ -1,0 +1,7 @@
+{
+  "fn": "watch.childReason",
+  "input": {
+    "text": "Command failed: orca terminal show"
+  },
+  "output": "Command failed: orca terminal show"
+}

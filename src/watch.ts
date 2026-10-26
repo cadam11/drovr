@@ -16,6 +16,7 @@ import {
 } from './keys.ts';
 import { holder } from './lock.ts';
 import { paths } from './paths.ts';
+import { record } from './record.ts';
 import { collectState, type DrovrState, type ProgramState } from './state.ts';
 
 const ESC = '\x1b[';
@@ -31,7 +32,7 @@ const osc8 = (url: string, text: string): string =>
   `\x1b]8;;${url}\x1b\\${paint(36, text)}\x1b]8;;\x1b\\`;
 
 /** Escape sequences occupy no columns, so width has to be measured without them. */
-export const visibleLength = (text: string): number =>
+const visibleLengthUnrecorded = (text: string): number =>
   text.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').length;
 
 /**
@@ -44,7 +45,7 @@ export const visibleLength = (text: string): number =>
  * `stdout.rows - 1`, so lines spent here come off the bottom, and the bottom is the keybar.
  * The final line absorbs whatever is left and is clipped by the caller like any other.
  */
-export const wrapText = (text: string, width: number, maxLines: number): string[] => {
+const wrapTextUnrecorded = (text: string, width: number, maxLines: number): string[] => {
   if (width < 1 || maxLines < 1) throw new Error(`wrapText needs width>=1 and maxLines>=1, got ${width}/${maxLines}`);
   const lines: string[] = [];
   let rest = text;
@@ -59,8 +60,8 @@ export const wrapText = (text: string, width: number, maxLines: number): string[
 };
 
 /** Clip to the terminal width so nothing soft-wraps and pushes the frame around. */
-export const clip = (text: string, width: number): string => {
-  if (visibleLength(text) <= width) return text;
+const clipUnrecorded = (text: string, width: number): string => {
+  if (visibleLengthUnrecorded(text) <= width) return text;
   let out = '';
   let shown = 0;
   for (let index = 0; index < text.length; index += 1) {
@@ -124,7 +125,7 @@ const elapsed = (since: string, now: number): string => {
 };
 
 /** Time until a reset, in teamclaude's own dashboard vocabulary: 59m, 4h49m, 2d18h. */
-export const untilLabel = (at: string | null, now: number): string => {
+const untilLabelUnrecorded = (at: string | null, now: number): string => {
   if (at === null) return '—';
   const minutes = Math.round((Date.parse(at) - now) / 60_000);
   if (minutes <= 0) return 'now';
@@ -182,7 +183,7 @@ const keybarLayout = (width: number, narrow: boolean): KeybarEntry[][] => {
 };
 
 /** Wrapped rather than clipped: a key you cannot see is a key you do not have. */
-export const keybarLines = (width: number, narrow: boolean): string[] =>
+const keybarLinesUnrecorded = (width: number, narrow: boolean): string[] =>
   keybarLayout(width, narrow).map(
     (row) => `  ${row.map((entry) => entry.shown).join(dim(' · '))}`,
   );
@@ -195,7 +196,8 @@ export const keybarKeyAt = (
   column: number,
 ): string | null => {
   const entries = keybarLayout(width, narrow)[row] ?? [];
-  return entries.find((entry) => column >= entry.start && column < entry.end)?.key ?? null;
+  const key = entries.find((entry) => column >= entry.start && column < entry.end)?.key ?? null;
+  return record('watch.keybarKeyAt', { width, narrow, row, column }, key);
 };
 
 /**
@@ -281,7 +283,7 @@ const allocationLines = (input: {
   const resetIn = hoursToWeeklyReset === null ? '—' : `${Math.floor(hoursToWeeklyReset)}h`;
   return [
     '',
-    `  ${bold('ALLOCATION')}  ${dim(`${accountsLabel(fundingAccounts, usableAccounts)} · weekly resets in ${resetIn}`)}`,
+    `  ${bold('ALLOCATION')}  ${dim(`${accountsLabelUnrecorded(fundingAccounts, usableAccounts)} · weekly resets in ${resetIn}`)}`,
     `  ${SEGMENTS.map((s) => `${paint(s.colour, s.char)} ${dim(s.label)}`).join('  ')}`,
     '',
     ...rows,
@@ -330,7 +332,7 @@ const accountLines = (input: {
 
   const rows = accounts.map((entry) => {
     const marker = entry.fableTarget ? paint(32, '►') : entry.fableEligible === false ? paint(31, '✗') : ' ';
-    const name = clip(narrow ? entry.name.split('@')[0]! : entry.name, nameWidth).padEnd(nameWidth);
+    const name = clipUnrecorded(narrow ? entry.name.split('@')[0]! : entry.name, nameWidth).padEnd(nameWidth);
     const status = narrow
       ? ''
       : entry.disabled
@@ -338,7 +340,7 @@ const accountLines = (input: {
         : paint(entry.status === 'active' ? 32 : 33, (entry.status ?? '?').padEnd(statusWidth));
     const buckets = ACCOUNT_BUCKETS.map(({ key, label }) => {
       const bucket = entry.buckets[key];
-      return `${dim(label)} ${usedBar(bucket.usedFraction, barWidth)} ${untilLabel(bucket.resetsAt, now).padEnd(6)}`;
+      return `${dim(label)} ${usedBar(bucket.usedFraction, barWidth)} ${untilLabelUnrecorded(bucket.resetsAt, now).padEnd(6)}`;
     }).join(' ');
     return `  ${marker} ${name} ${status}${buckets}`;
   });
@@ -350,7 +352,7 @@ const accountLines = (input: {
  * same statement as "3 accounts can fund a cycle", and on 2026-08-25 the difference
  * was two spent accounts and one carrying everything. Say both numbers when they differ.
  */
-export const accountsLabel = (funding: number, usable: number): string =>
+const accountsLabelUnrecorded = (funding: number, usable: number): string =>
   funding === usable ? `${usable} accounts` : `${funding} of ${usable} accounts funding`;
 
 const DETAIL_INDENT = 6;
@@ -398,11 +400,11 @@ const programLines = (input: {
 
     // Beside the row only while it fits whole. A reason clipped to the row loses its tail,
     // and the tail is where a long one keeps the coupling explanation or the retry command.
-    const inline = !narrow && visibleLength(head) + 2 + detail.length <= width;
+    const inline = !narrow && visibleLengthUnrecorded(head) + 2 + detail.length <= width;
     const row = inline ? `${head}  ${dim(detail)}` : head;
     const detailLines = inline
       ? []
-      : wrapText(detail, Math.max(8, width - DETAIL_INDENT), detailLinesFor(width))
+      : wrapTextUnrecorded(detail, Math.max(8, width - DETAIL_INDENT), detailLinesFor(width))
           .map((line) => `${' '.repeat(DETAIL_INDENT)}${dim(line)}`);
 
     const ask =
@@ -473,7 +475,7 @@ const clampAndClip = (
       : [...flatBody.slice(0, budget - flatFoot.length), ...flatFoot];
   return {
     // Clip last: any single over-long line would soft-wrap and shove the frame upward.
-    text: kept.map((line) => clip(line.text, width)).join('\n'),
+    text: kept.map((line) => clipUnrecorded(line.text, width)).join('\n'),
     hits: kept.map((line) => line.hit),
   };
 };
@@ -491,7 +493,7 @@ const clampAndClip = (
  * the message line, the preview warning and the keybar are all appended last. Omitted,
  * the frame is whatever height it needs — only correct for a caller with no viewport.
  */
-export const frameWithHits = (
+const frameWithHitsUnrecorded = (
   state: DrovrState,
   view: ViewState,
   columns?: number,
@@ -541,7 +543,7 @@ export const frameWithHits = (
           // The pool context, once. Program reasons no longer carry it (decide.ts's
           // reason/note split), so this line beside the bars is where the coupling
           // warning lives — the bars are exactly what it exists to explain.
-          ...wrapText(state.capacityNote, Math.max(8, width - 4), 3).map(
+          ...wrapTextUnrecorded(state.capacityNote, Math.max(8, width - 4), 3).map(
             (line) => `  ${dim(line)}`,
           ),
           ...accountLines({ accounts: state.accounts, now, width, narrow }),
@@ -592,13 +594,25 @@ export const frameWithHits = (
     plain(''),
     plain(view.message === '' ? '  ' : paint(36, `  ${view.message}`)),
     ...(view.previewWarning == null ? [] : [plain(paint(33, `  ${view.previewWarning}`))]),
-    ...keybarLines(width, narrow).map((text, index) => ({ text, hit: { keybar: index } })),
+    ...keybarLinesUnrecorded(width, narrow).map((text, index) => ({ text, hit: { keybar: index } })),
   ];
 
   return clampAndClip(lines, tail, width, rows);
 };
 
 /** The rendered frame alone — every caller that has no mouse to serve. */
+export const frameWithHits = (
+  state: DrovrState,
+  view: ViewState,
+  columns?: number,
+  rows?: number,
+): { text: string; hits: (LineHit | null)[] } => {
+  const out = frameWithHitsUnrecorded(state, view, columns, rows);
+  // Without `columns` the width came from process.stdout, so the input would not reproduce the output.
+  if (columns === undefined) return out;
+  return record('watch.frameWithHits', { state, view, columns, rows }, out);
+};
+
 export const frame = (
   state: DrovrState,
   view: ViewState,
@@ -788,7 +802,7 @@ const MOUSE_EVENTS_PER_CHUNK = 8;
  * line is the one that says what went wrong and is worth reading ("Proxy at localhost:3456
  * did not answer status within 5000ms"). Name the problem, not the call that hit it.
  */
-export const childReason = (error: unknown): string => {
+const childReasonUnrecorded = (error: unknown): string => {
   const text = error instanceof Error ? error.message : String(error);
   const lines = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
   return lines.find((line) => !line.startsWith('Command failed:')) ?? lines[0] ?? 'unknown error';
@@ -998,4 +1012,27 @@ export const watch = async (intervalSeconds: number): Promise<void> => {
   setInterval(() => {
     draw().catch(drawFailed);
   }, Math.max(2, intervalSeconds) * 1000);
+};
+
+export const visibleLength = (text: string): number =>
+  record('watch.visibleLength', { text }, visibleLengthUnrecorded(text));
+
+export const wrapText = (text: string, width: number, maxLines: number): string[] =>
+  record('watch.wrapText', { text, width, maxLines }, wrapTextUnrecorded(text, width, maxLines));
+
+export const clip = (text: string, width: number): string =>
+  record('watch.clip', { text, width }, clipUnrecorded(text, width));
+
+export const untilLabel = (at: string | null, now: number): string =>
+  record('watch.untilLabel', { at, now }, untilLabelUnrecorded(at, now));
+
+export const keybarLines = (width: number, narrow: boolean): string[] =>
+  record('watch.keybarLines', { width, narrow }, keybarLinesUnrecorded(width, narrow));
+
+export const accountsLabel = (funding: number, usable: number): string =>
+  record('watch.accountsLabel', { funding, usable }, accountsLabelUnrecorded(funding, usable));
+
+export const childReason = (error: unknown): string => {
+  const text = error instanceof Error ? error.message : String(error);
+  return record('watch.childReason', { text }, childReasonUnrecorded(error));
 };

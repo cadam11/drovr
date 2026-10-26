@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  session 5h \u001b[35m\u001b[0m\u001b[32m\u001b[0m\u001b[36m\u001b[0m\u001b[90m░░░░░░░░░░░░░░░░░░░░░░░░░░░░░\u001b[0m\u001b[35m···········································\u001b[0m \u001b[2myou  60%\u001b[0m\u001b[31m binds\u001b[0m"
+  },
+  "output": 100
+}

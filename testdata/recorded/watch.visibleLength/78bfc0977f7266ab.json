@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[33mWAIT\u001b[0m  transient; it retries by itself"
+  },
+  "output": 41
+}

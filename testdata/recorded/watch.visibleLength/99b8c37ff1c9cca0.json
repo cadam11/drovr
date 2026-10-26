@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  x interrupt"
+  },
+  "output": 13
+}

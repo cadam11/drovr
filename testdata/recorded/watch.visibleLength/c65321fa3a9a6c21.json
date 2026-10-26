@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    fourth@example.com \u001b[32mactive   \u001b[0m\u001b[2m5h\u001b[0m \u001b[32m\u001b[0m\u001b[90m░░░\u001b[0m 2h00m  \u001b[2mwk\u001b[0m \u001b[31m███\u001b[0m\u001b[90m\u001b[0m 3d12h  \u001b[2mF7\u001b[0m \u001b[31m███\u001b[0m\u001b[90m\u001b[0m 3d12\u001b[0m…"
+  },
+  "output": 72
+}

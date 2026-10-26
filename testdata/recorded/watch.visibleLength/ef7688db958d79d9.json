@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[32m█\u001b[0m programs spent"
+  },
+  "output": 20
+}

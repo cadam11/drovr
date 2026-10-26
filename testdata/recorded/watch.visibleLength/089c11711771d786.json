@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  +/- cap\u001b[2m · \u001b[0m< > reserve\u001b[2m · \u001b[0mr refresh\u001b[2m · \u001b[0mt tick\u001b[2m · \u001b[0mo asks\u001b[2m · \u001b[0ms start"
+  },
+  "output": 63
+}

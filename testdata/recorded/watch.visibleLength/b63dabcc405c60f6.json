@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[1mBars\u001b[0m — one per quota bucket, each summing to the whole pool."
+  },
+  "output": 62
+}

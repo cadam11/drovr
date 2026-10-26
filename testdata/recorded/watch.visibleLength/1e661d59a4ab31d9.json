@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  m mode\u001b[2m · \u001b[0mp pause"
+  },
+  "output": 18
+}

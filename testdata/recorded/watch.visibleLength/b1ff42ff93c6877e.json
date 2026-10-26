@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": " \u001b[36m▸\u001b[0m\u001b[2mp 0\u001b[0m \u001b[7mdrovr         \u001b[0m \u001b[32mGO  \u001b[0m"
+  },
+  "output": 25
+}

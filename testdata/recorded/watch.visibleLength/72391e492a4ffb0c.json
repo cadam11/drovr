@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  [ ] priority"
+  },
+  "output": 14
+}

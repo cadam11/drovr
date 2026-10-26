@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  Whatever is left is held for you, no matter what they do."
+  },
+  "output": 59
+}

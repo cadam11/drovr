@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[31mSTOP\u001b[0m  needs you — the reason says what"
+  },
+  "output": 42
+}

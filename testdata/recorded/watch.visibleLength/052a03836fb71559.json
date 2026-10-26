@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  j/k select\u001b[2m · \u001b[0mspace enable\u001b[2m · \u001b[0m[ ] priority\u001b[2m · \u001b[0mm mode\u001b[2m · \u001b[0mp pause\u001b[2m · \u001b[0m+/- cap\u001b[2m · \u001b[0m< > reserve"
+  },
+  "output": 85
+}

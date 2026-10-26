@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  +/- cap"
+  },
+  "output": 9
+}

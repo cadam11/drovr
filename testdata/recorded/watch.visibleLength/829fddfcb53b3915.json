@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "      \u001b[2mcycles (0 running)\u001b[0m"
+  },
+  "output": 24
+}

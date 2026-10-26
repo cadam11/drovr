@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[2mfable = the runner; general = subagents it spawns; 5h = the burst window.\u001b[0m"
+  },
+  "output": 75
+}

@@ -1,0 +1,12 @@
+{
+  "fn": "watch.keybarLines",
+  "input": {
+    "width": 80,
+    "narrow": false
+  },
+  "output": [
+    "  j/k select\u001b[2m · \u001b[0mspace enable\u001b[2m · \u001b[0m[ ] priority\u001b[2m · \u001b[0mm mode\u001b[2m · \u001b[0mp pause\u001b[2m · \u001b[0m+/- cap",
+    "  < > reserve\u001b[2m · \u001b[0mr refresh\u001b[2m · \u001b[0mt tick\u001b[2m · \u001b[0mo asks\u001b[2m · \u001b[0ms start\u001b[2m · \u001b[0mx interrupt",
+    "  l release\u001b[2m · \u001b[0m? help\u001b[2m · \u001b[0mq quit"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[1mPROGRAMS\u001b[0m  \u001b[2m0/2 in flight\u001b[0m"
+  },
+  "output": 25
+}

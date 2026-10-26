@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[1mdrovr watch\u001b[0m"
+  },
+  "output": 13
+}

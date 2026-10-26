@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": " \u001b[36m▸\u001b[0m\u001b[2mp 0\u001b[0m \u001b[7mdemo          \u001b[0m \u001b[33mWAIT\u001b[0m  \u001b[2ma start needs 1.00 and the pool has room for 0.00 cycles (0 running)\u001b[0m"
+  },
+  "output": 95
+}

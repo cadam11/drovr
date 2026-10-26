@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[31moff\u001b[0m     nothing runs"
+  },
+  "output": 24
+}

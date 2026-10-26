@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "\u001b[31mabc\u001b[0m"
+  },
+  "output": 3
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[32mnormal\u001b[0m  programs 55%, you keep 45%"
+  },
+  "output": 38
+}

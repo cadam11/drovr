@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[36mRUN\u001b[0m   running now — open its tab to read or talk to it"
+  },
+  "output": 58
+}

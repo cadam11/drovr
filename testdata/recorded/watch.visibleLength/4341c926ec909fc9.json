@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[36m▒\u001b[0m in flight"
+  },
+  "output": 15
+}

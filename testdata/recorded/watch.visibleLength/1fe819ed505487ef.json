@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  ? help\u001b[2m · \u001b[0mq quit"
+  },
+  "output": 17
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[2mroom in all three buckets: fable is full on fourth,\u001b[0m"
+  },
+  "output": 53
+}

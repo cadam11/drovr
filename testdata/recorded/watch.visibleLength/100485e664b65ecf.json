@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[1mMode\u001b[0m — how much of each account's weekly quota programs may spend."
+  },
+  "output": 68
+}

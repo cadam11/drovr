@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[35m▓\u001b[0m you spent"
+  },
+  "output": 15
+}

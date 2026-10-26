@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "abc\u001b[0m…"
+  },
+  "output": 4
+}

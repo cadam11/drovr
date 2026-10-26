@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "\u001b[36m  interrupt sunnyt? y to confirm, any other key to cancel\u001b[0m"
+  },
+  "output": 57
+}

@@ -1,0 +1,11 @@
+{
+  "fn": "watch.wrapText",
+  "input": {
+    "text": "short",
+    "width": 20,
+    "maxLines": 3
+  },
+  "output": [
+    "short"
+  ]
+}

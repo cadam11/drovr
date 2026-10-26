@@ -1,0 +1,11 @@
+{
+  "fn": "watch.keybarLines",
+  "input": {
+    "width": 71,
+    "narrow": true
+  },
+  "output": [
+    "  j/k\u001b[2m · \u001b[0mspace\u001b[2m · \u001b[0m[\u001b[2m · \u001b[0mm\u001b[2m · \u001b[0mp\u001b[2m · \u001b[0m+/-\u001b[2m · \u001b[0m<\u001b[2m · \u001b[0mr\u001b[2m · \u001b[0mt\u001b[2m · \u001b[0mo\u001b[2m · \u001b[0ms\u001b[2m · \u001b[0mx\u001b[2m · \u001b[0ml\u001b[2m · \u001b[0m?",
+    "  q"
+  ]
+}

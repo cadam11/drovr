@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[1mACCOUNTS\u001b[0m  \u001b[2mfable route has no target\u001b[0m"
+  },
+  "output": 37
+}

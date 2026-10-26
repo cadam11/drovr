@@ -1,0 +1,8 @@
+{
+  "fn": "watch.clip",
+  "input": {
+    "text": "abcdef\u001b[31",
+    "width": 4
+  },
+  "output": "abc\u001b[0m…"
+}

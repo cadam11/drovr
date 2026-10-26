@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[36maway\u001b[0m    programs 85%, you keep 15% — for when you are gone"
+  },
+  "output": 62
+}

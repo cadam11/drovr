@@ -1,0 +1,13 @@
+{
+  "fn": "watch.wrapText",
+  "input": {
+    "text": "one two three four five six",
+    "width": 10,
+    "maxLines": 3
+  },
+  "output": [
+    "one two",
+    "three four",
+    "five six"
+  ]
+}

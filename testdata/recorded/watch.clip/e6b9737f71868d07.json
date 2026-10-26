@@ -1,0 +1,8 @@
+{
+  "fn": "watch.clip",
+  "input": {
+    "text": "abc",
+    "width": 3
+  },
+  "output": "abc"
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "\u001b[33m  could not read sunnyt: agent not found\u001b[0m"
+  },
+  "output": 40
+}

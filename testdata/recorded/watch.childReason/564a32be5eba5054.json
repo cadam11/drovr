@@ -1,0 +1,7 @@
+{
+  "fn": "watch.childReason",
+  "input": {
+    "text": "Command failed: teamclaude status --json\nProxy at localhost:3456 did not answer status within 5000ms.\nThe process may be overloaded or its event loop may be stalled.\n"
+  },
+  "output": "Proxy at localhost:3456 did not answer status within 5000ms."
+}

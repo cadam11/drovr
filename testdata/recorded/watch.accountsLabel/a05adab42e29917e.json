@@ -1,0 +1,8 @@
+{
+  "fn": "watch.accountsLabel",
+  "input": {
+    "funding": 1,
+    "usable": 3
+  },
+  "output": "1 of 3 accounts funding"
+}

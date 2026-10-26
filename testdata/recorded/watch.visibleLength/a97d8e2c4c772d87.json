@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[35m▓\u001b[0m \u001b[2myou spent\u001b[0m  \u001b[32m█\u001b[0m \u001b[2mprograms spent\u001b[0m  \u001b[36m▒\u001b[0m \u001b[2min flight\u001b[0m  \u001b[90m░\u001b[0m \u001b[2mfree to pro\u001b[0m…"
+  },
+  "output": 60
+}

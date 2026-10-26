@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  < > reserve"
+  },
+  "output": 13
+}

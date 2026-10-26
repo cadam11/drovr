@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  l\u001b[2m · \u001b[0m?\u001b[2m · \u001b[0mq"
+  },
+  "output": 11
+}

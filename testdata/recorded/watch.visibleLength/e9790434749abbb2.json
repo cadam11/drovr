@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "    \u001b[32mGO\u001b[0m    starts on the next tick"
+  },
+  "output": 33
+}

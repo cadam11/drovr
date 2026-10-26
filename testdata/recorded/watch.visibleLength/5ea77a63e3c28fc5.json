@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "\u001b]8;;https://example.com/very/long\u001b\\link\u001b]8;;\u001b\\"
+  },
+  "output": 4
+}

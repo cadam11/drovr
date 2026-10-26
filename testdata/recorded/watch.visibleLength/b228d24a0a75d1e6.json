@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[2m< and > adjust the current mode by 5%.\u001b[0m"
+  },
+  "output": 40
+}

@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  \u001b[32m●\u001b[0m \u001b[2mloaded. Last tick recorded a decision 0m ago\u001b[0m"
+  },
+  "output": 48
+}
