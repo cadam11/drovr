@@ -94,6 +94,21 @@ type watcher struct {
 	narrow bool
 	// results carries slow intents' outcomes back; they run detached so keys stay live.
 	results chan landed
+	// probes carries a draw's state back from its Collect goroutine, so a probe of seconds
+	// never stands between the operator and q. One draw is in flight at a time — the
+	// Collector serves one caller — and requests made meanwhile fold into one pending draw.
+	probes       chan probed
+	drawing      bool
+	pending      bool
+	pendingFresh bool
+}
+
+// probed is one Collect's result: the warning is carried back rather than written into the
+// view from the probe's goroutine.
+type probed struct {
+	st      state.DrovrState
+	warning *string
+	err     error
 }
 
 type input struct {
@@ -105,7 +120,7 @@ type input struct {
 // included, since the restore is deferred. Only the first draw failing is fatal to a frame;
 // a setter that cannot write control.json ends the session, as the TS's die did.
 func Run(ctx context.Context, deps Deps, intervalSeconds int) (err error) {
-	w := &watcher{deps: deps, interval: time.Duration(max(2, intervalSeconds)) * time.Second, width: 100, results: make(chan landed)}
+	w := &watcher{deps: deps, interval: time.Duration(max(2, intervalSeconds)) * time.Second, width: 100, results: make(chan landed), probes: make(chan probed)}
 	if _, err := io.WriteString(deps.Out, enterBytes); err != nil {
 		return err
 	}
@@ -133,9 +148,7 @@ func Run(ctx context.Context, deps Deps, intervalSeconds int) (err error) {
 		chunks = make(chan input)
 		go readChunks(ctx, deps.In, chunks)
 	}
-	if err := w.draw(ctx, false); err != nil {
-		return err
-	}
+	w.draw(ctx, false)
 	return w.loop(ctx, chunks)
 }
 
@@ -152,7 +165,9 @@ func (w *watcher) loop(ctx context.Context, chunks chan input) error {
 		case sig := <-w.deps.Signals:
 			err = w.signal(ctx, sig)
 		case <-ticks:
-			err = w.draw(ctx, false)
+			w.draw(ctx, false)
+		case p := <-w.probes:
+			err = w.landedProbe(ctx, p)
 		case in := <-chunks:
 			err = w.input(ctx, in)
 		case r := <-w.results:
@@ -197,26 +212,59 @@ func send(ctx context.Context, out chan<- input, in input) bool {
 // restored (R2 — the TS left raw mode and the alternate screen behind on TERM and HUP).
 func (w *watcher) signal(ctx context.Context, sig os.Signal) error {
 	if sig == syscall.SIGWINCH {
-		return w.draw(ctx, false)
+		w.draw(ctx, false)
+		return nil
 	}
 	return errLeave
 }
 
-// draw probes no more often than one interval, so a keystroke redraw costs no subprocess
-// while the ticker's own draw always falls outside the window and refreshes. The warning is
-// reset first so a since-fixed preview stops complaining.
-func (w *watcher) draw(ctx context.Context, fresh bool) error {
-	w.view.PreviewWarning = nil
+// draw asks for a frame. With none in flight it starts one; otherwise the request waits as
+// the one pending draw, which is fresh if any request folded into it was. The TS chained
+// every request instead; folding them draws the same final state with fewer probes.
+func (w *watcher) draw(ctx context.Context, fresh bool) {
+	if w.drawing {
+		w.pending, w.pendingFresh = true, w.pendingFresh || fresh
+		return
+	}
+	w.drawing = true
+	go w.probe(ctx, fresh)
+}
+
+// probe runs Collect off the loop. It probes no more often than one interval, so a keystroke
+// redraw costs no subprocess while the ticker's own draw always falls outside the window.
+// Leaving cancels ctx, which abandons the probe and drops a state that lands after.
+func (w *watcher) probe(ctx context.Context, fresh bool) {
 	window := w.interval
 	if fresh {
 		window = 0
 	}
-	st, err := w.deps.Collect(ctx, func(warning string) { w.view.PreviewWarning = &warning }, window)
+	var warning *string
+	st, err := w.deps.Collect(ctx, func(text string) { warning = &text }, window)
+	select {
+	case w.probes <- probed{st, warning, err}:
+	case <-ctx.Done():
+	}
+}
+
+// landedProbe paints what a probe brought back, then starts the pending draw if one folded
+// up meanwhile. The warning replaces the last one, so a since-fixed preview stops complaining.
+func (w *watcher) landedProbe(ctx context.Context, p probed) error {
+	w.drawing = false
+	w.view.PreviewWarning = p.warning
+	err := p.err
 	if err == nil {
-		err = w.paint(st)
+		err = w.paint(p.st)
 	}
 	if err != nil {
-		return w.drawFailed(err)
+		if err := w.drawFailed(err); err != nil {
+			return err
+		}
+	}
+	if w.pending {
+		w.pending = false
+		fresh := w.pendingFresh
+		w.pendingFresh = false
+		w.draw(ctx, fresh)
 	}
 	return nil
 }
@@ -291,22 +339,46 @@ func (w *watcher) key(ctx context.Context, key string) error {
 	ctl, programs, err := w.programs()
 	if err != nil {
 		w.view.Message = err.Error()
-		return w.draw(ctx, false)
+		w.draw(ctx, false)
+		return nil
 	}
 	intent, view := DecideKey(key, w.view, programs, w.last)
 	w.view = view
 	return w.act(ctx, intent, ctl, programs)
 }
 
+// click reads nothing before deciding, as the TS's onMouse did: a row or the wheel selects
+// from the frame alone, so a broken control.json cannot take the mouse away. A keybar key and
+// an asks link were the TS's two hops into onKey, so they take the typed-key path here —
+// q leaves before anything is read.
 func (w *watcher) click(ctx context.Context, ev MouseEvent) error {
-	ctl, programs, err := w.programs()
-	if err != nil {
-		w.view.Message = err.Error()
-		return w.draw(ctx, false)
+	if key, asks, ok := w.forwarded(ev); ok {
+		if asks >= 0 {
+			w.view.Selected = asks
+		}
+		return w.key(ctx, key)
 	}
-	intent, view := DecideClick(ev, w.hits, w.width, w.narrow, w.view, programs, w.last)
+	intent, view := DecideClick(ev, w.hits, w.width, w.narrow, w.view, nil, w.last)
 	w.view = view
-	return w.act(ctx, intent, ctl, programs)
+	return w.act(ctx, intent, control.Control{}, nil)
+}
+
+// forwarded is the key a left press stands for on the frame on screen: a keybar label, or
+// 'o' for an asks link (asks is then the program it selects first) unless a confirmation is
+// armed, where the link only cancels. Everything else DecideClick settles without programs.
+func (w *watcher) forwarded(ev MouseEvent) (key string, asks int, ok bool) {
+	if !ev.Press || ev.Button&(64|3) != 0 || ev.Y < 1 || ev.Y > len(w.hits) || w.hits[ev.Y-1] == nil {
+		return "", -1, false
+	}
+	hit := w.hits[ev.Y-1]
+	if hit.Keybar != nil {
+		key, ok = KeybarKeyAt(w.width, w.narrow, *hit.Keybar, ev.X-1)
+		return key, -1, ok
+	}
+	if hit.Asks != nil && !w.view.ConfirmStop && !w.view.ConfirmStart {
+		return "o", *hit.Asks, true
+	}
+	return "", -1, false
 }
 
 // programs is re-read on every key: view.Selected indexes this list, and the frame's own
@@ -343,8 +415,8 @@ func (w *watcher) apply(ctx context.Context, out outcome, err error) error {
 		return err
 	}
 	w.view.Message = out.message
-	if !out.redraw {
-		return nil
+	if out.redraw {
+		w.draw(ctx, out.fresh)
 	}
-	return w.draw(ctx, out.fresh)
+	return nil
 }

@@ -105,21 +105,31 @@ type fakeCollect struct {
 	st   state.DrovrState
 	ages []time.Duration
 	fail map[int]error
+	gate map[int]chan struct{}
 	warn string
 }
 
-func (c *fakeCollect) Collect(_ context.Context, onWarning func(string), age time.Duration) (state.DrovrState, error) {
+// Collect holds the n-th call on gate[n] when one is set, as a slow probe would.
+func (c *fakeCollect) Collect(ctx context.Context, onWarning func(string), age time.Duration) (state.DrovrState, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	n := len(c.ages)
 	c.ages = append(c.ages, age)
-	if c.warn != "" {
-		onWarning(c.warn)
+	warn, fail, st, gate := c.warn, c.fail[n], c.st, c.gate[n]
+	c.mu.Unlock()
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return state.DrovrState{}, ctx.Err()
+		}
 	}
-	if err := c.fail[n]; err != nil {
-		return state.DrovrState{}, err
+	if warn != "" {
+		onWarning(warn)
 	}
-	return c.st, nil
+	if fail != nil {
+		return state.DrovrState{}, fail
+	}
+	return st, nil
 }
 
 func (c *fakeCollect) seen() []time.Duration {
@@ -165,7 +175,7 @@ func rig(t *testing.T, interval int, control string) (*harness, Deps) {
 	pr, pw := io.Pipe()
 	h := &harness{
 		t: t, in: pw, out: &screen{}, term: &fakeTerm{cols: 100, rows: 40},
-		collect: &fakeCollect{st: recorded(t), fail: map[int]error{}},
+		collect: &fakeCollect{st: recorded(t), fail: map[int]error{}, gate: map[int]chan struct{}{}},
 		sigs:    make(chan os.Signal, 1), ticks: make(chan time.Time), opens: make(chan opened, 1), done: make(chan error, 1),
 	}
 	t.Cleanup(func() { pw.Close() })
@@ -275,10 +285,9 @@ func TestRunRestoresOnEveryExit(t *testing.T) {
 		})
 	}
 	t.Run("fatal first draw", func(t *testing.T) {
-		h := start(t, 15, threeUp)
-		h.collect.mu.Lock()
+		h, deps := rig(t, 15, threeUp)
 		h.collect.fail[0] = errors.New("teamclaude is not on PATH")
-		h.collect.mu.Unlock()
+		h.run(deps, 15)
 		if err := h.wait(); err == nil || err.Error() != "teamclaude is not on PATH" {
 			t.Fatalf("err %v", err)
 		}
@@ -301,10 +310,9 @@ func checkRestored(t *testing.T, h *harness) {
 }
 
 func TestDrawFailedKeepsTheLastFrame(t *testing.T) {
-	h := start(t, 15, threeUp)
-	h.collect.mu.Lock()
+	h, deps := rig(t, 15, threeUp)
 	h.collect.fail[1] = errors.New("Command failed: teamclaude status --json\nProxy at localhost:3456 did not answer status within 5000ms.")
-	h.collect.mu.Unlock()
+	h.run(deps, 15)
 	h.waitFrames(1)
 	h.ticks <- time.Now()
 	h.waitFrames(2)
@@ -413,10 +421,9 @@ func TestAsksClickOpensTheUrl(t *testing.T) {
 }
 
 func TestWarningsLandOnThePreviewLine(t *testing.T) {
-	h := start(t, 15, threeUp)
-	h.collect.mu.Lock()
+	h, deps := rig(t, 15, threeUp)
 	h.collect.warn = "could not read sunnyt's runner state: orca timed out"
-	h.collect.mu.Unlock()
+	h.run(deps, 15)
 	h.waitFrames(1)
 	h.key("q")
 	if err := h.wait(); err != nil {
@@ -540,4 +547,104 @@ func TestSlowIntentMessageLandsAfterCompletion(t *testing.T) {
 	if err := h.wait(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func (h *harness) waitCalls(n int) {
+	h.t.Helper()
+	for range 400 {
+		if len(h.collect.seen()) >= n {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	h.t.Fatalf("%d probes, want %d", len(h.collect.seen()), n)
+}
+
+func TestQuitIsNotBlockedByAProbe(t *testing.T) {
+	h, deps := rig(t, 15, threeUp)
+	h.collect.gate[1] = make(chan struct{}) // never opened: a probe that hangs
+	h.run(deps, 15)
+	h.waitFrames(1)
+	h.ticks <- time.Now()
+	h.waitCalls(2)
+	began := time.Now()
+	h.key("q")
+	if err := h.wait(); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(began); took > time.Second {
+		t.Errorf("q waited %v behind the probe", took)
+	}
+	if len(h.frames()) != 1 {
+		t.Errorf("painted %d frames, want only the first", len(h.frames()))
+	}
+	checkRestored(t, h)
+}
+
+// Pipe writes are synchronous with the reader, and the reader takes its next chunk only once
+// the loop has the last one — so each key() returning proves the key before it was handled.
+func TestDrawsCoalesce(t *testing.T) {
+	h, deps := rig(t, 15, threeUp)
+	gate := make(chan struct{})
+	h.collect.gate[1] = gate
+	h.run(deps, 15)
+	h.waitFrames(1)
+	h.ticks <- time.Now() // probe 1 starts and hangs
+	h.waitCalls(2)
+	h.ticks <- time.Now() // three requests while it is in flight: non-fresh, fresh, non-fresh
+	h.key("r")
+	h.key("k")
+	h.key("z") // draws nothing; proves k was handled
+	close(gate)
+	h.waitFrames(3)
+	h.key("z")
+	h.key("z")
+	want := []time.Duration{15 * time.Second, 15 * time.Second, 0}
+	if got := h.collect.seen(); !equalAges(got, want) {
+		t.Errorf("probes %v, want %v: one more, and fresh", got, want)
+	}
+	h.key("q")
+	if err := h.wait(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// keybarQ finds where q is drawn on the keybar of the frame on screen.
+func keybarQ(t *testing.T, hits []*LineHit) (row, column int) {
+	t.Helper()
+	for i, hit := range hits {
+		if hit == nil || hit.Keybar == nil {
+			continue
+		}
+		for c := range 100 {
+			if key, ok := KeybarKeyAt(100, false, *hit.Keybar, c); ok && key == "q" {
+				return i, c
+			}
+		}
+	}
+	t.Fatal("no q on the keybar")
+	return 0, 0
+}
+
+func TestAClickReadsNothingBeforeDeciding(t *testing.T) {
+	h := start(t, 15, "{not json")
+	h.waitFrames(1)
+	_, hits := FrameWithHits(h.collect.st, View{}, 100, 40, time.UTC)
+	row := -1
+	for i, hit := range hits {
+		if hit != nil && hit.Program != nil && *hit.Program == 2 {
+			row = i
+		}
+	}
+	h.key("\x1b[<0;5;" + strconv.Itoa(row+1) + "M")
+	h.waitFrames(2)
+	if got := "\x1b[H" + h.frames()[1]; got != painted(h.collect.st, View{Selected: 2}, 100, 40) {
+		t.Errorf("a row click did not select with control.json unreadable:\n%q", got)
+	}
+	qRow, qColumn := keybarQ(t, hits)
+	h.key("\x1b[<0;" + strconv.Itoa(qColumn+1) + ";" + strconv.Itoa(qRow+1) + "M")
+	if err := h.wait(); err != nil {
+		t.Fatal(err)
+	}
+	checkRestored(t, h)
 }
