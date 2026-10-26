@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/cadam11/drovr/internal/help"
 )
 
 func TestRun(t *testing.T) {
@@ -47,4 +49,30 @@ func errText(err error) string {
 		return "exit 1"
 	}
 	return err.Error()
+}
+
+// Every registry command reaches a handler. A command's own refusal is fine; "not ported" is not.
+// An empty DROVR_HOME and HOME keep writes (init) in the temp dir, and an empty PATH means
+// teamclaude, orca, launchctl and node cannot be found, so status/tidy/release refuse quickly.
+func TestEveryRegistryCommandDispatches(t *testing.T) {
+	t.Setenv("DROVR_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", "")
+	for _, c := range help.Commands {
+		switch c.Name {
+		case "watch": // needs a TTY; its refusal path is the "watch x" case in TestRun
+			continue
+		case "tick": // takes the live tick lock and may admit cycles
+			continue
+		case "run-cycle": // a worker that watches a cycle for hours
+			continue
+		}
+		t.Run(c.Name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			err := run([]string{c.Name}, &out, &errOut)
+			if err != nil && strings.Contains(err.Error(), "not ported") {
+				t.Fatalf("%s still falls through: %v", c.Name, err)
+			}
+		})
+	}
 }

@@ -61,9 +61,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		"ledger", "usage", "tidy", "start", "release", "watch":
 		return dispatch(cmd, rest, asJSON, stdout, stderr)
 	}
-	if _, ok := help.Find(cmd); ok {
-		return notPorted(cmd, rest)
-	}
 	fmt.Fprintf(stderr, "unknown command \"%s\"\n\n", cmd)
 	fmt.Fprintln(stdout, help.RenderList())
 	return exitOne{}
@@ -183,8 +180,4 @@ func encode(w io.Writer, v any) error {
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
-}
-
-func notPorted(cmd string, rest []string) error {
-	return fmt.Errorf("drovr %s is not ported to Go yet — run: node src/cli.ts %s", cmd, strings.Join(append([]string{cmd}, rest...), " "))
 }
