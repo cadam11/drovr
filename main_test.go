@@ -73,6 +73,10 @@ func TestEveryRegistryCommandDispatches(t *testing.T) {
 			if err != nil && strings.Contains(err.Error(), "not ported") {
 				t.Fatalf("%s still falls through: %v", c.Name, err)
 			}
+			// A name missing from run's case list lands on the unknown-command path.
+			if strings.Contains(errOut.String(), "unknown command") {
+				t.Fatalf("%s is in the registry but run does not dispatch it: %q", c.Name, errOut.String())
+			}
 		})
 	}
 }
