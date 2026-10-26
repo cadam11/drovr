@@ -42,8 +42,8 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 ! git rev-parse -q --verify "refs/tags/v$version" > /dev/null || refuse "tag v$version exists"
 git ls-remote --exit-code git@github.com:cadam11/homebrew-tap.git > /dev/null 2>&1 ||
   refuse "tap repo cadam11/homebrew-tap is not reachable — create it first: gh repo create cadam11/homebrew-tap --public"
-! git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null || refuse "tag v$version already exists on origin"
-
+rc=0; git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null 2>&1 || rc=$?
+[ "$rc" = 2 ] || { [ "$rc" != 0 ] || refuse "tag v$version already exists on origin"; refuse "could not check origin for tag v$version"; }
 # Everything below touches the network or the repo history.
 # Notes cover everything since the latest release tag, or the whole history if there is none.
 prev=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
