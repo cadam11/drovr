@@ -1,0 +1,200 @@
+{
+  "fn": "watch.frameWithHits",
+  "input": {
+    "state": {
+      "schemaVersion": 1,
+      "generatedAt": "2026-08-22T12:00:00.000Z",
+      "mode": "off",
+      "modeFromPhone": false,
+      "pauseUntil": null,
+      "maxConcurrentCycles": 2,
+      "reserve": 1,
+      "cyclesInFlight": 0,
+      "service": {
+        "loaded": true,
+        "intervalSeconds": 600,
+        "lastTickAt": "2026-08-22T12:00:00.000Z",
+        "overdue": false
+      },
+      "pool": {
+        "usableAccounts": 3,
+        "fundingAccounts": 0,
+        "fable": 0,
+        "general": 0,
+        "session": 0
+      },
+      "bindingBucket": "fable",
+      "cyclesFundable": 0,
+      "bindingRecoveryAt": "2026-08-26T00:00:00.000Z",
+      "capacityNote": "fable is tightest, more room in 4d — no account has room in all three buckets: fable is full on a, b and c",
+      "hoursToWeeklyReset": 84,
+      "allocation": {
+        "fable": {
+          "bucket": "fable",
+          "total": 3,
+          "yoursSpent": 0.25,
+          "programsSpent": 0,
+          "programsReserved": 0,
+          "programsAvailable": 0,
+          "yoursReserved": 2.75
+        },
+        "general": {
+          "bucket": "general",
+          "total": 3,
+          "yoursSpent": 0.25,
+          "programsSpent": 0,
+          "programsReserved": 0,
+          "programsAvailable": 0,
+          "yoursReserved": 2.75
+        },
+        "session": {
+          "bucket": "session",
+          "total": 3,
+          "yoursSpent": 0,
+          "programsSpent": 0,
+          "programsReserved": 0,
+          "programsAvailable": 0,
+          "yoursReserved": 3
+        }
+      },
+      "programs": [
+        {
+          "name": "demo",
+          "enabled": true,
+          "priority": 0,
+          "verdict": "STOP",
+          "reason": "mode is off",
+          "kind": null,
+          "startedAt": null,
+          "pid": null,
+          "asksUrl": null,
+          "context": null,
+          "preview": null
+        }
+      ],
+      "accounts": [
+        {
+          "name": "a",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": true,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.05,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.05,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        },
+        {
+          "name": "b",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": false,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        },
+        {
+          "name": "c",
+          "org": null,
+          "status": "active",
+          "sessions": 0,
+          "disabled": false,
+          "current": false,
+          "lastUsedAt": null,
+          "fableEligible": null,
+          "fableTarget": false,
+          "buckets": {
+            "session": {
+              "usedFraction": 0,
+              "resetsAt": "2026-08-22T14:00:00.000Z"
+            },
+            "general": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            },
+            "fable": {
+              "usedFraction": 0.1,
+              "resetsAt": "2026-08-26T00:00:00.000Z"
+            }
+          },
+          "switchThresholds": {
+            "session": null,
+            "general": null,
+            "fable": null
+          }
+        }
+      ],
+      "recentCycles": []
+    },
+    "view": {
+      "selected": 0,
+      "message": "",
+      "confirmStop": false,
+      "confirmStart": false,
+      "help": false
+    },
+    "columns": 100
+  },
+  "output": {
+    "text": "\u001b[1mdrovr\u001b[0m  \u001b[2mmode off\u001b[0m  \u001b[2m12:00:00\u001b[0m\n  \u001b[32m●\u001b[0m \u001b[2mloaded. Last tick recorded a decision 0m ago\u001b[0m\n\n\u001b[31m  mode is off — press m to cycle modes\u001b[0m\n\n  \u001b[1mPROGRAMS\u001b[0m  \u001b[2m0/2 in flight\u001b[0m\n \u001b[36m▸\u001b[0m\u001b[2mp 0\u001b[0m \u001b[7mdemo          \u001b[0m \u001b[31mSTOP\u001b[0m  \u001b[2mmode is off\u001b[0m\n\n  \n  j/k select\u001b[2m · \u001b[0mspace enable\u001b[2m · \u001b[0m[ ] priority\u001b[2m · \u001b[0mm mode\u001b[2m · \u001b[0mp pause\u001b[2m · \u001b[0m+/- cap\u001b[2m · \u001b[0m< > reserve\n  r refresh\u001b[2m · \u001b[0mt tick\u001b[2m · \u001b[0mo asks\u001b[2m · \u001b[0ms start\u001b[2m · \u001b[0mx interrupt\u001b[2m · \u001b[0ml release\u001b[2m · \u001b[0m? help\u001b[2m · \u001b[0mq quit",
+    "hits": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      {
+        "program": 0
+      },
+      null,
+      null,
+      {
+        "keybar": 0
+      },
+      {
+        "keybar": 1
+      }
+    ]
+  }
+}

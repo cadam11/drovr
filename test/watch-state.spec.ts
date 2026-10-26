@@ -420,3 +420,80 @@ test('the frame renders at every width for the unclamped, roomy and tight cases'
   const { hits } = frameWithHits(state, view, 100);
   assert.ok(hits.some((hit) => hit !== null && 'asks' in hit));
 });
+
+/**
+ * Branches of the frame the cases above never reach, each pinned by the line that proves
+ * it. They record through frameWithHits (columns supplied) so the Go port replays them.
+ */
+const built = (input: Record<string, unknown> = {}) => buildState({
+  status: healthy(), control: control(), cycles: [], now: NOW,
+  service: { loaded: true, intervalSeconds: 600, lastTickAt: NOW },
+  previews: new Map(), locks: new Map(), asksUrls: new Map(),
+  ...input,
+});
+
+const running = (program: string, minutesAgo: number) => ({
+  ...finished(program, 0),
+  startedAt: new Date(NOW - minutesAgo * 60_000).toISOString(),
+  endedAt: null,
+  exit: 'running' as const,
+  poolAfter: null,
+  asksRaised: 0,
+});
+
+test('mode off replaces the bars with the off line', () => {
+  const { text } = frameWithHits(built({ control: control({ mode: 'off' }) }), view, 100);
+  assert.match(text, /mode off/);
+  assert.match(text, /mode is off — press m to cycle modes/);
+  assert.doesNotMatch(text, /ALLOCATION/);
+});
+
+test('a pause still ahead of generatedAt is named in the header', () => {
+  const pauseUntil = new Date(NOW + 3 * HOUR).toISOString();
+  const { text } = frameWithHits(built({ control: control({ pauseUntil }) }), view, 100);
+  assert.match(text.split('\n')[0]!, /paused until 15:00/);
+});
+
+test('a running cycle shows RUN with its pid, elapsed time and kind', () => {
+  const state = built({ cycles: [running('demo', 75)], locks: new Map([['demo', 4242]]) });
+  const { text } = frameWithHits(state, view, 100);
+  assert.match(text.replace(/\x1b\[[0-9;]*m/g, ''), /demo\s+RUN\s+pid/);
+  assert.match(text, /pid 4242 · 1h15m · delivery/);
+});
+
+test('an unloaded service names the command that fixes it', () => {
+  const { text } = frameWithHits(built({ service: { loaded: false, intervalSeconds: null, lastTickAt: null } }), view, 100);
+  assert.match(text, /launchd agent is not loaded, so no tick will fire\. Fix: drovr service install/);
+});
+
+test('a loaded service that has never ticked says so, with its interval', () => {
+  const { text } = frameWithHits(built({ service: { loaded: true, intervalSeconds: 600, lastTickAt: null } }), view, 80);
+  assert.match(text, /loaded \(fires every 600s\), but no tick has recorded a decision yet/);
+});
+
+test('zero programs draws the PROGRAMS header and no rows', () => {
+  const { text, hits } = frameWithHits(built({ control: control({ programs: [] }) }), view, 100);
+  assert.match(text, /PROGRAMS/);
+  assert.ok(hits.every((hit) => hit === null || !('program' in hit)));
+});
+
+test('a disabled program is marked (off)', () => {
+  const state = built({ control: control({ programs: [{ name: 'demo', cwd: '/tmp/demo', enabled: false }] }) });
+  const { text } = frameWithHits(state, view, 100);
+  assert.match(text, /demo \(off\)/);
+});
+
+test('a long reason wraps below the row instead of losing its tail', () => {
+  const state = built();
+  const tail = 'and this is the end of the reason';
+  state.programs[0]!.reason = `${'a long reason that keeps going '.repeat(5)}${tail}`;
+  for (const width of [60, 100]) {
+    const { text, hits } = frameWithHits(state, view, width);
+    const rows = text.split('\n').filter((_, index) => {
+      const hit = hits[index];
+      return hit !== null && hit !== undefined && 'program' in hit;
+    });
+    assert.ok(rows.length > 1, `${width}: the reason did not wrap`);
+    assert.match(rows.join(' '), new RegExp(tail));
+  }
+});
