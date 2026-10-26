@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -159,6 +160,104 @@ func TestReportRefusalsMatchOracle(t *testing.T) {
 		}
 		if gout != nout || gerr != nerr || gcode != ncode || gcode != 1 {
 			t.Errorf("%v: go %d %q %q, node %d %q %q", args, gcode, gout, gerr, ncode, nout, nerr)
+		}
+	}
+}
+
+var (
+	isoInstant = regexp.MustCompile(`\d{4}-\d\d-\d\dT[\d:.]+Z`)
+	zodPrefix  = "control file is invalid:"
+)
+
+type writerRun struct {
+	out, err, file string
+	code           int
+}
+
+// runWriter runs one CLI on its own temp home, so Go and Node never see each other's writes,
+// and returns its output with that home's path replaced by $H.
+func runWriter(t *testing.T, name string, argv, env []string, seed []byte, twice bool) writerRun {
+	home := t.TempDir()
+	if seed != nil {
+		if err := os.WriteFile(filepath.Join(home, "control.json"), seed, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e := append(env, "DROVR_HOME="+home, "HOME="+home)
+	for i := range argv {
+		argv[i] = strings.ReplaceAll(argv[i], "{tmp}", home)
+	}
+	var r writerRun
+	runs := 1
+	if twice {
+		runs = 2
+	}
+	for range runs {
+		c := exec.Command(name, argv...)
+		if name != goBin {
+			c = exec.Command(name, append([]string{"src/cli.ts"}, argv...)...)
+		}
+		c.Env = e
+		r.out, r.err, r.code = runCaptured(c)
+	}
+	file, _ := os.ReadFile(filepath.Join(home, "control.json"))
+	r.file = string(file)
+	for _, s := range []*string{&r.out, &r.err, &r.file} {
+		*s = isoInstant.ReplaceAllString(strings.ReplaceAll(*s, home, "$H"), "<iso>")
+	}
+	// Rule "prefix": zod's issue JSON differs from the Go schema's one-liner; compare up to the prefix.
+	if i := strings.Index(r.err, zodPrefix); i >= 0 {
+		r.err = r.err[:i+len(zodPrefix)]
+	}
+	return r
+}
+
+// Every write runs on a fresh copy of the fixture. Comparison is exact on stdout, stderr, exit
+// code and the resulting control.json bytes, with two rules: zod messages compare up to
+// "control file is invalid:" ("prefix"), and pause's ISO instant is masked ("mask").
+func TestControlWritersMatchOracle(t *testing.T) {
+	node, env := oracle(t)
+	seed, err := os.ReadFile("testdata/home/control.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	away := []byte(strings.Replace(string(seed), `"mode": "normal"`, `"mode": "off"`, 1))
+	cases := [][]string{
+		{"add", "delta", "{tmp}", "--priority", "2"}, {"add", "delta", "{tmp}", "--priority"},
+		{"add", "delta", "{tmp}", "--priority", "abc"}, {"add", "delta", "{tmp}", "--no-aice", "--model", "m", "--no-direnv", "--deadline", "2026-12-01"},
+		{"add", "delta", "{tmp}", "--asks", "p/asks", "--asks-file", "a.md"}, {"add", "delta", "/nope/nope"},
+		{"add", "alpha", "{tmp}"}, {"add"}, {"add", "x"},
+		{"host", "beta", "--clear"}, {"host", "alpha", "--clear"}, {"host", "beta", "--environment", "e", "--ssh", "u@h", "--cwd", "/x"},
+		{"host", "beta", "--environment", "e", "--ssh", "u@h", "--cwd", "/x", "--drovr-home", "/d", "--claude", "/c", "--wake", "w"},
+		{"host", "beta", "--ssh", "u@h"}, {"host", "beta", "--environment", "e", "--ssh", "--cwd", "/x"},
+		{"host", "beta", "--environment", "e", "--ssh", "u@h", "--cwd", "rel"}, {"host", "nope", "--clear"}, {"host"}, {"host", "--clear"},
+		{"rm", "gamma"}, {"rm", "nope"}, {"rm"},
+		{"cap"}, {"cap", "12abc"}, {"cap", "-3"}, {"cap", "alpha"}, {"cap", "alpha", "3"}, {"cap", "alpha", "7.9"},
+		{"cap", "alpha", "global"}, {"cap", "alpha", "x"}, {"cap", "nope", "3"}, {"cap", "--json"},
+		{"mode", "away"}, {"mode", "sideways"}, {"mode"},
+		{"pause", "2h"}, {"pause", "alpha", "30m"}, {"pause"}, {"pause", "0h"}, {"pause", "abc"}, {"pause", "alpha"},
+		{"pause", "nope", "xyz"}, {"pause", "nope", "1h"},
+		{"resume"}, {"resume", "beta"}, {"resume", "nope"}, {"resume", "--json"},
+		{"cadence"}, {"cadence", "alpha", "6h"}, {"cadence", "alpha", "off"}, {"cadence", "alpha", "soon"},
+		{"cadence", "alpha"}, {"cadence", "nope", "6h"},
+		{"reserve"}, {"reserve", "60"}, {"reserve", "45%"}, {"reserve", "0"}, {"reserve", "abc"}, {"reserve", "--json"},
+	}
+	for _, argv := range cases {
+		g := runWriter(t, goBin, slices.Clone(argv), env, seed, false)
+		n := runWriter(t, node, slices.Clone(argv), env, seed, false)
+		if g != n {
+			t.Errorf("%v:\n go   %+v\n node %+v", argv, g, n)
+		}
+	}
+	for _, argv := range [][]string{{"reserve", "60"}, {"reserve"}} {
+		if g, n := runWriter(t, goBin, slices.Clone(argv), env, away, false), runWriter(t, node, slices.Clone(argv), env, away, false); g != n {
+			t.Errorf("%v in mode off:\n go   %+v\n node %+v", argv, g, n)
+		}
+	}
+	// init runs on an empty home, then again for the "already exists" line.
+	for _, twice := range []bool{false, true} {
+		if g, n := runWriter(t, goBin, []string{"init"}, env, nil, twice), runWriter(t, node, []string{"init"}, env, nil, twice); g != n {
+			t.Errorf("init twice=%v:\n go   %+v\n node %+v", twice, g, n)
 		}
 	}
 }

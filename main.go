@@ -56,7 +56,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "version", "--version":
 		fmt.Fprintln(stdout, version)
 		return nil
-	case "status", "report", "notify", "service", "tick", "run-cycle":
+	case "status", "report", "notify", "service", "tick", "run-cycle",
+		"init", "add", "host", "rm", "cap", "mode", "pause", "resume", "cadence", "reserve":
 		return dispatch(cmd, rest, asJSON, stdout, stderr)
 	}
 	if _, ok := help.Find(cmd); ok {
@@ -90,6 +91,26 @@ func dispatch(cmd string, rest []string, asJSON bool, stdout, stderr io.Writer) 
 		return cli.Status(ctx, env, asJSON)
 	case "report":
 		return cli.Report(env, rest)
+	case "init":
+		return cli.Init(env, rest)
+	case "add":
+		return cli.Add(env, rest)
+	case "host":
+		return cli.Host(env, rest)
+	case "rm":
+		return cli.Remove(env, rest)
+	case "cap":
+		return cli.Cap(env, rest)
+	case "mode":
+		return cli.Mode(env, rest)
+	case "pause":
+		return cli.Pause(env, rest)
+	case "resume":
+		return cli.Resume(env, rest)
+	case "cadence":
+		return cli.Cadence(env, rest)
+	case "reserve":
+		return cli.Reserve(env, rest)
 	case "notify":
 		return cli.Notify(ctx, env, rest, asJSON)
 	case "service":
