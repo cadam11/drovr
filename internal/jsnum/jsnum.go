@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -82,4 +83,33 @@ func String(v float64) string {
 	mant, exp, _ := strings.Cut(s, "e")
 	sign, digits := exp[:1], strings.TrimLeft(exp[1:], "0")
 	return mant + "e" + sign + digits
+}
+
+var (
+	intPrefix   = regexp.MustCompile(`^\s*[+-]?\d+`)
+	floatPrefix = regexp.MustCompile(`^\s*[+-]?(Infinity|(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?)`)
+)
+
+// ParseInt is Number.parseInt(s, 10): ok is false where JS answers NaN.
+func ParseInt(s string) (float64, bool) {
+	return parsePrefix(intPrefix, s)
+}
+
+// ParseFloat is Number.parseFloat: the longest decimal-literal prefix, ok false for NaN.
+func ParseFloat(s string) (float64, bool) {
+	return parsePrefix(floatPrefix, s)
+}
+
+func parsePrefix(re *regexp.Regexp, s string) (float64, bool) {
+	m := strings.TrimSpace(re.FindString(s))
+	if m == "" {
+		return 0, false
+	}
+	// strconv accepts "Infinity" case-insensitively and a signed form; an out-of-range
+	// literal returns +-Inf with a range error, which is what JS yields too.
+	v, err := strconv.ParseFloat(m, 64)
+	if err != nil && !math.IsInf(v, 0) {
+		return 0, false
+	}
+	return v, true
 }

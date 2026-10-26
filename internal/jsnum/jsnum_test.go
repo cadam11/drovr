@@ -67,3 +67,35 @@ func TestStringIsJSNumberToString(t *testing.T) {
 		}
 	}
 }
+
+func TestParseIntLikeJS(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want float64
+		ok   bool
+	}{
+		{"12abc", 12, true}, {"1.9", 1, true}, {"1e3", 1, true}, {"0x10", 0, true},
+		{"  -7", -7, true}, {"", 0, false}, {"abc", 0, false}, {"+3", 3, true},
+	} {
+		got, ok := ParseInt(c.in)
+		if ok != c.ok || got != c.want {
+			t.Errorf("ParseInt(%q) = %v,%v want %v,%v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestParseFloatLikeJS(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want float64
+		ok   bool
+	}{
+		{"45abc", 45, true}, {".5", 0.5, true}, {"1e1", 10, true}, {"Infinity", math.Inf(1), true},
+		{"-Infinity", math.Inf(-1), true}, {"abc", 0, false}, {"  60%", 60, true}, {"", 0, false},
+	} {
+		got, ok := ParseFloat(c.in)
+		if ok != c.ok || got != c.want {
+			t.Errorf("ParseFloat(%q) = %v,%v want %v,%v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}

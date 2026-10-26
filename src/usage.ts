@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import { isUsable } from './capacity.ts';
+import { record } from './record.ts';
 import { spentSince, type CycleRecord } from './ledger.ts';
 import type { BucketName } from './allocation.ts';
 import type { TeamclaudeStatus } from './teamclaude.ts';
@@ -155,7 +156,7 @@ export const shareOf = (sample: UsageSample, cycles: CycleRecord[], bucket: Buck
   const at = Date.parse(sample.at);
   const total = usable(sample).reduce((sum, entry) => sum + entry[bucket], 0);
   const drovr = spentSince(cycles, windowStartOf(sample, bucket, at), at)[bucket];
-  return { at, total, drovr, yours: Math.max(0, total - drovr) };
+  return record('usage.shareOf', { sample, cycles, bucket }, { at, total, drovr, yours: Math.max(0, total - drovr) });
 };
 
 export const sharesOf = (
@@ -189,6 +190,19 @@ export const observedYours = (
   bucket: BucketName,
   fraction = 0.9,
   minSamples = 24,
+): Observed | null =>
+  record(
+    'usage.observedYours',
+    { samples, cycles, bucket, fraction, minSamples },
+    observedYoursUnrecorded(samples, cycles, bucket, fraction, minSamples),
+  );
+
+const observedYoursUnrecorded = (
+  samples: UsageSample[],
+  cycles: CycleRecord[],
+  bucket: BucketName,
+  fraction: number,
+  minSamples: number,
 ): Observed | null => {
   if (samples.length < minSamples) return null;
   const shares = sharesOf(samples, cycles, bucket);

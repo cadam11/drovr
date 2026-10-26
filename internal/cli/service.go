@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"slices"
-	"strconv"
-	"strings"
 
 	"github.com/cadam11/drovr/internal/epoch"
+	"github.com/cadam11/drovr/internal/jsnum"
 	"github.com/cadam11/drovr/internal/paths"
 	"github.com/cadam11/drovr/internal/service"
 )
@@ -57,18 +55,16 @@ func Service(ctx context.Context, env Env, args []string, asJSON bool) error {
 	return fmt.Errorf(`unknown service subcommand "%s" — expected status, install, uninstall or print (label: %s)`, sub, a.label)
 }
 
-var leadingDigits = regexp.MustCompile(`^\s*[+-]?\d+`)
-
 // plistInput reads the interval as parseInt does. The TS wrote NaN into the plist for a word;
 // refusing it is the one deliberate difference.
 func plistInput(env Env, a agent, args []string) (service.PlistInput, error) {
 	seconds := a.interval
 	if len(args) > 1 {
-		n, err := strconv.Atoi(strings.TrimSpace(leadingDigits.FindString(args[1])))
-		if err != nil {
+		n, ok := jsnum.ParseInt(args[1])
+		if !ok {
 			return service.PlistInput{}, fmt.Errorf("the interval is a number of seconds, got %q", args[1])
 		}
-		seconds = n
+		seconds = int(n)
 	}
 	return service.PlistInput{
 		Label: a.label, Binary: env.Self, Args: a.args, LogName: a.logName, IntervalSeconds: seconds,

@@ -9,11 +9,11 @@ import (
 	"os"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/cadam11/drovr/internal/control"
 	"github.com/cadam11/drovr/internal/epoch"
+	"github.com/cadam11/drovr/internal/jsnum"
 	"github.com/cadam11/drovr/internal/ledger"
 	"github.com/cadam11/drovr/internal/paths"
 	"github.com/cadam11/drovr/internal/shape"
@@ -137,9 +137,6 @@ func WriteReport(p paths.Paths, program string, r Report) (Report, error) {
 
 var reportFlags = []string{"--exit", "--startup-tokens", "--tickets-moved", "--prs-opened", "--commits", "--asks-raised", "--pause-until", "--cadence"}
 
-// leadingInt is what parseInt(raw, 10) reads: optional space and sign, then digits, the rest ignored.
-var leadingInt = regexp.MustCompile(`^\s*[+-]?\d+`)
-
 func flagValue(args []string, name string) (string, bool) {
 	i := slices.Index(args, "--"+name)
 	if i == -1 {
@@ -156,9 +153,8 @@ func numberArg(args []string, name string) (*float64, error) {
 	if !ok {
 		return nil, nil
 	}
-	digits := leadingInt.FindString(raw)
-	value, err := strconv.ParseFloat(strings.TrimSpace(digits), 64)
-	if digits == "" || err != nil {
+	value, ok := jsnum.ParseInt(raw)
+	if !ok {
 		return nil, fmt.Errorf("--%s needs a number, got %q", name, raw)
 	}
 	return &value, nil

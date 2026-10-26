@@ -1,0 +1,39 @@
+{
+  "fn": "usage.shareOf",
+  "input": {
+    "sample": {
+      "v": 1,
+      "at": "2026-08-22T12:16:00.000Z",
+      "accounts": [
+        {
+          "name": "a",
+          "usable": true,
+          "fable": 0,
+          "general": 0.6,
+          "session": 0,
+          "fableReset": 1787703360000,
+          "generalReset": 1787703360000,
+          "sessionReset": 1787408160000
+        },
+        {
+          "name": "b",
+          "usable": true,
+          "fable": 0,
+          "general": 0.6,
+          "session": 0,
+          "fableReset": 1787703360000,
+          "generalReset": 1787703360000,
+          "sessionReset": 1787408160000
+        }
+      ]
+    },
+    "cycles": [],
+    "bucket": "general"
+  },
+  "output": {
+    "at": 1787400960000,
+    "total": 1.2,
+    "drovr": 0,
+    "yours": 1.2
+  }
+}

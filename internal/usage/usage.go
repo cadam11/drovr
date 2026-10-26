@@ -6,10 +6,13 @@ package usage
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/cadam11/drovr/internal/capacity"
+	"github.com/cadam11/drovr/internal/control"
 	"github.com/cadam11/drovr/internal/epoch"
 	"github.com/cadam11/drovr/internal/ledger"
 	"github.com/cadam11/drovr/internal/shape"
@@ -159,4 +162,106 @@ func parseAccount(raw json.RawMessage, path string) (AccountSample, error) {
 	shape.RequiredNullable(o, "generalReset", &a.GeneralReset)
 	shape.RequiredNullable(o, "sessionReset", &a.SessionReset)
 	return a, o.Err
+}
+
+const (
+	weekMs    = 168 * 3_600_000
+	sessionMs = 5 * 3_600_000
+)
+
+// Share splits one sample into the pool's total use, drovr's own ledger spend and the rest.
+type Share struct {
+	At    float64 `json:"at"`
+	Total float64 `json:"total"`
+	Drovr float64 `json:"drovr"`
+	// Clamped at zero: the ledger can over-report a shrunken pool.
+	Yours float64 `json:"yours"`
+}
+
+// Observed is what a reserve sized from evidence would have to cover.
+type Observed struct {
+	Bucket       control.Bucket `json:"bucket"`
+	Samples      int            `json:"samples"`
+	Now          float64        `json:"now"`
+	Peak         float64        `json:"peak"`
+	PeakFraction float64        `json:"peakFraction"`
+}
+
+func usableAccounts(s Sample) []AccountSample {
+	var out []AccountSample
+	for _, a := range s.Accounts {
+		if a.Usable {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func (a AccountSample) bucket(b control.Bucket) (used float64, reset *epoch.Millis) {
+	switch b {
+	case "fable":
+		return a.Fable, a.FableReset
+	case "general":
+		return a.General, a.GeneralReset
+	case "session":
+		return a.Session, a.SessionReset
+	}
+	panic("usage: unknown bucket " + string(b))
+}
+
+// windowStartOf is when the window holding the sample opened, read from the soonest future
+// reset among usable accounts; with none open the window starts at the sample.
+func windowStartOf(s Sample, b control.Bucket, at epoch.Millis) float64 {
+	soonest := math.Inf(1)
+	for _, a := range usableAccounts(s) {
+		if _, reset := a.bucket(b); reset != nil && *reset > at {
+			soonest = math.Min(soonest, float64(*reset))
+		}
+	}
+	if math.IsInf(soonest, 1) {
+		return float64(at)
+	}
+	if b == "session" {
+		return soonest - sessionMs
+	}
+	return soonest - weekMs
+}
+
+// ShareOf attributes one sample's usage to drovr's ledger and to the operator. The ledger
+// term is bounded to cycles finished by the sample, since a running one had not yet shown
+// up in the usage the sample recorded.
+func ShareOf(s Sample, cycles []ledger.Cycle, b control.Bucket) Share {
+	at, ok := epoch.Parse(s.At)
+	if !ok {
+		panic("usage: sample at is not an instant: " + s.At)
+	}
+	total := 0.0
+	for _, a := range usableAccounts(s) {
+		used, _ := a.bucket(b)
+		total += used
+	}
+	drovr := ledger.SpentSince(cycles, windowStartOf(s, b, at), at).Of(b)
+	return Share{At: float64(at), Total: total, Drovr: drovr, Yours: math.Max(0, total-drovr)}
+}
+
+// ObservedYours is the operator's share at the fraction-th percentile of samples, nil below
+// minSamples rather than a confident number off thin evidence.
+func ObservedYours(samples []Sample, cycles []ledger.Cycle, b control.Bucket, fraction float64, minSamples int) *Observed {
+	if len(samples) < minSamples {
+		return nil
+	}
+	yours := make([]float64, len(samples))
+	for i, s := range samples {
+		yours[i] = ShareOf(s, cycles, b).Yours
+	}
+	sorted := slices.Clone(yours)
+	slices.Sort(sorted)
+	rank := int(math.Ceil(fraction * float64(len(sorted))))
+	peak := sorted[min(len(sorted)-1, max(0, rank-1))]
+	accounts := len(usableAccounts(samples[len(samples)-1]))
+	fractionOfPool := 0.0
+	if accounts != 0 {
+		fractionOfPool = peak / float64(accounts)
+	}
+	return &Observed{Bucket: b, Samples: len(samples), Now: yours[len(yours)-1], Peak: peak, PeakFraction: fractionOfPool}
 }

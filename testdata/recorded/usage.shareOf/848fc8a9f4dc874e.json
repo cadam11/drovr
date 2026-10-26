@@ -1,0 +1,29 @@
+{
+  "fn": "usage.shareOf",
+  "input": {
+    "sample": {
+      "v": 1,
+      "at": "2026-08-22T12:23:00.000Z",
+      "accounts": [
+        {
+          "name": "a",
+          "usable": true,
+          "fable": 0,
+          "general": 0.1,
+          "session": 0,
+          "fableReset": 1787703780000,
+          "generalReset": 1787703780000,
+          "sessionReset": 1787408580000
+        }
+      ]
+    },
+    "cycles": [],
+    "bucket": "general"
+  },
+  "output": {
+    "at": 1787401380000,
+    "total": 0.1,
+    "drovr": 0,
+    "yours": 0.1
+  }
+}

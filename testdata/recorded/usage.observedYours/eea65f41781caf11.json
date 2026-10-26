@@ -1,0 +1,498 @@
+{
+  "fn": "usage.observedYours",
+  "input": {
+    "samples": [
+      {
+        "v": 1,
+        "at": "2026-08-22T12:00:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702400000,
+            "generalReset": 1787702400000,
+            "sessionReset": 1787407200000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:01:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702460000,
+            "generalReset": 1787702460000,
+            "sessionReset": 1787407260000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:02:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702520000,
+            "generalReset": 1787702520000,
+            "sessionReset": 1787407320000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:03:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702580000,
+            "generalReset": 1787702580000,
+            "sessionReset": 1787407380000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:04:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702640000,
+            "generalReset": 1787702640000,
+            "sessionReset": 1787407440000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:05:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702700000,
+            "generalReset": 1787702700000,
+            "sessionReset": 1787407500000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:06:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702760000,
+            "generalReset": 1787702760000,
+            "sessionReset": 1787407560000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:07:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702820000,
+            "generalReset": 1787702820000,
+            "sessionReset": 1787407620000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:08:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702880000,
+            "generalReset": 1787702880000,
+            "sessionReset": 1787407680000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:09:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787702940000,
+            "generalReset": 1787702940000,
+            "sessionReset": 1787407740000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:10:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703000000,
+            "generalReset": 1787703000000,
+            "sessionReset": 1787407800000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:11:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703060000,
+            "generalReset": 1787703060000,
+            "sessionReset": 1787407860000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:12:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703120000,
+            "generalReset": 1787703120000,
+            "sessionReset": 1787407920000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:13:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703180000,
+            "generalReset": 1787703180000,
+            "sessionReset": 1787407980000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:14:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703240000,
+            "generalReset": 1787703240000,
+            "sessionReset": 1787408040000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:15:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703300000,
+            "generalReset": 1787703300000,
+            "sessionReset": 1787408100000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:16:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703360000,
+            "generalReset": 1787703360000,
+            "sessionReset": 1787408160000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:17:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703420000,
+            "generalReset": 1787703420000,
+            "sessionReset": 1787408220000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:18:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703480000,
+            "generalReset": 1787703480000,
+            "sessionReset": 1787408280000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:19:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703540000,
+            "generalReset": 1787703540000,
+            "sessionReset": 1787408340000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:20:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703600000,
+            "generalReset": 1787703600000,
+            "sessionReset": 1787408400000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:21:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703660000,
+            "generalReset": 1787703660000,
+            "sessionReset": 1787408460000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:22:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703720000,
+            "generalReset": 1787703720000,
+            "sessionReset": 1787408520000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:23:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703780000,
+            "generalReset": 1787703780000,
+            "sessionReset": 1787408580000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:24:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703840000,
+            "generalReset": 1787703840000,
+            "sessionReset": 1787408640000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:25:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703900000,
+            "generalReset": 1787703900000,
+            "sessionReset": 1787408700000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:26:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787703960000,
+            "generalReset": 1787703960000,
+            "sessionReset": 1787408760000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:27:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787704020000,
+            "generalReset": 1787704020000,
+            "sessionReset": 1787408820000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:28:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.1,
+            "session": 0,
+            "fableReset": 1787704080000,
+            "generalReset": 1787704080000,
+            "sessionReset": 1787408880000
+          }
+        ]
+      },
+      {
+        "v": 1,
+        "at": "2026-08-22T12:29:00.000Z",
+        "accounts": [
+          {
+            "name": "a",
+            "usable": true,
+            "fable": 0,
+            "general": 0.9,
+            "session": 0,
+            "fableReset": 1787704140000,
+            "generalReset": 1787704140000,
+            "sessionReset": 1787408940000
+          }
+        ]
+      }
+    ],
+    "cycles": [],
+    "bucket": "general",
+    "fraction": 0.9,
+    "minSamples": 24
+  },
+  "output": {
+    "bucket": "general",
+    "samples": 30,
+    "now": 0.9,
+    "peak": 0.1,
+    "peakFraction": 0.1
+  }
+}

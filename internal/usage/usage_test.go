@@ -1,12 +1,16 @@
 package usage
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cadam11/drovr/internal/control"
 	"github.com/cadam11/drovr/internal/epoch"
+	"github.com/cadam11/drovr/internal/fixtures"
+	"github.com/cadam11/drovr/internal/ledger"
 	"github.com/cadam11/drovr/internal/teamclaude"
 )
 
@@ -84,4 +88,38 @@ func TestPruneKeepsExactlyTheNewestHalf(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0].At != epoch.ISO(now+2000) {
 		t.Fatalf("%v %v", got, err)
 	}
+}
+
+func TestShareOfFixtures(t *testing.T) {
+	cases := fixtures.Load(t, "usage.shareOf")
+	for _, c := range cases {
+		var in struct {
+			Sample Sample         `json:"sample"`
+			Cycles []ledger.Cycle `json:"cycles"`
+			Bucket control.Bucket `json:"bucket"`
+		}
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
+		fixtures.Equal(t, c.Name, ShareOf(in.Sample, in.Cycles, in.Bucket), c.Output)
+	}
+	t.Logf("%d cases", len(cases))
+}
+
+func TestObservedYoursFixtures(t *testing.T) {
+	cases := fixtures.Load(t, "usage.observedYours")
+	for _, c := range cases {
+		var in struct {
+			Samples    []Sample       `json:"samples"`
+			Cycles     []ledger.Cycle `json:"cycles"`
+			Bucket     control.Bucket `json:"bucket"`
+			Fraction   float64        `json:"fraction"`
+			MinSamples int            `json:"minSamples"`
+		}
+		if err := json.Unmarshal(c.Input, &in); err != nil {
+			t.Fatal(c.Name, err)
+		}
+		fixtures.Equal(t, c.Name, ObservedYours(in.Samples, in.Cycles, in.Bucket, in.Fraction, in.MinSamples), c.Output)
+	}
+	t.Logf("%d cases", len(cases))
 }

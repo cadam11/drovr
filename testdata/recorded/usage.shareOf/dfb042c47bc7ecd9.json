@@ -1,0 +1,58 @@
+{
+  "fn": "usage.shareOf",
+  "input": {
+    "sample": {
+      "v": 1,
+      "at": "2026-08-22T12:00:00.000Z",
+      "accounts": [
+        {
+          "name": "a",
+          "usable": true,
+          "fable": 0,
+          "general": 0.6,
+          "session": 0,
+          "fableReset": 1787702400000,
+          "generalReset": 1787702400000,
+          "sessionReset": 1787407200000
+        }
+      ]
+    },
+    "cycles": [
+      {
+        "v": 1,
+        "kind": "delivery",
+        "program": "demo",
+        "startedAt": "2026-08-15T12:00:00.000Z",
+        "endedAt": "2026-08-15T13:00:00.000Z",
+        "exit": "seam",
+        "poolBefore": {
+          "fable": 1,
+          "general": 1,
+          "session": 1
+        },
+        "poolAfter": {
+          "fable": 0.9,
+          "general": 0.85,
+          "session": 0.7
+        },
+        "startupTokens": 1000,
+        "yield": {
+          "ticketsMoved": 1,
+          "prsOpened": 0,
+          "commits": 2
+        },
+        "asksRaised": 0,
+        "pauseUntil": null,
+        "sessionId": null,
+        "closing": null
+      }
+    ],
+    "bucket": "general"
+  },
+  "output": {
+    "at": 1787400000000,
+    "total": 0.6,
+    "drovr": 0,
+    "yours": 0.6
+  }
+}
