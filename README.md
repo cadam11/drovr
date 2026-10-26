@@ -37,17 +37,18 @@ everything blocked) and writes a report, which is the signal that tells drovr it
 ## Install
 
 ```bash
-cd ~/code/drovr && pnpm install
-node src/cli.ts init
+brew install cadam11/tap/drovr
+drovr init
 $EDITOR ~/.drovr/control.json     # add a program
-node src/cli.ts service install   # writes the launchd plist and loads it
+drovr service install             # writes the launchd plist and loads it
 ```
 
-A Go build of drovr (`go build .`) can run `tick`, `run-cycle`, `report`, `notify`, `service` and `status`; it is being proven beside the Node service with `drovr tick --shadow` and is not yet what launchd runs. The cut-over happens after a clean shadow day (E3). The install above is the one that works today.
+Upgrade with `brew upgrade drovr && drovr service install`. The second half is not optional: launchd holds the plist it loaded, and the plist bakes in the path of the binary and your PATH, so an upgrade keeps running the old definition until the agent is reloaded.
+
+Without Homebrew, download `https://drovr.app/cli/drovr_darwin_arm64.tar.gz` (checksums beside it at `/cli/drovr-sha256sums.txt`), extract it, put `drovr` on your PATH and run `xattr -d com.apple.quarantine drovr`. The binary is unsigned, so macOS quarantines a browser download; Homebrew installs skip that. Apple Silicon only.
 
 ## What you need
 
-- **Node 24 or newer.** drovr runs its TypeScript directly; there is no build step.
 - **[teamclaude](https://github.com/KarpelesLab/teamclaude)** on PATH. drovr reads
   `teamclaude status --json` once a tick for the pooled quota and launches every cycle through
   `teamclaude run`. It never changes a teamclaude setting.
@@ -66,12 +67,9 @@ Two more things are optional, and both are paid products that add to the free ba
   in a markdown file in the program's checkout (below), and nothing else changes.
 
 `service install` bakes in the PATH of the shell that runs it, since launchd starts with a bare
-one that lacks `~/Library/pnpm` and similar. It also **reloads** an already-loaded agent —
+one that lacks `/opt/homebrew/bin` and similar. It also **reloads** an already-loaded agent —
 launchd holds the plist it loaded, not the file, so rewriting alone would keep running the old
 definition.
-
-> The plist also pins the absolute `node` path from `process.execPath`. Re-run `service install`
-> after switching Node versions with nvm, or after any change to your PATH that matters.
 
 
 

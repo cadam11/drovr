@@ -174,9 +174,16 @@ Written and type-checked, never seen to fire. Unproven, not done:
   ticks exit 0, one GO (propra-cmo 14:15), a Go `run-cycle` watching an interactive runner to its
   `seam` report with the closing message captured and the rest applied, the status publish. Not seen
   from the Go side: a refusal over a thin pool, a leftover release, a blocked or stalled runner, a
-  headless or hosted cycle, reconciliation of an abandoned record. Everything but `tick`, `run-cycle`,
-  `report`, `notify`, `service` and `status` is still the Node CLI on PATH (plan E3). The Go hey client
+  headless or hosted cycle, reconciliation of an abandoned record. The Go binary now has
+  every command, but is not yet the `drovr` on PATH until brew installs it. The Go hey client
   copies carry two upstream fixes (token echo) not yet released as a hey CLI.
+- **The release and the brew install.** `scripts/release.sh` and the `drovr watch` port landed
+  2026-10-26; nothing has been released or installed from them. Not seen: `brew install
+  cadam11/tap/drovr`, a `brew upgrade drovr` followed by `drovr service install` picking up the new
+  binary, the drovr.app/cli redirect serving a real release asset, and `drovr watch` on the Go
+  binary in daily use. The extent of what has been seen of watch: the controller drove it through a
+  pty on 2026-10-26 and saw the first frame, keys, mouse, resize, and q, Ctrl-C, SIGTERM and SIGHUP
+  each restore the terminal.
 - **The send budget refusing a real sender.** `SEND_BUDGET_PER_HOUR` landed 2026-10-17, proven
   in the handler suite (the 31st refused, another label and the next hour unaffected) and through
   the router as a tool error; no live sender has reached 30 in an hour, so the `rate#` row, the

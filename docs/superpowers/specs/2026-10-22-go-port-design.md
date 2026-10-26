@@ -216,6 +216,10 @@ program keep working; a user who downgrades to the Node tree sees the same files
 2. Intel: no.
 3. `0.2.0` waits for watch parity.
 
+## Answered 2026-10-26
+
+4. Cut-over: the Go tick went live after one clean shadow pass (3/3 paired with the Node tick, zero differences), at the operator's word, instead of the planned clean day.
+
 ## Plans
 
 Three plans, written one at a time so each can name the Go signatures the previous one landed:
