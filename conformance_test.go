@@ -351,3 +351,36 @@ func TestReadersMatchOracle(t *testing.T) {
 		}
 	}
 }
+
+// start detaches a real worker, so both runs get a PATH with no orca, teamclaude or direnv and
+// an empty home: the worker dies on its first call. The two spawn different argv and pids, so
+// start alpha is compared with the pid masked and the log path home-normalised only.
+func TestStartAndReleaseMatchOracle(t *testing.T) {
+	node, env := oracle(t)
+	pid := regexp.MustCompile(`pid \d+`)
+	cases := [][]string{
+		{"start"}, {"start", "nope"}, {"start", "alpha"},
+		{"release"}, {"release", "nope"}, {"release", "alpha"},
+	}
+	for _, argv := range cases {
+		run := func(name string) writerRun {
+			home := readerHome(t, -1, "")
+			if err := os.MkdirAll(filepath.Join(home, "logs"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(name, slices.Clone(argv)...)
+			if name != goBin {
+				cmd = exec.Command(name, append([]string{"src/cli.ts"}, argv...)...)
+			}
+			cmd.Env = append(slices.Clone(env), "DROVR_HOME="+home, "HOME="+home, "PATH=/usr/bin:/bin")
+			var r writerRun
+			r.out, r.err, r.code = runCaptured(cmd)
+			r.out, r.err = strings.ReplaceAll(r.out, home, "$H"), strings.ReplaceAll(r.err, home, "$H")
+			r.out = pid.ReplaceAllString(r.out, "pid N")
+			return r
+		}
+		if g, n := run(goBin), run(node); g != n {
+			t.Errorf("%v:\n go   %+v\n node %+v", argv, g, n)
+		}
+	}
+}
