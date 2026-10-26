@@ -13,3 +13,5 @@ cli/hey/hey
 .envrc
 /drovr
 /dist/
+.DS_Store
+.codegraph/
