@@ -288,3 +288,66 @@ func TestShadowTickThroughTheBinary(t *testing.T) {
 		}
 	}
 }
+
+// readerHome is a temp copy of the fixture home for the read-only commands. usageLines picks
+// the usage.jsonl it carries: -1 none (the fixture ships one), 0 all of it, n the first n samples.
+func readerHome(t *testing.T, usageLines int, mode string) string {
+	home := t.TempDir()
+	for _, f := range []string{"control.json", "cycles.jsonl", "usage.jsonl"} {
+		b, err := os.ReadFile(filepath.Join("testdata/home", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f == "control.json" && mode != "" {
+			b = []byte(strings.Replace(string(b), `"mode": "normal"`, `"mode": "`+mode+`"`, 1))
+		}
+		if f == "usage.jsonl" && usageLines < 0 {
+			continue
+		}
+		if f == "usage.jsonl" && usageLines > 0 {
+			b = []byte(strings.Join(strings.SplitAfter(string(b), "\n")[:usageLines], ""))
+		}
+		if err := os.WriteFile(filepath.Join(home, f), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return home
+}
+
+// The readers print what is in the ledger and the usage log, so every byte is compared.
+func TestReadersMatchOracle(t *testing.T) {
+	node, env := oracle(t)
+	cases := []struct {
+		usageLines int
+		mode       string // "" keeps the fixture's normal
+		argv       []string
+	}{
+		{-1, "", []string{"ledger"}}, {-1, "", []string{"ledger", "alpha", "2"}}, {-1, "", []string{"ledger", "0"}},
+		{-1, "", []string{"ledger", "--last"}}, {-1, "", []string{"ledger", "--json"}}, {-1, "", []string{"ledger", "--json", "--last"}},
+		{-1, "", []string{"ledger", "nope", "--json"}}, {-1, "", []string{"ledger", "--closing"}}, {-1, "", []string{"ledger", "--closing", "--json"}},
+		{-1, "", []string{"ledger", "nope"}}, {-1, "", []string{"ledger", "-5", "3"}},
+		{-1, "", []string{"usage"}}, {-1, "", []string{"usage", "--json"}},
+		{0, "", []string{"usage"}}, {0, "", []string{"usage", "--json"}},
+		{10, "", []string{"usage"}}, {10, "", []string{"usage", "--json"}},
+		{-1, "", []string{"tidy"}},
+		// away holds a 15% reserve under the 43% p90: the "Widen it" branch; off holds none.
+		{0, "away", []string{"usage"}}, {0, "off", []string{"usage"}}, {0, "off", []string{"usage", "--json"}},
+	}
+	for _, c := range cases {
+		run := func(name string) writerRun {
+			home := readerHome(t, c.usageLines, c.mode)
+			cmd := exec.Command(name, slices.Clone(c.argv)...)
+			if name != goBin {
+				cmd = exec.Command(name, append([]string{"src/cli.ts"}, c.argv...)...)
+			}
+			cmd.Env = append(slices.Clone(env), "DROVR_HOME="+home, "HOME="+home)
+			var r writerRun
+			r.out, r.err, r.code = runCaptured(cmd)
+			r.out, r.err = strings.ReplaceAll(r.out, home, "$H"), strings.ReplaceAll(r.err, home, "$H")
+			return r
+		}
+		if g, n := run(goBin), run(node); g != n {
+			t.Errorf("%d %v:\n go   %+v\n node %+v", c.usageLines, c.argv, g, n)
+		}
+	}
+}

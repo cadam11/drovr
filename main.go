@@ -57,7 +57,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, version)
 		return nil
 	case "status", "report", "notify", "service", "tick", "run-cycle",
-		"init", "add", "host", "rm", "cap", "mode", "pause", "resume", "cadence", "reserve":
+		"init", "add", "host", "rm", "cap", "mode", "pause", "resume", "cadence", "reserve",
+		"ledger", "usage", "tidy":
 		return dispatch(cmd, rest, asJSON, stdout, stderr)
 	}
 	if _, ok := help.Find(cmd); ok {
@@ -111,6 +112,12 @@ func dispatch(cmd string, rest []string, asJSON bool, stdout, stderr io.Writer) 
 		return cli.Cadence(env, rest)
 	case "reserve":
 		return cli.Reserve(env, rest)
+	case "ledger":
+		return cli.Ledger(env, rest, asJSON)
+	case "usage":
+		return cli.Usage(env, rest, asJSON)
+	case "tidy":
+		return cli.Tidy(ctx, env)
 	case "notify":
 		return cli.Notify(ctx, env, rest, asJSON)
 	case "service":
