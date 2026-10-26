@@ -17,7 +17,7 @@ import (
 )
 
 // openTimeout bounds macOS `open`, which hands the URL to the browser and returns at once;
-// the TS fired it detached and never waited at all.
+// the TS fired it detached and never waited at all, so it runs off Run's goroutine.
 const openTimeout = 5 * time.Second
 
 // outcome is the TS Action of an intent whose message is only known after its I/O.
@@ -26,31 +26,61 @@ type outcome struct {
 	redraw, fresh bool
 }
 
-// execute does the I/O half of an intent; ran is false for the pure intents, whose view
-// DecideKey already settled. An error is fatal: the TS let these throw into die.
-func (w *watcher) execute(ctx context.Context, in Intent, ctl control.Control, programs []control.Program) (outcome, bool, error) {
-	var out outcome
-	var err error
+// landed is a slow intent's outcome coming back to Run's goroutine, the TS's `.then`.
+type landed struct {
+	out outcome
+	err error
+}
+
+// execute does the I/O half of an intent that stays on Run's goroutine: the control.json
+// setters and the lock read behind 's' take milliseconds, as they did synchronously inside the
+// TS's handle. ran is false for the pure intents, whose view DecideKey already settled, and
+// for the slow ones, which run detached. An error is fatal: the TS let these throw into die.
+func (w *watcher) execute(in Intent, ctl control.Control) (outcome, bool, error) {
 	switch in.Kind {
 	case IntentSetMode, IntentTogglePause, IntentExtendPause, IntentToggleEnabled,
 		IntentNudgePriority, IntentAdjustConcurrency, IntentNudgeReserve:
-		out, err = w.setting(in, ctl)
-	case IntentTickNow:
-		out, err = w.tickNow()
-	case IntentStartCycle:
-		out, err = w.startCycle(in.Program)
-	case IntentInterrupt:
-		out, err = w.stop(ctx, in.Program, programs)
-	case IntentReleaseLeftover:
-		out, err = w.release(ctx, in.Program)
+		out, err := w.setting(in, ctl)
+		return out, true, err
 	case IntentArmStart:
-		out, err = w.armStart(in.Program)
-	case IntentOpenAsks:
-		out, err = w.open(ctx, in.URL)
-	default:
-		return outcome{}, false, nil
+		out, err := w.armStart(in.Program)
+		return out, true, err
 	}
-	return out, true, err
+	return outcome{}, false, nil
+}
+
+// isSlow names the intents that leave the process — an orca call, a spawn, the browser. The
+// TS awaited these off its event loop, so keys stayed live; here they run in their own
+// goroutine for the same reason.
+func isSlow(k IntentKind) bool {
+	return k == IntentTickNow || k == IntentStartCycle || k == IntentInterrupt || k == IntentReleaseLeftover || k == IntentOpenAsks
+}
+
+// background runs a slow intent and hands its outcome back. It reads only deps and its own
+// arguments, never the view. Each call inside is bounded (orca's own timeout, openTimeout),
+// ctx ends the orca and open calls when Run returns, and the send never outlives Run.
+func (w *watcher) background(ctx context.Context, in Intent, programs []control.Program, results chan<- landed) {
+	out, err := w.slow(ctx, in, programs)
+	select {
+	case results <- landed{out, err}:
+	case <-ctx.Done():
+	}
+}
+
+func (w *watcher) slow(ctx context.Context, in Intent, programs []control.Program) (outcome, error) {
+	switch in.Kind {
+	case IntentTickNow:
+		return w.tickNow()
+	case IntentStartCycle:
+		return w.startCycle(in.Program)
+	case IntentInterrupt:
+		return w.stop(ctx, in.Program, programs)
+	case IntentReleaseLeftover:
+		return w.release(ctx, in.Program)
+	case IntentOpenAsks:
+		return w.open(ctx, in.URL)
+	}
+	return outcome{}, fmt.Errorf("intent %d is not a slow one", in.Kind)
 }
 
 func (w *watcher) setting(in Intent, ctl control.Control) (outcome, error) {
@@ -181,7 +211,9 @@ func (w *watcher) armStart(name string) (outcome, error) {
 
 func (w *watcher) open(ctx context.Context, url string) (outcome, error) {
 	if _, err := w.deps.Run(ctx, "open", []string{url}, exec.Bounds{Timeout: openTimeout, Label: "open " + url}); err != nil {
-		return outcome{}, err
+		// No TS string: it spawned `open` with stdio ignored and never saw how it ended, so a
+		// failure could not end the watch there either. Said here rather than swallowed.
+		return outcome{message: fmt.Sprintf("could not open %s: %s", url, ChildReason(err.Error()))}, nil
 	}
 	return outcome{message: "opened " + url, redraw: true}, nil
 }

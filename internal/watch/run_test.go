@@ -143,10 +143,18 @@ type harness struct {
 	sigs    chan os.Signal
 	ticks   chan time.Time
 	opens   chan opened
+	hold    chan error // when set, the fake `open` waits for its outcome here
 	done    chan error
 }
 
 func start(t *testing.T, interval int, control string) *harness {
+	t.Helper()
+	h, deps := rig(t, interval, control)
+	return h.run(deps, interval)
+}
+
+// rig builds the harness without running it, for a test that changes a fake first.
+func rig(t *testing.T, interval int, control string) (*harness, Deps) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("DROVR_HOME", home)
@@ -177,10 +185,13 @@ func start(t *testing.T, interval int, control string) *harness {
 		},
 		Run: func(_ context.Context, bin string, args []string, b exec.Bounds) (exec.Result, error) {
 			h.opens <- opened{bin, args, b}
-			return exec.Result{}, nil
+			if h.hold == nil {
+				return exec.Result{}, nil
+			}
+			return exec.Result{}, <-h.hold
 		},
 	}
-	return h.run(deps, interval)
+	return h, deps
 }
 
 func (h *harness) run(deps Deps, interval int) *harness {
@@ -450,4 +461,83 @@ func TestSetterFailureIsFatal(t *testing.T) {
 		t.Fatal("a setter that cannot write must end the session")
 	}
 	checkRestored(t, h)
+}
+
+// A slow orca: the shim records its call and then sleeps far past the test's budget, so Run
+// can only return in time if the interrupt is not on its goroutine.
+func TestQuitIsNotBlockedByASlowIntent(t *testing.T) {
+	h, deps := rig(t, 15, threeUp)
+	bin := t.TempDir()
+	calls := filepath.Join(bin, "calls.log")
+	shim := "#!/bin/sh\necho \"$*\" >> " + calls + "\nexec sleep 30\n"
+	if err := os.WriteFile(filepath.Join(bin, "orca"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	if err := os.MkdirAll(deps.Paths.ProgramState("drovr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := orca.RememberTerminal(deps.Paths, "drovr", orca.Remembered{Handle: "term_1", TabID: "tab-1", WorktreeID: "wt-1"}); err != nil {
+		t.Fatal(err)
+	}
+	h.run(deps, 15)
+	h.waitFrames(1)
+	h.key("x")
+	h.waitFrames(2)
+	h.key("y")
+	for range 400 {
+		if _, err := os.Stat(calls); err == nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := os.Stat(calls); err != nil {
+		t.Fatal("the interrupt never reached orca")
+	}
+	began := time.Now()
+	h.key("q")
+	if err := h.wait(); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(began); took > time.Second {
+		t.Errorf("q waited %v behind the interrupt", took)
+	}
+	checkRestored(t, h)
+}
+
+func TestSlowIntentMessageLandsAfterCompletion(t *testing.T) {
+	h, deps := rig(t, 15, threeUp)
+	h.hold = make(chan error)
+	h.run(deps, 15)
+	h.waitFrames(1)
+	h.key("o")
+	first := <-h.opens
+	h.key("j") // keys stay live while open runs
+	h.waitFrames(2)
+	if want := "\x1b[H" + h.frames()[1]; want != painted(h.collect.st, View{Selected: 1}, 100, 40) {
+		t.Errorf("j did not draw while open was running:\n%q", want)
+	}
+	h.hold <- nil
+	h.waitFrames(3)
+	if !strings.Contains(h.frames()[2], "opened "+first.args[0]) {
+		t.Errorf("the message did not land: %q", h.frames()[2])
+	}
+
+	h.key("o") // a failed open says so and the session carries on
+	second := <-h.opens
+	h.hold <- errors.New("Command failed: open " + second.args[0] + "\nerror -10814")
+	// The failure does not redraw, as the TS's could-not messages do not, so ticks show it; the
+	// outcome and a tick can arrive in either order, so tick until it lands.
+	want := "could not open " + second.args[0] + ": error -10814"
+	for n := 4; n < 50 && !strings.Contains(h.frames()[len(h.frames())-1], want); n++ {
+		h.ticks <- time.Now()
+		h.waitFrames(n)
+	}
+	if last := h.frames()[len(h.frames())-1]; !strings.Contains(last, want) {
+		t.Errorf("no failure message %q in %q", want, last)
+	}
+	h.key("q")
+	if err := h.wait(); err != nil {
+		t.Fatal(err)
+	}
 }

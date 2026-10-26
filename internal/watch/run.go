@@ -92,6 +92,8 @@ type watcher struct {
 	hits   []*LineHit
 	width  int
 	narrow bool
+	// results carries slow intents' outcomes back; they run detached so keys stay live.
+	results chan landed
 }
 
 type input struct {
@@ -103,7 +105,7 @@ type input struct {
 // included, since the restore is deferred. Only the first draw failing is fatal to a frame;
 // a setter that cannot write control.json ends the session, as the TS's die did.
 func Run(ctx context.Context, deps Deps, intervalSeconds int) (err error) {
-	w := &watcher{deps: deps, interval: time.Duration(max(2, intervalSeconds)) * time.Second, width: 100}
+	w := &watcher{deps: deps, interval: time.Duration(max(2, intervalSeconds)) * time.Second, width: 100, results: make(chan landed)}
 	if _, err := io.WriteString(deps.Out, enterBytes); err != nil {
 		return err
 	}
@@ -153,6 +155,8 @@ func (w *watcher) loop(ctx context.Context, chunks chan input) error {
 			err = w.draw(ctx, false)
 		case in := <-chunks:
 			err = w.input(ctx, in)
+		case r := <-w.results:
+			err = w.apply(ctx, r.out, r.err)
 		}
 		if err != nil {
 			return err
@@ -322,16 +326,25 @@ func (w *watcher) act(ctx context.Context, in Intent, ctl control.Control, progr
 	if in.Kind == IntentQuit {
 		return errLeave
 	}
-	out, ran, err := w.execute(ctx, in, ctl, programs)
+	if isSlow(in.Kind) {
+		go w.background(ctx, in, programs, w.results)
+		return nil
+	}
+	out, ran, err := w.execute(in, ctl)
+	if !ran || err != nil {
+		return w.apply(ctx, outcome{message: w.view.Message, redraw: in.Redraw, fresh: in.Fresh}, err)
+	}
+	return w.apply(ctx, out, nil)
+}
+
+// apply is the TS's `.then`: the message lands whatever the redraw, and an error is die.
+func (w *watcher) apply(ctx context.Context, out outcome, err error) error {
 	if err != nil {
 		return err
 	}
-	redraw, fresh := in.Redraw, in.Fresh
-	if ran {
-		w.view.Message, redraw, fresh = out.message, out.redraw, out.fresh
-	}
-	if !redraw {
+	w.view.Message = out.message
+	if !out.redraw {
 		return nil
 	}
-	return w.draw(ctx, fresh)
+	return w.draw(ctx, out.fresh)
 }
