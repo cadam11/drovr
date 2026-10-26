@@ -41,7 +41,7 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 [ -z "$(git status --porcelain)" ] || refuse "working tree is not clean"
 ! git rev-parse -q --verify "refs/tags/v$version" > /dev/null || refuse "tag v$version exists"
 git ls-remote --exit-code git@github.com:cadam11/homebrew-tap.git > /dev/null 2>&1 ||
-  refuse "tap repo cadam11/homebrew-tap is not reachable — create it first: gh repo create cadam11/homebrew-tap --public"
+  refuse "tap repo cadam11/homebrew-tap is not reachable — create it first: gh repo create cadam11/homebrew-tap --public --add-readme"
 rc=0; git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null 2>&1 || rc=$?
 [ "$rc" = 2 ] || { [ "$rc" != 0 ] || refuse "tag v$version already exists on origin"; refuse "could not check origin for tag v$version"; }
 # Everything below touches the network or the repo history.
@@ -57,4 +57,4 @@ mkdir -p "$work/tap/Formula"
 cp "$out/tap/Formula/drovr.rb" "$work/tap/Formula/drovr.rb"
 git -C "$work/tap" add Formula/drovr.rb
 git -C "$work/tap" commit -m "drovr $version"
-git -C "$work/tap" push
+git -C "$work/tap" push origin HEAD
