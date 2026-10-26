@@ -3,6 +3,7 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -106,6 +107,7 @@ type fakeCollect struct {
 	ages []time.Duration
 	fail map[int]error
 	gate map[int]chan struct{}
+	boom map[int]bool // the n-th call panics, as a bug in the probe would
 	warn string
 }
 
@@ -114,8 +116,11 @@ func (c *fakeCollect) Collect(ctx context.Context, onWarning func(string), age t
 	c.mu.Lock()
 	n := len(c.ages)
 	c.ages = append(c.ages, age)
-	warn, fail, st, gate := c.warn, c.fail[n], c.st, c.gate[n]
+	warn, fail, st, gate, boom := c.warn, c.fail[n], c.st, c.gate[n], c.boom[n]
 	c.mu.Unlock()
+	if boom {
+		panic(fmt.Sprintf("probe %d blew up", n))
+	}
 	if gate != nil {
 		select {
 		case <-gate:
@@ -645,6 +650,71 @@ func TestAClickReadsNothingBeforeDeciding(t *testing.T) {
 	h.key("\x1b[<0;" + strconv.Itoa(qColumn+1) + ";" + strconv.Itoa(qRow+1) + "M")
 	if err := h.wait(); err != nil {
 		t.Fatal(err)
+	}
+	checkRestored(t, h)
+}
+
+// tickUntil ticks until the last frame shows want: a could-not message does not redraw, so
+// ticks show it, and the outcome and a tick can arrive in either order.
+func (h *harness) tickUntil(want string) {
+	h.t.Helper()
+	for n := len(h.frames()) + 1; n < 50 && !strings.Contains(h.frames()[len(h.frames())-1], want); n++ {
+		select {
+		case h.ticks <- time.Now():
+		case err := <-h.done:
+			h.t.Fatalf("Run returned before %q landed: %v", want, err)
+		}
+		h.waitFrames(n)
+	}
+	if last := h.frames()[len(h.frames())-1]; !strings.Contains(last, want) {
+		h.t.Errorf("no message %q in %q", want, last)
+	}
+}
+
+// The harness's Detach and Launch both fail, as a detached spawn of a missing binary would.
+func TestTickAndStartFailuresLandOnTheMessageLine(t *testing.T) {
+	h := start(t, 15, threeUp)
+	h.waitFrames(1)
+	h.key("t")
+	h.tickUntil("could not launch tick: no detach in this test")
+	name := h.collect.st.Programs[0].Name
+	n := len(h.frames())
+	h.key("s")
+	h.waitFrames(n + 1)
+	h.key("y")
+	h.tickUntil("could not start " + name + ": no launch in this test")
+	select {
+	case err := <-h.done:
+		t.Fatalf("Run returned before quit: %v", err)
+	default:
+	}
+	h.key("q")
+	if err := h.wait(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A panic off Run's goroutine would skip its deferred restore, so it comes back as an error.
+func TestAProbePanicRestoresAndEndsTheSession(t *testing.T) {
+	h, deps := rig(t, 15, threeUp)
+	h.collect.boom = map[int]bool{1: true}
+	h.run(deps, 15)
+	h.waitFrames(1)
+	h.ticks <- time.Now()
+	if err := h.wait(); err == nil || !strings.Contains(err.Error(), "panic: probe 1 blew up") {
+		t.Fatalf("err %v", err)
+	}
+	checkRestored(t, h)
+}
+
+func TestAnIntentPanicRestoresAndEndsTheSession(t *testing.T) {
+	h, deps := rig(t, 15, threeUp)
+	deps.Detach = func(string, []string, string, string, []string) (int, error) { panic("detach blew up") }
+	h.run(deps, 15)
+	h.waitFrames(1)
+	h.key("t")
+	if err := h.wait(); err == nil || !strings.Contains(err.Error(), "panic: detach blew up") {
+		t.Fatalf("err %v", err)
 	}
 	checkRestored(t, h)
 }

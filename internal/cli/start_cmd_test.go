@@ -18,7 +18,7 @@ func TestStartLaunchesTheWorkerDetached(t *testing.T) {
 	}
 	argvFile := filepath.Join(t.TempDir(), "argv")
 	env.Self = filepath.Join(t.TempDir(), "stub")
-	script := "#!/bin/sh\necho \"$*\" > " + argvFile + "\nsleep 0.2\n"
+	script := "#!/bin/sh\necho \"$*\" > " + argvFile + "\nsleep 5\n"
 	if err := os.WriteFile(env.Self, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestStartLaunchesTheWorkerDetached(t *testing.T) {
 	if err := Start(env, []string{"alpha"}); err != nil {
 		t.Fatal(err)
 	}
-	if time.Since(began) > 150*time.Millisecond {
+	if time.Since(began) > 2*time.Second {
 		t.Fatal("Start waited on the worker")
 	}
 	want := regexp.MustCompile("^alpha: launched cycle \\(pid \\d+, log " + regexp.QuoteMeta(env.Paths.WorkerLog("alpha")) + "\\)\n$")

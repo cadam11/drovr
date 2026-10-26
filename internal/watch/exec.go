@@ -67,7 +67,14 @@ func (w *watcher) background(ctx context.Context, in Intent, programs []control.
 	}
 }
 
-func (w *watcher) slow(ctx context.Context, in Intent, programs []control.Program) (outcome, error) {
+// slow recovers a panic into its error for the reason collect gives; apply then ends the
+// session through Run's restore.
+func (w *watcher) slow(ctx context.Context, in Intent, programs []control.Program) (out outcome, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = outcome{}, fmt.Errorf("panic: %v", r)
+		}
+	}()
 	switch in.Kind {
 	case IntentTickNow:
 		return w.tickNow()
@@ -126,7 +133,9 @@ func (w *watcher) tickNow() (outcome, error) {
 		return outcome{}, err
 	}
 	if _, err := w.deps.Detach(w.deps.Self, []string{"tick"}, filepath.Join(w.deps.Paths.Logs, "tick.log"), "", nil); err != nil {
-		return outcome{}, err
+		// No TS string: the TS never saw a detached spawn fail, so this is the open ruling's
+		// treatment — say so on the message line and keep the session.
+		return outcome{message: "could not launch tick: " + ChildReason(err.Error())}, nil
 	}
 	return outcome{message: "tick launched", redraw: true}, nil
 }
@@ -135,7 +144,8 @@ func (w *watcher) tickNow() (outcome, error) {
 // directly, without the `drovr start` hop).
 func (w *watcher) startCycle(name string) (outcome, error) {
 	if err := w.deps.Launch(name); err != nil {
-		return outcome{}, err
+		// No TS string, for the reason tickNow gives.
+		return outcome{message: "could not start " + name + ": " + ChildReason(err.Error())}, nil
 	}
 	return outcome{message: name + ": cycle launched", redraw: true}, nil
 }

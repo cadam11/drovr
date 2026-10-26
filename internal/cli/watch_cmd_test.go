@@ -27,3 +27,15 @@ func TestWatchRefusesANonInteger(t *testing.T) {
 		t.Errorf("wrote %q", out.String())
 	}
 }
+
+// time.Duration overflows past ~292 years and NewTicker panics on what it wraps to.
+func TestWatchRefusesAnIntervalPastAYear(t *testing.T) {
+	if got, err := watchInterval([]string{"31536000"}); err != nil || got != maxWatchIntervalSeconds {
+		t.Errorf("a year: %d %v", got, err)
+	}
+	for raw, n := range map[string]string{"31536001": "31536001", "99999999999999999999": "100000000000000000000", "40000000s": "40000000"} {
+		if _, err := watchInterval([]string{raw}); err == nil || err.Error() != "the interval is too large: "+n+" seconds" {
+			t.Errorf("%s: err %v", raw, err)
+		}
+	}
+}

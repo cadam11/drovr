@@ -39,6 +39,10 @@ func Watch(ctx context.Context, env Env, rest []string) error {
 	}, seconds)
 }
 
+// maxWatchIntervalSeconds is an R1-family bound: past it time.Duration overflows and
+// NewTicker panics, where the TS would have set an absurd setInterval.
+const maxWatchIntervalSeconds = 86_400 * 365
+
 // watchInterval is the TS's parseInt with R1: where it got NaN and redrew every millisecond,
 // a non-integer is refused. Zero and negatives pass, and Run floors them at two seconds.
 func watchInterval(rest []string) (int, error) {
@@ -48,6 +52,9 @@ func watchInterval(rest []string) (int, error) {
 	n, ok := jsnum.ParseInt(rest[0])
 	if !ok {
 		return 0, fmt.Errorf("the interval is a number of seconds, got \"%s\"", rest[0])
+	}
+	if n > maxWatchIntervalSeconds {
+		return 0, fmt.Errorf("the interval is too large: %s seconds", jsnum.String(n))
 	}
 	return int(n), nil
 }

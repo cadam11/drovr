@@ -179,8 +179,9 @@ Written and type-checked, never seen to fire. Unproven, not done:
   copies carry two upstream fixes (token echo) not yet released as a hey CLI.
 - **The release and the brew install.** `scripts/release.sh` and the `drovr watch` port landed
   2026-10-26; nothing has been released or installed from them. Not seen: `brew install
-  cadam11/tap/drovr`, a `brew upgrade drovr` followed by `drovr service install` picking up the new
-  binary, the drovr.app/cli redirect serving a real release asset, and `drovr watch` on the Go
+  cadam11/tap/drovr`, a `brew upgrade drovr` with the next tick running the new binary through the
+  plist's brew `opt` path (the opt-path pin is proven only in the suite; no brew upgrade has run),
+  the drovr.app/cli redirect serving a real release asset, and `drovr watch` on the Go
   binary in daily use. The extent of what has been seen of watch: the controller drove it through a
   pty on 2026-10-26 and saw the first frame, keys, mouse, resize, and q, Ctrl-C, SIGTERM and SIGHUP
   each restore the terminal.

@@ -148,6 +148,16 @@ func flagValue(args []string, name string) (string, bool) {
 	return "", true
 }
 
+// stringFlag is cli.Flag's twin (internal/cli imports this package): a trailing flag with no
+// value reads as absent, as the TS's stringArg does, where numberArg refuses it.
+func stringFlag(args []string, name string) (string, bool) {
+	i := slices.Index(args, "--"+name)
+	if i == -1 || i+1 >= len(args) {
+		return "", false
+	}
+	return args[i+1], true
+}
+
 func numberArg(args []string, name string) (*float64, error) {
 	raw, ok := flagValue(args, name)
 	if !ok {
@@ -264,7 +274,7 @@ func yieldArgs(args []string) (*ledger.Yield, error) {
 }
 
 func optional(args []string, name string, parse func(string) (string, error)) (*string, error) {
-	raw, ok := flagValue(args, name)
+	raw, ok := stringFlag(args, name)
 	if !ok {
 		return nil, nil
 	}

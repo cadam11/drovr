@@ -43,7 +43,7 @@ $EDITOR ~/.drovr/control.json     # add a program
 drovr service install             # writes the launchd plist and loads it
 ```
 
-Upgrade with `brew upgrade drovr && drovr service install`. The second half is not optional: launchd holds the plist it loaded, and the plist bakes in the path of the binary and your PATH, so an upgrade keeps running the old definition until the agent is reloaded.
+Upgrade with `brew upgrade drovr`. That is enough for the binary: the plist names brew's `opt` path, which follows the current version, so the next tick runs the new one. Run `drovr service install` again when your PATH or the tick interval changes — launchd holds the plist it loaded, and the plist bakes in both — and `drovr service status` warns when the plist names a binary other than the one you are running, such as one that no longer exists.
 
 Without Homebrew, download `https://drovr.app/cli/drovr_darwin_arm64.tar.gz` (checksums beside it at `/cli/drovr-sha256sums.txt`), extract it, put `drovr` on your PATH and run `xattr -d com.apple.quarantine drovr`. The binary is unsigned, so macOS quarantines a browser download; Homebrew installs skip that. Apple Silicon only.
 

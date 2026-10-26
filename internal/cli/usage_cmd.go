@@ -148,10 +148,10 @@ func Usage(env Env, _ []string, asJSON bool) error {
 	if err != nil {
 		return err
 	}
+	// `off` and a mode missing from ceilings both read as no reserve, as the TS's
+	// `ceilings[mode] ?? null` does; CeilingsFor would refuse the missing mode.
 	var reserve *float64
-	if ceiling, ok, err := control.CeilingsFor(c); err != nil {
-		return err
-	} else if ok {
+	if ceiling, ok := c.Ceilings[string(c.Mode)]; ok && c.Mode != "off" {
 		r := 1 - ceiling.Weekly
 		reserve = &r
 	}

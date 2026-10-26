@@ -73,14 +73,38 @@ func AgentPath(inherited string) string {
 	return strings.Join(out, ":")
 }
 
-// Self is the binary the plist should name. Symlinks are resolved so the plist pins the real
-// file; a brew upgrade that moves it then shows up as a BinaryMismatch until reinstalled.
+// Self is the binary the plist should name. Symlinks are resolved so the plist pins a real
+// file, except inside a brew keg: `brew upgrade` removes the old keg while launchd keeps the
+// plist it loaded, so a keg path would leave the tick firing a deleted binary. Brew's opt link
+// follows the current keg, so pinning it lets the next tick run the new binary without a
+// reinstall.
 func Self() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	return filepath.EvalSymlinks(exe)
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return "", err
+	}
+	return preferBrewOpt(resolved), nil
+}
+
+// preferBrewOpt maps <prefix>/Cellar/<formula>/<version>/bin/<name> to
+// <prefix>/opt/<formula>/bin/<name> when that opt path exists and resolves back to the same
+// file; any other path is returned unchanged.
+func preferBrewOpt(resolved string) string {
+	parts := strings.Split(resolved, string(filepath.Separator))
+	n := len(parts)
+	if n < 6 || parts[n-5] != "Cellar" || parts[n-2] != "bin" {
+		return resolved
+	}
+	prefix := strings.Join(parts[:n-5], string(filepath.Separator))
+	opt := filepath.Join(string(filepath.Separator), prefix, "opt", parts[n-4], "bin", parts[n-1])
+	if back, err := filepath.EvalSymlinks(opt); err != nil || back != resolved {
+		return resolved
+	}
+	return opt
 }
 
 type Reload string

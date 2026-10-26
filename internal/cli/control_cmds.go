@@ -214,23 +214,28 @@ func newHost(rest []string) (*keys.Doc, error) {
 	return h, nil
 }
 
+// withoutProgram drops every entry named name; removed says whether any was.
+func withoutProgram(programs []any, name string) ([]any, bool) {
+	kept := []any{}
+	for _, entry := range programs {
+		if p, ok := entry.(*keys.Doc); ok {
+			if n, _ := p.Get("name"); n == name {
+				continue
+			}
+		}
+		kept = append(kept, entry)
+	}
+	return kept, len(kept) != len(programs)
+}
+
 func Remove(env Env, rest []string) error {
 	if len(rest) == 0 {
 		return errors.New("usage: drovr rm <name>")
 	}
 	name := rest[0]
 	_, err := keys.MutateInPlace(env.Paths.Control, func(d *keys.Doc) error {
-		programs := programList(d)
-		kept := []any{}
-		for _, entry := range programs {
-			if p, ok := entry.(*keys.Doc); ok {
-				if n, _ := p.Get("name"); n == name {
-					continue
-				}
-			}
-			kept = append(kept, entry)
-		}
-		if len(kept) == len(programs) {
+		kept, removed := withoutProgram(programList(d), name)
+		if !removed {
 			return fmt.Errorf("no program named \"%s\"", name)
 		}
 		d.Set("programs", kept)

@@ -138,11 +138,18 @@ func TestReportRefusalsMatchOracle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
+	refusals := [][]string{
 		{}, {"--exit", "seam"}, {"alpha"}, {"alpha", "--exit", "seam", "--bogus"}, {"alpha", "--exit", "nope"},
-		{"nope", "--exit", "seam"}, {"alpha", "--exit", "seam", "--commits", "x"},
+		{"nope", "--exit", "seam"}, {"alpha", "--exit", "seam", "--commits", "x"}, {"alpha", "--exit", "seam", "--commits"},
 		{"alpha", "--exit", "seam", "--pause-until", "2020-01-01T00:00:00Z"}, {"alpha", "--exit", "seam", "--cadence", "soon"},
-	} {
+	}
+	// A trailing string flag reads as absent in the TS, so these report rather than refuse.
+	trailing := [][]string{{"alpha", "--exit", "seam", "--pause-until"}, {"alpha", "--exit", "seam", "--cadence"}}
+	for i, args := range append(refusals, trailing...) {
+		wantCode := 1
+		if i >= len(refusals) {
+			wantCode = 0
+		}
 		home := t.TempDir()
 		if err := os.WriteFile(filepath.Join(home, "control.json"), src, 0o644); err != nil {
 			t.Fatal(err)
@@ -158,7 +165,7 @@ func TestReportRefusalsMatchOracle(t *testing.T) {
 		if shapeRefusal := "the given report is not a valid cycle report: "; strings.HasPrefix(nerr, shapeRefusal) && strings.HasPrefix(gerr, shapeRefusal) {
 			gerr, nerr = shapeRefusal, shapeRefusal
 		}
-		if gout != nout || gerr != nerr || gcode != ncode || gcode != 1 {
+		if gout != nout || gerr != nerr || gcode != ncode || gcode != wantCode {
 			t.Errorf("%v: go %d %q %q, node %d %q %q", args, gcode, gout, gerr, ncode, nout, nerr)
 		}
 	}
@@ -348,6 +355,39 @@ func TestReadersMatchOracle(t *testing.T) {
 		}
 		if g, n := run(goBin), run(node); g != n {
 			t.Errorf("%d %v:\n go   %+v\n node %+v", c.usageLines, c.argv, g, n)
+		}
+	}
+}
+
+// A ceilings map without the current mode reads as no reserve in the TS (`ceilings[mode] ??
+// null`), not as an error.
+func TestUsageWithoutACeilingMatchesOracle(t *testing.T) {
+	node, env := oracle(t)
+	for _, argv := range [][]string{{"usage"}, {"usage", "--json"}} {
+		run := func(name string) writerRun {
+			home := readerHome(t, 0, "")
+			ctl := filepath.Join(home, "control.json")
+			b, err := os.ReadFile(ctl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b = []byte(strings.Replace(string(b), `"mode": "normal"`, `"mode": "normal", "ceilings": {"low": {"weekly": 0.25, "session": 0.25}}`, 1))
+			if err := os.WriteFile(ctl, b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(name, argv...)
+			if name != goBin {
+				cmd = exec.Command(name, append([]string{"src/cli.ts"}, argv...)...)
+			}
+			cmd.Env = append(slices.Clone(env), "DROVR_HOME="+home, "HOME="+home)
+			var r writerRun
+			r.out, r.err, r.code = runCaptured(cmd)
+			r.out, r.err = strings.ReplaceAll(r.out, home, "$H"), strings.ReplaceAll(r.err, home, "$H")
+			return r
+		}
+		g, n := run(goBin), run(node)
+		if g != n || g.code != 0 {
+			t.Errorf("%v:\n go   %+v\n node %+v", argv, g, n)
 		}
 	}
 }

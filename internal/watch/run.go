@@ -109,6 +109,7 @@ type probed struct {
 	st      state.DrovrState
 	warning *string
 	err     error
+	fatal   error // a panic in the probe: not a refresh failure to ride out, a bug to stop on
 }
 
 type input struct {
@@ -238,17 +239,32 @@ func (w *watcher) probe(ctx context.Context, fresh bool) {
 	if fresh {
 		window = 0
 	}
-	var warning *string
-	st, err := w.deps.Collect(ctx, func(text string) { warning = &text }, window)
+	p := w.collect(ctx, window)
 	select {
-	case w.probes <- probed{st, warning, err}:
+	case w.probes <- p:
 	case <-ctx.Done():
 	}
+}
+
+// collect recovers a panic into probed.fatal: it runs off Run's goroutine, where a panic
+// would kill the process without Run's deferred restore and leave the terminal raw.
+func (w *watcher) collect(ctx context.Context, window time.Duration) (p probed) {
+	defer func() {
+		if r := recover(); r != nil {
+			p = probed{fatal: fmt.Errorf("panic: %v", r)}
+		}
+	}()
+	var warning *string
+	st, err := w.deps.Collect(ctx, func(text string) { warning = &text }, window)
+	return probed{st, warning, err, nil}
 }
 
 // landedProbe paints what a probe brought back, then starts the pending draw if one folded
 // up meanwhile. The warning replaces the last one, so a since-fixed preview stops complaining.
 func (w *watcher) landedProbe(ctx context.Context, p probed) error {
+	if p.fatal != nil {
+		return p.fatal
+	}
 	w.drawing = false
 	w.view.PreviewWarning = p.warning
 	err := p.err

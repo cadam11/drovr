@@ -85,3 +85,17 @@ func TestReleaseScriptIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseScriptRefusesAnUnknownArgument(t *testing.T) {
+	cmd := exec.Command("sh", "scripts/release.sh", "foo")
+	cmd.Dir = ".."
+	cmd.Env = append(os.Environ(), "DIST="+t.TempDir())
+	out, err := cmd.CombinedOutput()
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok || exitErr.ExitCode() != 2 {
+		t.Fatalf("release.sh foo: %v, want exit 2\n%s", err, out)
+	}
+	if string(out) != "usage: scripts/release.sh [--publish]\n" {
+		t.Fatalf("release.sh foo printed %q", out)
+	}
+}
