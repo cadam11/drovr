@@ -1,0 +1,7 @@
+{
+  "fn": "watch.visibleLength",
+  "input": {
+    "text": "  o asks\u001b[2m · \u001b[0ms start\u001b[2m · \u001b[0mx interrupt\u001b[2m · \u001b[0ml release\u001b[2m · \u001b[0m? help"
+  },
+  "output": 53
+}

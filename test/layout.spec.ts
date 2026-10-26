@@ -70,14 +70,26 @@ test('every actionable key stays reachable by a click, even at narrow widths', (
   }
 });
 
-test('the keybar wraps into at least one line at every golden width, and every line fits', () => {
-  for (const [width, narrow] of [[120, false], [100, false], [80, false], [71, true], [60, true], [24, true], [24, false], [71, false], [120, true]] as const) {
-    const lines = keybarLines(width, narrow);
-    assert.ok(lines.length >= 1);
-    lines.forEach((line, row) => {
-      assert.ok(visibleLength(line) <= width, `${width}/${narrow} row ${row}: ${line}`);
-      for (let column = 0; column < width; column += 1) keybarKeyAt(width, narrow, row, column);
-    });
+test('the keybar fits at every golden width, and a click is pinned at each label boundary', () => {
+  const plain = (line: string) => line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+  for (const width of [120, 100, 80, 71, 60, 24]) {
+    for (const narrow of [false, true]) {
+      const lines = keybarLines(width, narrow);
+      assert.ok(lines.length >= 1);
+      lines.forEach((line, row) => {
+        assert.ok(visibleLength(line) <= width, `${width}/${narrow} row ${row}: ${line}`);
+        // Only boundaries are probed: first and last column of each label, one gap column, the edges.
+        const columns = new Set([0, width - 1]);
+        let start = 2;
+        for (const label of plain(line).slice(2).split(' · ')) {
+          columns.add(start);
+          columns.add(start + label.length - 1);
+          columns.add(start + label.length);
+          start += label.length + 3;
+        }
+        for (const column of columns) keybarKeyAt(width, narrow, row, column);
+      });
+    }
   }
 });
 

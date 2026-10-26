@@ -1,0 +1,10 @@
+{
+  "fn": "watch.keybarKeyAt",
+  "input": {
+    "width": 60,
+    "narrow": false,
+    "row": 3,
+    "column": 7
+  },
+  "output": "q"
+}
