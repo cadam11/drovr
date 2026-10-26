@@ -42,10 +42,6 @@ type Env struct {
 	Asks                *asks.Reader
 	Caller              nudge.CallerFunc // nil is nudge.DefaultCaller
 	Exit                func(code int)   // os.Exit when nil; the watchdog's last act
-	// Shadow is the live pass with every effect turned inward: it reads everything the live
-	// tick reads, decides with the same code, and writes only decisions-shadow.jsonl — which is
-	// what lets a day of its decisions be judged against the Node tick's before cut-over.
-	Shadow bool
 }
 
 // pass is what one tick read before deciding anything; every phase after begin reads it.
@@ -61,13 +57,10 @@ type pass struct {
 // Tick is one pass. A busy lock is reported and returns nil having stamped nothing: a pass
 // that never ran has completed nothing.
 func Tick(ctx context.Context, env Env) (err error) {
-	if env.Shadow && (env.Orca == nil || !env.Orca.ReadOnly) {
-		return errors.New("a shadow tick needs a read-only orca client, or adopting a handle rewrites cycle-terminal.json")
-	}
 	if err := paths.EnsureDirs(env.Paths, ""); err != nil {
 		return err
 	}
-	acquired, err := lock.Acquire(tickLock(env))
+	acquired, err := lock.Acquire(env.Paths.TickLock)
 	if err != nil {
 		return err
 	}
@@ -75,8 +68,8 @@ func Tick(ctx context.Context, env Env) (err error) {
 		return reportBusy(env)
 	}
 	// Released on every return, the budget read included: the TS left that one to the process
-	// exiting, which a long-lived caller (a test, the shadow) would not.
-	defer func() { err = errors.Join(err, lock.Release(tickLock(env))) }()
+	// exiting, which a long-lived caller (a test) would not.
+	defer func() { err = errors.Join(err, lock.Release(env.Paths.TickLock)) }()
 	stop, err := armWatchdog(env)
 	if err != nil {
 		return err
@@ -85,20 +78,11 @@ func Tick(ctx context.Context, env Env) (err error) {
 	return runPass(ctx, env)
 }
 
-// tickLock is the shadow's own lock, so it never contends with the Node tick it is judged
-// against: a busy shadow would otherwise skip live passes, or the reverse.
-func tickLock(env Env) string {
-	if env.Shadow {
-		return env.Paths.TickShadowLock
-	}
-	return env.Paths.TickLock
-}
-
 // reportBusy names the holder's age, which is the difference between "busy" and "wedged". One
 // read, not three: the holder can change between them, and a message naming a pid that no
 // longer holds the lock is worse than one naming none.
 func reportBusy(env Env) error {
-	held, ok, err := lock.HeldBy(tickLock(env))
+	held, ok, err := lock.HeldBy(env.Paths.TickLock)
 	if err != nil {
 		return err // an unreadable lock is never free
 	}
@@ -149,7 +133,7 @@ func armWatchdog(env Env) (func(), error) {
 		exit = os.Exit
 	}
 	timer := time.AfterFunc(budget, func() {
-		ReleaseOverrunningTick(context.Background(), env, tickLock(env), budget)
+		ReleaseOverrunningTick(context.Background(), env, env.Paths.TickLock, budget)
 		exit(1)
 	})
 	return func() { timer.Stop() }, nil
@@ -160,11 +144,10 @@ func runPass(ctx context.Context, env Env) error {
 	if err != nil {
 		return err
 	}
-	held, err := reconcile(ctx, ps)
-	if err != nil {
+	if err := reconcile(ctx, ps); err != nil {
 		return err
 	}
-	launched, evaluated, err := admit(ctx, ps, held)
+	launched, evaluated, err := admit(ctx, ps)
 	if err != nil {
 		return err
 	}
@@ -175,12 +158,8 @@ func runPass(ctx context.Context, env Env) error {
 }
 
 // stamp marks a completed pass, whether or not any program was enabled. The marker is cleared
-// here and nowhere else, which is what makes "once per episode" mean an episode. A shadow pass
-// stamps nothing: last-tick.json is the live tick's liveness signal.
+// here and nowhere else, which is what makes "once per episode" mean an episode.
 func stamp(env Env) error {
-	if env.Shadow {
-		return nil
-	}
 	if err := ledger.StampTick(env.Paths.LastTick, env.Now()); err != nil {
 		return err
 	}
@@ -212,51 +191,29 @@ func begin(ctx context.Context, env Env) (pass, error) {
 
 // reconcile closes or re-attaches orphans, then supersedes abandoned records with late reports
 // — before admission, because the next cycle's clearReport deletes the very report this reads,
-// so a late outcome has exactly one tick in which to be recovered. It returns the records a
-// shadow pass holds in memory instead of appending; live, that is always empty.
-func reconcile(ctx context.Context, ps pass) ([]ledger.Cycle, error) {
+// so a late outcome has exactly one tick in which to be recovered.
+func reconcile(ctx context.Context, ps pass) error {
 	cycles, err := ledger.ReadCycles(ps.env.Paths.Cycles)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	closed, reattach, err := reconcileAbandoned(ctx, ps.env, ps.now, ps.control, ps.status, cycles)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	held, err := keepCycles(ps.env, closed)
-	if err != nil {
-		return nil, err
+	if err := appendCycles(ps.env.Paths.Cycles, closed); err != nil {
+		return err
 	}
 	for _, program := range reattach {
-		if err := attach(ps.env, program); err != nil {
-			return nil, err
+		if err := Launch(ps.env, program); err != nil {
+			return err
 		}
 	}
 	late, err := reconcileLateReports(ctx, ps.env, ps.now, ps.stored, append(cycles, closed...))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	heldLate, err := keepCycles(ps.env, late)
-	return append(held, heldLate...), err
-}
-
-// keepCycles appends reconciled records to cycles.jsonl, or in a shadow pass hands them back
-// for admission to see in memory, so its decisions match the live pass that did append them.
-func keepCycles(env Env, records []ledger.Cycle) ([]ledger.Cycle, error) {
-	if env.Shadow {
-		return records, nil
-	}
-	return nil, appendCycles(env.Paths.Cycles, records)
-}
-
-// attach re-watches an orphan's live runner. A shadow attaches nothing: a second watcher on a
-// runner the live tick is also re-attaching would race it for the program lock.
-func attach(env Env, program string) error {
-	if env.Shadow {
-		fmt.Fprintf(env.Out, "%s: would attach\n", program)
-		return nil
-	}
-	return Launch(env, program)
+	return appendCycles(ps.env.Paths.Cycles, late)
 }
 
 func appendCycles(path string, records []ledger.Cycle) error {
@@ -270,11 +227,7 @@ func appendCycles(path string, records []ledger.Cycle) error {
 
 // sampleUsage records Craig's share of the pool, which nothing reconstructs afterwards — both
 // terms are fractions of a window that resets. It feeds no gate.
-// A shadow does not sample: it would double the log and race the live prune.
 func sampleUsage(ps pass) {
-	if ps.env.Shadow {
-		return
-	}
 	if err := usage.Append(ps.env.Paths.Usage, usage.SampleOf(ps.status, ps.now), usage.MaxBytes); err != nil {
 		// swallowed: a full disk must cost the measurement, never the tick
 		fmt.Fprintf(ps.env.Err, "usage sample not recorded: %s. Admission is unaffected.\n", err)
@@ -284,11 +237,7 @@ func sampleUsage(ps pass) {
 // publish sends `drovr status --json` as the one hey row for the phone's drovr card. Its cycles
 // include this pass's launches, so a just-admitted program reads as in flight. The lock holder
 // is nil on purpose: the publisher is the holder, so "a tick is evaluating" is true of every row.
-// A shadow publishes nothing: the phone's card is the live tick's row.
 func publish(ctx context.Context, ps pass, launched []ledger.Cycle, evaluated map[string]status.Evaluation) {
-	if ps.env.Shadow {
-		return
-	}
 	text, at, err := statusText(ps, launched, evaluated)
 	if err != nil {
 		// swallowed: a window onto the tick must not be able to close it
@@ -335,8 +284,8 @@ func statusText(ps pass, launched []ledger.Cycle, evaluated map[string]status.Ev
 // admit decides each enabled program in priority order and launches every GO. A same-pass
 // launch is folded into the cycles the next program is decided against, which is what
 // serializes two admissions in one tick — the concurrency cap, the reservations and the
-// same-cwd gate all depend on it. held is what a shadow's reconcile kept in memory.
-func admit(ctx context.Context, ps pass, held []ledger.Cycle) ([]ledger.Cycle, map[string]status.Evaluation, error) {
+// same-cwd gate all depend on it.
+func admit(ctx context.Context, ps pass) ([]ledger.Cycle, map[string]status.Evaluation, error) {
 	c := ps.control
 	ordered, err := control.ByPriority(c.Programs, ps.now, c.DeadlineHorizonDays)
 	if err != nil {
@@ -352,7 +301,7 @@ func admit(ctx context.Context, ps pass, held []ledger.Cycle) ([]ledger.Cycle, m
 		if err != nil {
 			return nil, nil, err
 		}
-		cycles = append(append(cycles, held...), launched...)
+		cycles = append(cycles, launched...)
 		e, ok, err := evaluate(ctx, ps, program, cycles)
 		if err != nil {
 			return nil, nil, err
@@ -367,7 +316,6 @@ func admit(ctx context.Context, ps pass, held []ledger.Cycle) ([]ledger.Cycle, m
 		if err := Launch(ps.env, program.Name); err != nil {
 			return nil, nil, err
 		}
-		// Booked in shadow too, so later programs are decided against the same pool.
 		launched = append(launched, projectedStart(program.Name, ps.now, e.Decision.Pool.Snapshot()))
 	}
 	return launched, evaluated, nil
@@ -412,11 +360,8 @@ func evaluate(ctx context.Context, ps pass, program control.Program, cycles []le
 	return status.Evaluation{Program: program, Decision: d, Pid: pid}, true, nil
 }
 
-// logDecision is admission's log; a shadow's goes beside it, for shadowdiff to pair.
+// logDecision is admission's log.
 func logDecision(env Env, rec ledger.Decision) error {
-	if env.Shadow {
-		return ledger.AppendRecord(env.Paths.DecisionsShadow, rec)
-	}
 	return ledger.AppendRecord(env.Paths.Decisions, rec)
 }
 
@@ -441,12 +386,8 @@ func owedAsks(ctx context.Context, ps pass, program control.Program, mine []ledg
 	return answers, true, nil
 }
 
-// nudgeIfNeglected texts Craig about asks waiting too long. A shadow never texts: the live
-// tick already does, and it writes nudged.json, which the live tick reads.
+// nudgeIfNeglected texts Craig about asks waiting too long.
 func nudgeIfNeglected(ctx context.Context, ps pass, program string, owed ledger.Owed) error {
-	if ps.env.Shadow {
-		return nil
-	}
 	_, err := ps.channel.NudgeIfNeglected(ctx, ps.env.Paths, ps.env.Out, nudge.Neglect{
 		Program: program, Asks: owed.Asks, AskedAt: owed.At, Now: ps.now, AfterMinutes: ps.control.NudgeAfterMinutes,
 	})
@@ -475,18 +416,8 @@ func runnerAfterLeftover(ctx context.Context, env Env, program string, mine []le
 	return &gone
 }
 
-// releaseLeftover does what LeftoverAction says. A shadow only reads the intent and takes
-// close or exit as released — it cannot know whether the live /exit lands, so a runner that
-// ignores it is the one leftover where the two passes can disagree.
+// releaseLeftover does what LeftoverAction says.
 func releaseLeftover(ctx context.Context, env Env, program string, reported bool) (bool, error) {
-	if env.Shadow {
-		intent, err := env.Orca.LeftoverIntent(ctx, program, reported)
-		if err != nil || intent == orca.LeftoverHold {
-			return false, err
-		}
-		fmt.Fprintf(env.Out, "%s: would release the runner its last cycle left behind (%s)\n", program, intent)
-		return true, nil
-	}
 	released, err := env.Orca.ReleaseLeftover(ctx, program, reported)
 	if released && err == nil {
 		fmt.Fprintf(env.Out, "%s: released the runner its last cycle left behind\n", program)

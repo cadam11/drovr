@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 
 	"github.com/cadam11/drovr/internal/epoch"
 	"github.com/cadam11/drovr/internal/jsnum"
@@ -13,26 +12,18 @@ import (
 	"github.com/cadam11/drovr/internal/service"
 )
 
-// agent is one launchd agent drovr can install: the live tick, or the shadow beside it.
+// agent is the launchd agent drovr installs: the tick.
 type agent struct {
 	label, logName string
 	args           []string
 	interval       int
 }
 
-func agentFor(shadow bool) agent {
-	if shadow {
-		return agent{label: service.ShadowLabel, logName: service.ShadowLogName, args: []string{"tick", "--shadow"}, interval: service.ShadowIntervalSeconds}
-	}
-	return agent{label: service.Label, logName: "tick", args: []string{"tick"}, interval: 600}
-}
+var tickAgent = agent{label: service.Label, logName: "tick", args: []string{"tick"}, interval: 600}
 
-// Service is `drovr service status|install|uninstall|print`; `--shadow` picks the shadow agent
-// for install, uninstall and print. status reports the live tick only: the shadow stamps no
-// heartbeat, so its health would always read as never having run.
+// Service is `drovr service status|install|uninstall|print`.
 func Service(ctx context.Context, env Env, args []string, asJSON bool) error {
-	a := agentFor(slices.Contains(args, "--shadow"))
-	args = slices.DeleteFunc(slices.Clone(args), func(s string) bool { return s == "--shadow" })
+	a := tickAgent
 	sub := ""
 	if len(args) > 0 {
 		sub = args[0]
@@ -80,13 +71,6 @@ func installService(ctx context.Context, env Env, a agent, args []string) error 
 	if err := paths.EnsureDirs(env.Paths, ""); err != nil {
 		return err
 	}
-	warnings, err := installWarnings(a, in.IntervalSeconds, service.PlistPathFor(service.ShadowLabel))
-	if err != nil {
-		return err
-	}
-	for _, w := range warnings {
-		fmt.Fprintln(env.Stderr, w)
-	}
 	outcome, err := service.InstallAgent(ctx, in)
 	if err != nil {
 		return err
@@ -102,27 +86,6 @@ func installService(ctx context.Context, env Env, a agent, args []string) error 
 		return ErrPrinted
 	}
 	return nil
-}
-
-// installWarnings names what an install is about to disturb; the install proceeds either way.
-// A live install over an installed shadow ends the shadow period, and a shadow slower than
-// the shadow-diff pairing window leaves live decisions with nothing to pair against.
-func installWarnings(a agent, seconds int, shadowPlist string) ([]string, error) {
-	var out []string
-	if a.label == service.ShadowLabel && seconds > service.ShadowIntervalSeconds {
-		out = append(out, fmt.Sprintf("warning: the shadow-diff pairing window assumes %d s or less; %d s will leave live decisions unpaired", service.ShadowIntervalSeconds, seconds))
-	}
-	if a.label != service.Label {
-		return out, nil
-	}
-	_, err := os.Stat(shadowPlist)
-	if errors.Is(err, os.ErrNotExist) {
-		return out, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return append(out, "warning: the shadow label "+service.ShadowLabel+" is installed; this replaces the live tick"), nil
 }
 
 func uninstallService(env Env, a agent) error {

@@ -48,15 +48,11 @@ func channel(env Env, notifyTo *string) nudge.Channel {
 	return nudge.Channel{NotifyTo: notifyTo, Caller: callerOf(env), Host: env.Host, Log: env.Stderr}
 }
 
-// TickEnv builds the shadow's orca client read-only: an adopted handle is used but
-// cycle-terminal.json is not rewritten, so the shadow can never move the live tick's grip.
-func TickEnv(env Env, shadow bool) tick.Env {
-	client := orca.NewClient(env.Paths, env.Stderr)
-	client.ReadOnly = shadow
+func TickEnv(env Env) tick.Env {
 	return tick.Env{
 		Paths: env.Paths, Now: env.Now, Out: env.Stdout, Err: env.Stderr, Self: env.Self,
 		TeamclaudeBin: env.TeamclaudeBin, Host: env.Host, Home: env.Home,
-		Orca: client, Asks: asks.NewReader(), Caller: callerOf(env), Exit: os.Exit, Shadow: shadow,
+		Orca: orca.NewClient(env.Paths, env.Stderr), Asks: asks.NewReader(), Caller: callerOf(env), Exit: os.Exit,
 	}
 }
 

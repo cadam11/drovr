@@ -1,5 +1,6 @@
-// Package fixtures replays the cases the TS suite recorded (scripts/record-fixtures.sh), so
-// the Go port is held to the TS behaviour case by case until src/ is deleted.
+// Package fixtures replays the cases the TypeScript suite recorded into testdata/recorded/
+// before it was deleted. The recordings are frozen: a behaviour change deletes the fixture it
+// contradicts in the same commit, never edits it.
 package fixtures
 
 import (
@@ -53,7 +54,7 @@ func Load(t *testing.T, fn string) []Case {
 		t.Fatalf("fixtures: %s: %v", dir, err)
 	}
 	if len(paths) == 0 {
-		t.Fatalf("fixtures: no recorded cases in %s; run scripts/record-fixtures.sh", dir)
+		t.Fatalf("fixtures: no recorded cases in %s; restore it from git, the recordings cannot be regenerated", dir)
 	}
 	sort.Strings(paths)
 	cases := make([]Case, 0, len(paths))

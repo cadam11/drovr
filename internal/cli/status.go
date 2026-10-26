@@ -1,4 +1,4 @@
-// Package cli holds the Go port of src/cli.ts's commands, one file per command.
+// Package cli holds drovr's commands, one file per command.
 package cli
 
 import (
@@ -85,7 +85,7 @@ func Status(ctx context.Context, env Env, asJSON bool) error {
 	return renderText(env.Stdout, in, evaluations)
 }
 
-// liveProbes read what cli.ts's evaluateAll reads: the asks page and the runner's full state,
+// liveProbes read what every decide() caller reads: the asks page and the runner's full state,
 // idle probe included. A runner orca could not answer for is unknown, not absent.
 func liveProbes(ctx context.Context, env Env, now epoch.Millis) Probes {
 	reader := asks.NewReader()

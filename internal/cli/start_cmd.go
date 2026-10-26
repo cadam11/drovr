@@ -22,5 +22,5 @@ func Start(env Env, rest []string) error {
 	if !ok {
 		return fmt.Errorf("no program named \"%s\"", rest[0])
 	}
-	return tick.Launch(TickEnv(env, false), p.Name)
+	return tick.Launch(TickEnv(env), p.Name)
 }

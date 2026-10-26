@@ -194,7 +194,7 @@ type Rank struct {
 // PriorityRank is where a program sits in the drain order and who outranks it. Counted over
 // distinct priorities so equal-priority programs face the same bar, and only over programs
 // that could take a cycle now: disabled, resting or outside its cadence window spends
-// nothing, and holding room for it shadowed others (measured 2026-08-29, sunnyt resting 20h
+// nothing, and holding room for it starved others (measured 2026-08-29, sunnyt resting 20h
 // over aice-x). A blocked program still counts — an answer can arrive any second.
 func PriorityRank(c Control, program string, now epoch.Millis, lastStartFor func(string) (epoch.Millis, bool)) (Rank, error) {
 	enabled := make([]Program, 0, len(c.Programs))

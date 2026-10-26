@@ -17,9 +17,8 @@ import (
 	"github.com/cadam11/drovr/internal/paths"
 )
 
-// The ten commands here write control.json the way cli.ts does: in place through
-// keys.MutateInPlace, validated before the write. Only reserve stages its write, because
-// the TS routes it through keys.ts. Every refusal text is the TS's, byte for byte.
+// The ten commands here write control.json in place through keys.MutateInPlace, validated
+// before the write. Only reserve stages its write, through keys.SetReserve.
 
 const hostUsage = "usage: drovr host <program> --environment <orca env id> --ssh <user@host> --cwd </path/on/box> " +
 	"[--drovr-home <path>] [--claude <path>] [--wake '<local command>']  |  drovr host <program> --clear"

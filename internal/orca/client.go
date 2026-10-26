@@ -46,26 +46,12 @@ const (
 type Client struct {
 	Paths paths.Paths
 	Log   io.Writer // diagnostics (RememberedTerminal)
-	// ReadOnly is the shadow tick: an adopted handle is used but cycle-terminal.json is not
-	// rewritten, and StartCycleAgent, ReleaseRunner, ReleaseLeftover, TidyRunnerTerminal,
-	// PromptRunner and InterruptRunner refuse before asking orca anything. The lower-level
-	// PromptAgent and ReleaseAgent take a handle and are not guarded; only those six are.
-	ReadOnly bool
-	Sleep    func(time.Duration)
+	Sleep func(time.Duration)
 
 	// Per process: a watch frame redraws every few seconds and must not shell out to
 	// direnv per program each time.
 	mu      sync.Mutex
 	baseURL map[string]*string
-}
-
-// writable refuses a terminal-changing call from the shadow tick, whose job is to decide
-// beside the live tick without touching anything the live tick owns.
-func (c *Client) writable(method string) error {
-	if c.ReadOnly {
-		return fmt.Errorf("orca client is read-only: %s refused", method)
-	}
-	return nil
 }
 
 func NewClient(p paths.Paths, log io.Writer) *Client {
@@ -180,12 +166,10 @@ func (c *Client) RunnerTerminal(ctx context.Context, program string) (*TerminalR
 	if err != nil || !ok {
 		return nil, err
 	}
-	if !c.ReadOnly {
-		adopted := *r
-		adopted.Handle = handle
-		if err := RememberTerminal(c.Paths, program, adopted); err != nil {
-			return nil, err
-		}
+	adopted := *r
+	adopted.Handle = handle
+	if err := RememberTerminal(c.Paths, program, adopted); err != nil {
+		return nil, err
 	}
 	return &TerminalRef{Handle: handle, Environment: r.Environment}, nil
 }

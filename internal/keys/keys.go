@@ -80,7 +80,7 @@ func removeStaging(staging string) error {
 	return nil
 }
 
-// MutateInPlace is cli.ts's own mutate, which writes the file in place rather than staging it.
+// MutateInPlace is the CLI's mutate, which writes the file in place rather than staging it.
 func MutateInPlace(path string, change func(*Doc) error) (control.Control, error) {
 	out, validated, err := edit(path, change)
 	if err != nil {

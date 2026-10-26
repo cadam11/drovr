@@ -11,18 +11,6 @@ import (
 	"github.com/cadam11/drovr/internal/exec"
 )
 
-// ShadowLabel is a second agent running the Go tick in shadow beside the live one, so its
-// decisions can be compared without it ever admitting a cycle.
-const ShadowLabel = "tech.propra.drovr.shadow"
-
-// ShadowLogName keeps the shadow's output out of tick.log and tick.err, which are the live
-// tick's record.
-const ShadowLogName = "tick-shadow"
-
-// ShadowIntervalSeconds is 60 so every live decision has a shadow decision from the minute
-// before it to be paired with.
-const ShadowIntervalSeconds = 60
-
 type PlistInput struct {
 	Label, Binary   string
 	Args            []string
@@ -122,8 +110,7 @@ func launchctl(ctx context.Context, args ...string) error {
 }
 
 // ReloadAgent boots the agent out and back in: launchd holds the plist it loaded, not the
-// file on disk, so a rewrite alone silently keeps running the old definition. It takes an
-// explicit label so the live and shadow agents can never be reloaded into each other's slot.
+// file on disk, so a rewrite alone silently keeps running the old definition.
 func ReloadAgent(ctx context.Context, label string) Reload {
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
 	wasLoaded := launchctl(ctx, "list", label) == nil
@@ -169,16 +156,11 @@ func PlistBinary(plistPath string) (string, bool) {
 }
 
 // BinaryMismatch says when the agent would fire a different binary than the one running —
-// after a brew upgrade moved it, the tick keeps running the old one until reinstalled. A node
-// binary is the shadow period, not a move: telling the operator to reinstall there would
-// replace the Node service before any shadow day had been judged.
+// after a brew upgrade moved it, the tick keeps running the old one until reinstalled.
 func BinaryMismatch(plistPath, self string) (string, bool) {
 	bin, ok := PlistBinary(plistPath)
 	if !ok || bin == self {
 		return "", false
-	}
-	if filepath.Base(bin) == "node" {
-		return "note: the live tick is the Node service; this binary runs as the shadow until cut-over", true
 	}
 	return "note: the launchd agent runs " + bin + " but this is " + self + " — re-run: drovr service install", true
 }

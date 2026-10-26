@@ -1,4 +1,4 @@
-// Transcribed mechanically from the JSON of src/help.ts helpTree() by a one-off node script. Never retype a string here: re-transcribe, or the oracle diff breaks on a dash or a quote.
+// The command registry: drovr help, help <cmd>, <cmd> --help and help --json all render from it.
 
 package help
 
@@ -400,15 +400,20 @@ var Commands = []Command{
 			"print emits the plist without writing anything.",
 		},
 		Flags: []Flag{
-			{Flag: "--json", Describes: "structured state for both agents, each with the exact command that fixes it"},
+			{Flag: "--json", Describes: "structured state for the agent, with the exact command that fixes it"},
 		},
-		Writes: "both launchd plists, for install",
+		Writes: "the launchd plist, for install",
 	},
 	{
 		Name:    "init",
 		Usage:   "drovr init",
 		Summary: "write a starter control.json",
 		Writes:  "control.json",
+	},
+	{
+		Name:    "version",
+		Usage:   "drovr version",
+		Summary: "print the installed version",
 	},
 	{
 		Name:    "help",

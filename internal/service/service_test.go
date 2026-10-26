@@ -54,22 +54,21 @@ func TestDescribeWedged(t *testing.T) {
 }
 
 func TestPlistNamesTheBinaryAndItsLogs(t *testing.T) {
-	got := Plist(PlistInput{Label: ShadowLabel, Binary: "/opt/homebrew/bin/drovr", Args: []string{"tick", "--shadow"}, LogName: "tick-shadow", IntervalSeconds: 60, LogDir: "/Users/x/.drovr/logs", Path: "/opt/homebrew/bin:/usr/bin"})
+	got := Plist(PlistInput{Label: Label, Binary: "/opt/homebrew/bin/drovr", Args: []string{"tick"}, LogName: "tick", IntervalSeconds: 600, LogDir: "/Users/x/.drovr/logs", Path: "/opt/homebrew/bin:/usr/bin"})
 	want := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>tech.propra.drovr.shadow</string>
+  <key>Label</key><string>tech.propra.drovr</string>
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/drovr</string>
     <string>tick</string>
-    <string>--shadow</string>
   </array>
-  <key>StartInterval</key><integer>60</integer>
+  <key>StartInterval</key><integer>600</integer>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>/Users/x/.drovr/logs/tick-shadow.log</string>
-  <key>StandardErrorPath</key><string>/Users/x/.drovr/logs/tick-shadow.err</string>
+  <key>StandardOutPath</key><string>/Users/x/.drovr/logs/tick.log</string>
+  <key>StandardErrorPath</key><string>/Users/x/.drovr/logs/tick.err</string>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/bin</string></dict>
 </dict>
@@ -95,8 +94,8 @@ func TestPlistNamesTheBinaryAndItsLogs(t *testing.T) {
 	if err := os.WriteFile(node, []byte(strings.Replace(got, "/opt/homebrew/bin/drovr", "/opt/homebrew/bin/node", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if note, differs := BinaryMismatch(node, "/usr/local/bin/drovr"); !differs || note != "note: the live tick is the Node service; this binary runs as the shadow until cut-over" {
-		t.Fatalf("a Node live tick is the shadow period, not a moved binary: %q", note)
+	if note, differs := BinaryMismatch(node, "/usr/local/bin/drovr"); !differs || note != "note: the launchd agent runs /opt/homebrew/bin/node but this is /usr/local/bin/drovr — re-run: drovr service install" {
+		t.Fatalf("a leftover Node agent is a binary to replace: %q", note)
 	}
 	if _, differs := BinaryMismatch(filepath.Join(t.TempDir(), "absent.plist"), "/usr/local/bin/drovr"); differs {
 		t.Fatal("no plist is not a moved binary")

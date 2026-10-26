@@ -1,4 +1,4 @@
-// Package paths locates drovr's state directory; port of src/paths.ts.
+// Package paths locates drovr's state directory.
 package paths
 
 import (
@@ -7,7 +7,7 @@ import (
 )
 
 type Paths struct {
-	Base, Control, Cycles, Decisions, DecisionsShadow, Usage, LastTick, TickFailure, TickLock, TickShadowLock, Logs string
+	Base, Control, Cycles, Decisions, Usage, LastTick, TickFailure, TickLock, Logs string
 }
 
 // Root honours a present-but-empty DROVR_HOME as empty, as Node's `??` does.
@@ -25,17 +25,15 @@ func Root() string {
 func New() Paths {
 	base := Root()
 	return Paths{
-		Base:            base,
-		Control:         filepath.Join(base, "control.json"),
-		Cycles:          filepath.Join(base, "cycles.jsonl"),
-		Decisions:       filepath.Join(base, "decisions.jsonl"),
-		DecisionsShadow: filepath.Join(base, "decisions-shadow.jsonl"),
-		Usage:           filepath.Join(base, "usage.jsonl"),
-		LastTick:        filepath.Join(base, "last-tick.json"),
-		TickFailure:     filepath.Join(base, "tick-failure.json"),
-		TickLock:        filepath.Join(base, "tick.lock"),
-		TickShadowLock:  filepath.Join(base, "tick-shadow.lock"),
-		Logs:            filepath.Join(base, "logs"),
+		Base:        base,
+		Control:     filepath.Join(base, "control.json"),
+		Cycles:      filepath.Join(base, "cycles.jsonl"),
+		Decisions:   filepath.Join(base, "decisions.jsonl"),
+		Usage:       filepath.Join(base, "usage.jsonl"),
+		LastTick:    filepath.Join(base, "last-tick.json"),
+		TickFailure: filepath.Join(base, "tick-failure.json"),
+		TickLock:    filepath.Join(base, "tick.lock"),
+		Logs:        filepath.Join(base, "logs"),
 	}
 }
 

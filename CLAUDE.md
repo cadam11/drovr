@@ -270,10 +270,12 @@ Written and type-checked, never seen to fire. Unproven, not done:
 
 Every alert goes through **hey** (https://hey.drovr.app, its own private repo): `textCraig` in
 `nudge.ts` calls `https://hey.drovr.app/mcp` as the user who ran `hey login` on this Mac
-(`~/.config/hey/credentials.json`, read from the tick's `HOME`) through `src/hey-http.ts`, one
+(`~/.config/hey/credentials.json`, read from the tick's `HOME`) through `internal/hey`, one
 JSON-RPC `tools/call` per alert (`send`), prefs read (`prefs`), profile seed (`profile`) and the
-once-a-tick status row (`putStatus`). `src/hey-wire.ts` is the wire contract and `src/hey.ts` the
-client library; both are copies of files the hey repo owns, and a change there lands here by hand.
+once-a-tick status row (`putStatus`). `internal/hey/hey_http.go` (credentials and the MCP client),
+`wire.go` (the wire contract), `config.go` and `jsonout.go` are copies of the hey repo's `cli/hey`
+files, and a change there lands here by hand (`TestCopiesMatchTheHeyRepo` catches a drift);
+`drovr.go` holds drovr's four calls over them.
 `control.notifyTo` is the handle; null disables alerts and leaves the log line. The `from` label is
 the program for a cycle alert and `drovr on <host>` for a supervisor alert, because the app groups a
 thread by it. A send is never retried: a retried send is a duplicate message. hey is optional and
@@ -281,7 +283,7 @@ paid; without it drovr logs and nothing more. **drovr makes no AWS call.**
 
 The tick also publishes its state there: at the end of every completed pass, after the usage
 sample and before `stampTick`, `publishStatus` sends the JSON `drovr status --json` prints (one
-builder, `src/status-payload.ts`) as the row `status#drovr@<host>`. Same rules as every send:
+builder, `internal/status/payload.go`) as the row `status#drovr@<host>`. Same rules as every send:
 bounded by the call's 15 s, logged and swallowed, off when `control.notifyTo` is null, and in the
 same position as the usage sample because it is a window onto the tick and must never be a gate
 in it. It is the one publisher drovr has: one call per tick to hey, nothing cached, nothing
@@ -291,9 +293,7 @@ invalidated. A web page reading that row would be a new billing decision.
 
 drovr supervises a program named `drovr` that works on this codebase — but never in this
 checkout. Its cycles run in the `~/code/drovr-loop` worktree on the `loop` branch: two runners in one
-checkout race the git index. (Until 2026-10-26 there was a second reason — launchd executed
-TypeScript straight from this working tree, so a cycle editing `tick.ts` here would have rewritten
-the supervisor mid-flight. The tick is a Go binary now and that reason is gone.) Merging `loop` into
+checkout race the git index. Merging `loop` into
 `main` is the maintainer's manual act, followed by a rebuild and `drovr service install` when the merge
 touches the service. Its hub and asks pages
 live on drovr's own install (drovr.aicex.app, supplied by the worktree's `.envrc`) and are
@@ -328,7 +328,7 @@ whatever it contains, billed per path past 1,000 a month, and on a tick cadence 
 money. **A publisher is a billing decision, not a feature decision.**
 
 **The one publisher since, priced:** from 2026-10-16 the tick sends `drovr status --json` to hey
-as one row (`status#drovr@<host>`, `src/status-payload.ts` → `publishStatus` in `nudge.ts`) for
+as one row (`status#drovr@<host>`, `internal/status/payload.go` → `publishStatus` in `nudge.ts`) for
 the Hey app's drovr card. One Lambda invoke and one PutItem per tick, nothing cached and nothing
 invalidated: at a 10-minute tick that is about 4,300 invokes a month inside the Lambda free tier
 and, for a payload of a few KB (8 KB measured with 13 programs), a few thousand DynamoDB write
@@ -336,8 +336,6 @@ units — cents, and under a dollar a month however the payload grows inside its
 removed aice publisher cost $22-26 a *day*. It stays acceptable only on those terms: one row,
 overwritten, no fan-out, no second surface. A web page reading that row would be a new billing
 decision, not a free extension.
-
-The shadow tick adds a temporary cost: it calls hey's `prefs` once per pass, and at the 60 s shadow cadence that is roughly 43k Lambda invokes a month while it runs — inside the free tier, and a read, not a write. It goes away with the shadow label at cut-over.
 
 ## The remote
 
@@ -347,20 +345,20 @@ recreation is gone on purpose. Pushing is the maintainer's act.
 
 ## Conventions
 
-- Node >= 24, TypeScript run directly (no build step). Erasable syntax only — no enums, no
-  parameter properties.
-- Zod for anything crossing a process boundary (teamclaude JSON, control file, cycle reports).
-  Never cast external data.
-- `node --test test/*.spec.ts`. Test pure functions; no mocks or spies. The `keys.spec.ts` suite
-  uses real temp files because those functions write the operator's live config.
-- `pnpm check-types` is the gate. Editor diagnostics lag behind edits — trust `tsc`.
+- Go, one package per concern under `internal/`, `main.go` the dispatch. The trap table above
+  names each package by the TypeScript module it was ported from (`decide.ts` is `internal/decide`,
+  `tick.ts` is `internal/tick`); the names stay as they are. The TypeScript was deleted
+  once the Go binary had every command (2026-10-26).
+- Anything crossing a process boundary (teamclaude JSON, control file, cycle reports) is decoded
+  through `internal/shape`, which refuses a wrong shape with its field path. Never cast external data.
+- Test pure functions; no mocks or spies. The `internal/keys` suite uses real temp files because
+  those functions write the operator's live config.
+- The gate: `go test ./... -count=1 && go vet ./... && gofmt -l .` (the last must print nothing).
+  Editor diagnostics lag behind edits — trust the compiler.
+- `testdata/recorded/` is frozen history: fixtures recorded from the TypeScript suite, which the Go
+  tests still read. A behaviour change lands in Go with its own test; where a recorded fixture
+  disagrees, the fixture is deleted in the commit that changes the behaviour, never hand-edited.
 - Comments explain *why*, never *what*. Most functions should not have one.
-- **Two implementations live here until plan E3 deletes `src/`** (spec `docs/superpowers/specs/2026-10-22-go-port-design.md`).
-  `internal/` is the Go port and, since 2026-10-26, what launchd runs (`~/.local/bin/drovr-go tick`; the brew release renames it `drovr`). `src/` is still the `drovr` on PATH for every command the Go binary reports as not ported, and the oracle for the Go tests. The shadow machinery stays for the next port: `drovr tick --shadow` runs a read-only tick beside the live one under `tech.propra.drovr.shadow` (install: `drovr service install --shadow`), and `scripts/shadow-diff.sh --since <ISO>` pairs the two decision logs. A live decision pairs with the latest shadow one at most `--window` seconds (default 90, 1.5× the 60 s shadow interval for launchd jitter) before it; digit-only reason differences count as drift only when the two pools differ, and over identical pools only duration and percent tokens (`43m`, `2h`, `40%`) are masked — any other reason digit or a `cyclesFundable` difference fails. It exits 0 clean, 1 mismatches, 3 nothing to compare (`go run` shows 3 as 1). `go test ./... -count=1` also runs `scripts/shadowdiff`. One package per TS module. The TS is the oracle:
-  `scripts/record-fixtures.sh` replays the TS suite with `DROVR_RECORD` set and writes `testdata/recorded/`,
-  which the Go tests read; `conformance_test.go` diffs the two CLIs on `testdata/home`. A behaviour change
-  lands in the TS first, with its test, then `scripts/record-fixtures.sh`, then the Go — never the Go alone,
-  and never a hand-edited fixture. Gates: `go test ./... && go vet ./... && gofmt -l .` beside `pnpm check-types`.
 
 ## Interfaces to other tools
 
@@ -370,7 +368,7 @@ recreation is gone on purpose. Pushing is the maintainer's act.
   an Orca worktree are refused with the `orca repo add --path <cwd>` that fixes it.
 - **teamclaude** — read-only, via `teamclaude status --json`, plus `teamclaude run` as the launch
   command of every cycle.
-- **hey** — **HTTPS to `https://hey.drovr.app/mcp`** through `src/hey-http.ts`, as the user in
+- **hey** — **HTTPS to `https://hey.drovr.app/mcp`** through `internal/hey`, as the user in
   `~/.config/hey/credentials.json`. See Notifications. The Go `hey` CLI on this Mac comes from the
   hey repo's release (`https://drovr.app/cli/`).
 - **ssh** — only for a program with a `host`: `ssh -o BatchMode=yes <target> cat|rm -f|true`

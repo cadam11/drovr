@@ -28,7 +28,7 @@ func Watch(ctx context.Context, env Env, rest []string) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGWINCH)
 	defer signal.Stop(signals)
-	launch := TickEnv(env, false)
+	launch := TickEnv(env)
 	launch.Out = io.Discard // its "launched cycle" line would land in the middle of the frame
 	return watch.Run(ctx, watch.Deps{
 		In: os.Stdin, Out: env.Stdout, Term: watch.NewTerminal(os.Stdin, os.Stdout),

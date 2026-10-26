@@ -5,15 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/cadam11/drovr/internal/epoch"
 	"github.com/cadam11/drovr/internal/hey"
 	"github.com/cadam11/drovr/internal/paths"
-	"github.com/cadam11/drovr/internal/service"
 )
 
 func cliEnv(t *testing.T, control string) (Env, *bytes.Buffer, *bytes.Buffer) {
@@ -86,56 +83,10 @@ func TestServicePrintNamesThisBinary(t *testing.T) {
 	if !strings.Contains(out.String(), "<string>/opt/homebrew/bin/drovr</string>\n    <string>tick</string>\n  </array>") || !strings.Contains(out.String(), "<integer>600</integer>") {
 		t.Fatalf("%s", out)
 	}
-	out.Reset()
-	if err := Service(context.Background(), env, []string{"print", "--shadow"}, false); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "tech.propra.drovr.shadow") || !strings.Contains(out.String(), "<string>--shadow</string>") || !strings.Contains(out.String(), "<integer>60</integer>") || !strings.Contains(out.String(), filepath.Join(env.Paths.Logs, "tick-shadow.err")) {
-		t.Fatalf("%s", out)
-	}
 	if err := Service(context.Background(), env, []string{"reload"}, false); err == nil || err.Error() != `unknown service subcommand "reload" — expected status, install, uninstall or print (label: tech.propra.drovr)` {
 		t.Fatalf("%v", err)
 	}
 	if err := Service(context.Background(), env, []string{"print", "soon"}, false); err == nil {
 		t.Fatal("a non-numeric interval printed a plist")
-	}
-}
-
-// The shadow tick must be built read-only and keep to its own lock and log: a shadow that
-// rewrote cycle-terminal.json or took tick.lock would be a second live tick.
-func TestTickEnvShadowIsReadOnly(t *testing.T) {
-	env, _, _ := cliEnv(t, `{"programs":[]}`)
-	live, shadow := TickEnv(env, false), TickEnv(env, true)
-	if live.Shadow || live.Orca.ReadOnly || !shadow.Shadow || !shadow.Orca.ReadOnly || shadow.Self != env.Self || shadow.Asks == nil {
-		t.Fatalf("live %+v\nshadow %+v", live, shadow)
-	}
-	if service.ShadowLogName != "tick-shadow" {
-		t.Fatal(service.ShadowLogName)
-	}
-}
-
-func TestInstallWarnings(t *testing.T) {
-	present := filepath.Join(t.TempDir(), "shadow.plist")
-	if err := os.WriteFile(present, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	absent := filepath.Join(t.TempDir(), "absent.plist")
-	cases := []struct {
-		name        string
-		a           agent
-		seconds     int
-		shadowPlist string
-		want        []string
-	}{
-		{"live over an installed shadow", agentFor(false), 600, present, []string{"warning: the shadow label tech.propra.drovr.shadow is installed; this replaces the live tick"}},
-		{"live with no shadow", agentFor(false), 600, absent, nil},
-		{"shadow at 60", agentFor(true), 60, present, nil},
-		{"shadow slower than the pairing window", agentFor(true), 61, present, []string{"warning: the shadow-diff pairing window assumes 60 s or less; 61 s will leave live decisions unpaired"}},
-	}
-	for _, c := range cases {
-		got, err := installWarnings(c.a, c.seconds, c.shadowPlist)
-		if err != nil || !slices.Equal(got, c.want) {
-			t.Errorf("%s: %q %v", c.name, got, err)
-		}
 	}
 }

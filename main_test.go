@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,7 +24,9 @@ func TestRun(t *testing.T) {
 		{name: "no arguments", args: nil, wantOut: "drovr — capacity-aware", wantStderr: "\n"},
 		{name: "unregistered", args: []string{"nonsense"}, wantErr: "exit 1", wantOut: "drovr — capacity-aware", wantStderr: "unknown command \"nonsense\"\n\n"},
 		{name: "watch refuses a non-integer before touching the terminal", args: []string{"watch", "x"}, wantErr: "the interval is a number of seconds, got \"x\""},
-		{name: "tick with a misspelt flag never runs a live tick", args: []string{"tick", "--shadwo"}, wantErr: "tick takes no arguments but --shadow"},
+		{name: "tick with a misspelt flag never runs a live tick", args: []string{"tick", "--shadwo"}, wantErr: "tick takes no arguments"},
+		{name: "tick refuses the retired --shadow", args: []string{"tick", "--shadow"}, wantErr: "tick takes no arguments"},
+		{name: "help version renders from the registry", args: []string{"help", "version"}, wantOut: "drovr version"},
 		{name: "unknown topic", args: []string{"help", "nope"}, wantErr: "no command named \"nope\" — run `drovr help` for the list"},
 	}
 	for _, c := range cases {
@@ -78,5 +83,28 @@ func TestEveryRegistryCommandDispatches(t *testing.T) {
 				t.Fatalf("%s is in the registry but run does not dispatch it: %q", c.Name, errOut.String())
 			}
 		})
+	}
+}
+
+// The shadow tick, its service label and the Node oracle went with the TypeScript; nothing
+// that ships may still name them.
+func TestNoShadowRemains(t *testing.T) {
+	for _, root := range []string{"internal", "main.go", "scripts"} {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(strings.ToLower(path+"\n"+string(b)), "shadow") {
+				t.Errorf("%s still mentions shadow", path)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -127,9 +127,6 @@ func (c *Client) createTerminal(ctx context.Context, in StartInput, environment 
 // types into a shell: the command goes through `create --command` (measured 2026-09-01: a
 // command sent into a live claude prompt, eight times). drovr does not own the process.
 func (c *Client) StartCycleAgent(ctx context.Context, in StartInput) (Started, error) {
-	if err := c.writable("StartCycleAgent"); err != nil {
-		return Started{}, err
-	}
 	name, environment := in.Program.Name, ""
 	if in.Program.Host != nil {
 		environment = in.Program.Host.Environment
@@ -210,9 +207,6 @@ func (c *Client) ReleaseAgent(ctx context.Context, handle, environment string, s
 // ReleaseRunner is true when nothing is left holding a terminal for the program. A caller
 // that must return in seconds passes settleAttempts 0 to refuse a busy runner at once.
 func (c *Client) ReleaseRunner(ctx context.Context, program string, settleAttempts int) (bool, error) {
-	if err := c.writable("ReleaseRunner"); err != nil {
-		return false, err
-	}
 	t, err := c.RunnerTerminal(ctx, program)
 	if err != nil || t == nil {
 		return t == nil && err == nil, err
@@ -231,7 +225,7 @@ func (c *Client) ReleaseRunner(ctx context.Context, program string, settleAttemp
 	return false, nil
 }
 
-// LeftoverIntent is what ReleaseLeftover would do, doing none of it (the shadow tick). No
+// LeftoverIntent is what ReleaseLeftover would do, doing none of it. No
 // terminal is "close": nothing holds one, which ReleaseLeftover reports as released.
 func (c *Client) LeftoverIntent(ctx context.Context, program string, reported bool) (Leftover, error) {
 	t, err := c.RunnerTerminal(ctx, program)
@@ -249,9 +243,6 @@ func (c *Client) LeftoverIntent(ctx context.Context, program string, reported bo
 // ReleaseLeftover is the tick's release by LeftoverAction: true when nothing is left
 // holding a terminal.
 func (c *Client) ReleaseLeftover(ctx context.Context, program string, reported bool) (bool, error) {
-	if err := c.writable("ReleaseLeftover"); err != nil {
-		return false, err
-	}
 	action, err := c.LeftoverIntent(ctx, program, reported)
 	if err != nil || action == LeftoverHold {
 		return false, err
@@ -276,9 +267,6 @@ func (c *Client) requireRunner(ctx context.Context, program string) (*TerminalRe
 }
 
 func (c *Client) PromptRunner(ctx context.Context, program, prompt string) error {
-	if err := c.writable("PromptRunner"); err != nil {
-		return err
-	}
 	t, err := c.requireRunner(ctx, program)
 	if err != nil {
 		return err
@@ -288,9 +276,6 @@ func (c *Client) PromptRunner(ctx context.Context, program, prompt string) error
 
 // InterruptRunner is an interrupt, not a kill: the runner winds down and writes its report.
 func (c *Client) InterruptRunner(ctx context.Context, program string) error {
-	if err := c.writable("InterruptRunner"); err != nil {
-		return err
-	}
 	t, err := c.requireRunner(ctx, program)
 	if err != nil {
 		return err
@@ -302,9 +287,6 @@ func (c *Client) InterruptRunner(ctx context.Context, program string) error {
 // TidyRunnerTerminal closes a program's cycle terminal only when no claude is in it: a
 // stray shell is untidy, a closed live session is lost work. It returns the closed handle.
 func (c *Client) TidyRunnerTerminal(ctx context.Context, program string) (*string, error) {
-	if err := c.writable("TidyRunnerTerminal"); err != nil {
-		return nil, err
-	}
 	t, err := c.RunnerTerminal(ctx, program)
 	if err != nil || t == nil {
 		return nil, err

@@ -18,7 +18,6 @@ func TestRootHonoursDrovrHome(t *testing.T) {
 		p.TickLock: "/tmp/x/tick.lock", p.Logs: "/tmp/x/logs",
 		p.ProgramLock("demo"): "/tmp/x/programs/demo/cycle.lock", p.LastCycle("demo"): "/tmp/x/programs/demo/last-cycle.json",
 		p.StateFile("demo"): "/tmp/x/programs/demo/state.json", p.ProgramState("demo"): "/tmp/x/programs/demo",
-		p.DecisionsShadow: "/tmp/x/decisions-shadow.jsonl", p.TickShadowLock: "/tmp/x/tick-shadow.lock",
 		p.CycleTerminal("demo"): "/tmp/x/programs/demo/cycle-terminal.json", p.CurrentCycle("demo"): "/tmp/x/programs/demo/current-cycle.json",
 		p.Nudged("demo"): "/tmp/x/programs/demo/nudged.json", p.ProfileSeeded("demo"): "/tmp/x/programs/demo/profile-seeded.json",
 		p.WorkerLog("demo"): "/tmp/x/logs/demo-worker.log",

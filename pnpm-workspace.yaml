@@ -1,3 +1,0 @@
-# esbuild's postinstall fetches its native binary; nothing else here runs a script.
-allowBuilds:
-  esbuild: true

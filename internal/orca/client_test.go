@@ -129,14 +129,6 @@ func TestRunnerTerminalAdoptsAndRewrites(t *testing.T) {
 	if got := RememberedTerminal(c.Paths, "alpha", c.Log); got == nil || got.Handle != "term_new" {
 		t.Fatalf("not rewritten: %+v", got)
 	}
-	c.ReadOnly = true
-	remember(t, c, "alpha", Remembered{Handle: "term_old", TabID: "tab-1", WorktreeID: "wt-1"})
-	if ref, _ := c.RunnerTerminal(context.Background(), "alpha"); ref == nil || ref.Handle != "term_new" {
-		t.Fatal("read-only must still adopt")
-	}
-	if got := RememberedTerminal(c.Paths, "alpha", c.Log); got.Handle != "term_old" {
-		t.Fatal("read-only rewrote cycle-terminal.json")
-	}
 }
 
 func TestRunnerAddressNamesTheTab(t *testing.T) {
@@ -287,33 +279,5 @@ func TestReadPreviewNeverFails(t *testing.T) {
 	remember(t, c, "alpha", Remembered{Handle: "term_1", TabID: "tab-1", WorktreeID: "wt-1"})
 	if p, w := c.ReadPreview(context.Background(), "alpha"); p != nil || w == nil || !strings.HasPrefix(*w, "preview unavailable for alpha: orca terminal read --terminal term_1 --limit 40 failed") {
 		t.Fatalf("%+v %v", p, w)
-	}
-}
-
-// The shadow tick holds a read-only client; every method that changes a terminal refuses
-// before it asks orca anything.
-func TestReadOnlyClientRefusesEveryWrite(t *testing.T) {
-	dir := shim(t, nil)
-	c, _ := client(t)
-	c.ReadOnly = true
-	ctx := context.Background()
-	writes := map[string]func() error{
-		"ReleaseRunner":      func() error { _, err := c.ReleaseRunner(ctx, "alpha", 0); return err },
-		"ReleaseLeftover":    func() error { _, err := c.ReleaseLeftover(ctx, "alpha", true); return err },
-		"TidyRunnerTerminal": func() error { _, err := c.TidyRunnerTerminal(ctx, "alpha"); return err },
-		"PromptRunner":       func() error { return c.PromptRunner(ctx, "alpha", "go") },
-		"InterruptRunner":    func() error { return c.InterruptRunner(ctx, "alpha") },
-		"StartCycleAgent": func() error {
-			_, err := c.StartCycleAgent(ctx, StartInput{Program: control.Program{Name: "alpha"}})
-			return err
-		},
-	}
-	for name, call := range writes {
-		if err := call(); err == nil || err.Error() != "orca client is read-only: "+name+" refused" {
-			t.Errorf("%s: %v", name, err)
-		}
-	}
-	if got := calls(t, dir); got != "" {
-		t.Fatalf("a read-only client called orca: %s", got)
 	}
 }

@@ -40,8 +40,8 @@ type stamped struct {
 	now func() Millis
 }
 
-// cli.ts's stampConsole prefixes each console call, not each line; one Fprintln per message
-// keeps the two the same, so a multi-line message carries one stamp.
+// The stamp prefixes each message, not each line; one Fprintln per message keeps a multi-line
+// message under one stamp.
 // One Write per message: the tick and its detached workers append to the same log under
 // O_APPEND, and a stamp written separately could land between another process's stamp and line.
 func (s stamped) Write(p []byte) (int, error) {

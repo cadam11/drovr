@@ -1,5 +1,5 @@
-// Command drovr is the Go port of src/cli.ts. The TypeScript is the oracle until cut-over:
-// conformance_test.go diffs the two on the same DROVR_HOME.
+// Command drovr is the capacity-aware supervisor's CLI: the launchd tick, the cycle worker,
+// and every operator command.
 package main
 
 import (
@@ -71,9 +71,9 @@ func dispatch(cmd string, rest []string, asJSON bool, stdout, stderr io.Writer) 
 	if cmd == "run-cycle" && len(rest) == 0 {
 		return errors.New("run-cycle needs a program name")
 	}
-	// A misspelt --shadow must not fall through to a live tick that admits real cycles.
-	if cmd == "tick" && slices.ContainsFunc(rest, func(a string) bool { return a != "--shadow" }) {
-		return errors.New("tick takes no arguments but --shadow")
+	// A stray argument must not fall through to a live tick that admits real cycles.
+	if cmd == "tick" && len(rest) > 0 {
+		return errors.New("tick takes no arguments")
 	}
 	if cmd == "tick" || cmd == "run-cycle" {
 		// The two commands that never run in front of a human: their lines land in a launchd
@@ -126,7 +126,7 @@ func dispatch(cmd string, rest []string, asJSON bool, stdout, stderr io.Writer) 
 	case "service":
 		return cli.Service(ctx, env, rest, asJSON)
 	case "tick":
-		return stampedFailure(stderr, tick.Run(ctx, cli.TickEnv(env, slices.Contains(rest, "--shadow"))))
+		return stampedFailure(stderr, tick.Run(ctx, cli.TickEnv(env)))
 	}
 	return stampedFailure(stderr, cli.Worker(env).RunProgram(ctx, rest[0]))
 }

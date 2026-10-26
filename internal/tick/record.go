@@ -35,13 +35,8 @@ func DecisionRecord(program string, d decide.Decision, now epoch.Millis) ledger.
 
 // Launch hands a program to a detached `run-cycle`, which owns that program's lock and ledger
 // entries. Cycles run for hours, so the tick must not wait on one: it returns in seconds and
-// the next firing evaluates the other programs. A shadow starts nothing; its caller still
-// books the projected start, so the rest of its pass sees the pool the live one does.
+// the next firing evaluates the other programs.
 func Launch(env Env, program string) error {
-	if env.Shadow {
-		fmt.Fprintf(env.Out, "%s: would launch\n", program)
-		return nil
-	}
 	log := env.Paths.WorkerLog(program)
 	pid, err := exec.Detach(env.Self, []string{"run-cycle", program}, log, "", nil)
 	if err != nil {
