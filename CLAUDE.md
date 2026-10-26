@@ -168,11 +168,15 @@ Never document a flag before implementing it — a help page that lies is worse 
 
 Written and type-checked, never seen to fire. Unproven, not done:
 
-- **The Go tick, live or shadowed.** `drovr tick --shadow` and `drovr service install --shadow`
-  landed with plan E2, proven end to end in temp homes against shims; no shadow agent has been
-  installed (that is the operator's act: `drovr service install --shadow` from the Go binary), so
-  `scripts/shadow-diff.sh` has never read a real day, and no Go `run-cycle` has watched a real
-  runner. The Go hey client copies carry two upstream fixes (token echo) not yet released as a hey CLI.
+- **The Go tick under contention, and the rest of the Go CLI.** The Go binary has run the live tick
+  since 2026-10-26 14:05 (cut over after one shadow pass paired 3/3 with the Node tick, zero
+  differences — the planned clean day was skipped at the operator's word). Seen that afternoon: eight
+  ticks exit 0, one GO (propra-cmo 14:15), a Go `run-cycle` watching an interactive runner to its
+  `seam` report with the closing message captured and the rest applied, the status publish. Not seen
+  from the Go side: a refusal over a thin pool, a leftover release, a blocked or stalled runner, a
+  headless or hosted cycle, reconciliation of an abandoned record. Everything but `tick`, `run-cycle`,
+  `report`, `notify`, `service` and `status` is still the Node CLI on PATH (plan E3). The Go hey client
+  copies carry two upstream fixes (token echo) not yet released as a hey CLI.
 - **The send budget refusing a real sender.** `SEND_BUDGET_PER_HOUR` landed 2026-10-17, proven
   in the handler suite (the 31st refused, another label and the next hour unaffected) and through
   the router as a tool error; no live sender has reached 30 in an hour, so the `rate#` row, the
@@ -278,15 +282,15 @@ invalidated. A web page reading that row would be a new billing decision.
 ## drovr is also a program
 
 drovr supervises a program named `drovr` that works on this codebase — but never in this
-checkout. Its cycles run in the `~/code/drovr-loop` worktree on the `loop` branch, because
-launchd executes TypeScript straight from this working tree: a cycle editing `tick.ts` here
-would rewrite the supervisor mid-flight. Merging `loop` into `main` is the maintainer's manual act,
-followed by `drovr service install` when the merge touches the service. Its hub and asks pages
+checkout. Its cycles run in the `~/code/drovr-loop` worktree on the `loop` branch: two runners in one
+checkout race the git index. (Until 2026-10-26 there was a second reason — launchd executed
+TypeScript straight from this working tree, so a cycle editing `tick.ts` here would have rewritten
+the supervisor mid-flight. The tick is a Go binary now and that reason is gone.) Merging `loop` into
+`main` is the maintainer's manual act, followed by a rebuild and `drovr service install` when the merge
+touches the service. Its hub and asks pages
 live on drovr's own install (drovr.aicex.app, supplied by the worktree's `.envrc`) and are
 created by the loop agent at onboarding. Its mechanical status page, `craig/loop-status.html`,
 is gone with every other drovr publisher.
-
-Once the Go binary is what launchd runs, the service no longer executes this working tree, so that reason goes; the worktree stays for the other one — two runners in one checkout race the git index.
 
 ## There is no web panel and no intents channel — do not rebuild either
 
@@ -343,8 +347,8 @@ recreation is gone on purpose. Pushing is the maintainer's act.
   uses real temp files because those functions write the operator's live config.
 - `pnpm check-types` is the gate. Editor diagnostics lag behind edits — trust `tsc`.
 - Comments explain *why*, never *what*. Most functions should not have one.
-- **Two implementations live here until the Go port cuts over** (spec `docs/superpowers/specs/2026-10-22-go-port-design.md`).
-  `src/` is what launchd runs. `internal/` is the Go port; `drovr tick --shadow` runs it beside the live service under `tech.propra.drovr.shadow` (install: `drovr service install --shadow` from the Go binary), and `scripts/shadow-diff.sh --since <ISO>` pairs the two decision logs — a clean day is the cut-over gate. A live decision pairs with the latest shadow one at most `--window` seconds (default 90, 1.5× the 60 s shadow interval for launchd jitter) before it; digit-only reason differences count as drift only when the two pools differ, and over identical pools only duration and percent tokens (`43m`, `2h`, `40%`) are masked — any other reason digit or a `cyclesFundable` difference fails. It exits 0 clean, 1 mismatches, 3 nothing to compare (`go run` shows 3 as 1). `go test ./... -count=1` also runs `scripts/shadowdiff`. One package per TS module. The TS is the oracle:
+- **Two implementations live here until plan E3 deletes `src/`** (spec `docs/superpowers/specs/2026-10-22-go-port-design.md`).
+  `internal/` is the Go port and, since 2026-10-26, what launchd runs (`~/.local/bin/drovr-go tick`; the brew release renames it `drovr`). `src/` is still the `drovr` on PATH for every command the Go binary reports as not ported, and the oracle for the Go tests. The shadow machinery stays for the next port: `drovr tick --shadow` runs a read-only tick beside the live one under `tech.propra.drovr.shadow` (install: `drovr service install --shadow`), and `scripts/shadow-diff.sh --since <ISO>` pairs the two decision logs. A live decision pairs with the latest shadow one at most `--window` seconds (default 90, 1.5× the 60 s shadow interval for launchd jitter) before it; digit-only reason differences count as drift only when the two pools differ, and over identical pools only duration and percent tokens (`43m`, `2h`, `40%`) are masked — any other reason digit or a `cyclesFundable` difference fails. It exits 0 clean, 1 mismatches, 3 nothing to compare (`go run` shows 3 as 1). `go test ./... -count=1` also runs `scripts/shadowdiff`. One package per TS module. The TS is the oracle:
   `scripts/record-fixtures.sh` replays the TS suite with `DROVR_RECORD` set and writes `testdata/recorded/`,
   which the Go tests read; `conformance_test.go` diffs the two CLIs on `testdata/home`. A behaviour change
   lands in the TS first, with its test, then `scripts/record-fixtures.sh`, then the Go — never the Go alone,
