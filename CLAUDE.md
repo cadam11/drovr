@@ -176,7 +176,7 @@ Written and type-checked, never seen to fire. Unproven, not done:
   from the Go side: a refusal over a thin pool, a leftover release, a blocked or stalled runner, a
   headless or hosted cycle, reconciliation of an abandoned record. Since 2026-10-26 18:37 the
   `drovr` on PATH is brew's (v0.2.0) and the TypeScript is deleted. The Go hey client
-  copies carry two upstream fixes (token echo) not yet released as a hey CLI.
+  copies match the hey CLI released as 0.3.1 on 2026-10-27.
 - **A brew upgrade, and watch in daily use.** Seen 2026-10-26: `scripts/release.sh --publish`
   cut v0.2.0, `brew install cadam11/tap/drovr` put it on PATH, `drovr service install` wrote the
   plist with brew's `opt` path, and the drovr.app/cli redirect answered 302 to the real release
