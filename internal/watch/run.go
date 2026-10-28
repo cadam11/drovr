@@ -149,7 +149,9 @@ func Run(ctx context.Context, deps Deps, intervalSeconds int) (err error) {
 		chunks = make(chan input)
 		go readChunks(ctx, deps.In, chunks)
 	}
-	w.draw(ctx, false)
+	if err := w.draw(ctx, false); err != nil {
+		return err
+	}
 	return w.loop(ctx, chunks)
 }
 
@@ -166,7 +168,7 @@ func (w *watcher) loop(ctx context.Context, chunks chan input) error {
 		case sig := <-w.deps.Signals:
 			err = w.signal(ctx, sig)
 		case <-ticks:
-			w.draw(ctx, false)
+			err = w.draw(ctx, false)
 		case p := <-w.probes:
 			err = w.landedProbe(ctx, p)
 		case in := <-chunks:
@@ -213,22 +215,27 @@ func send(ctx context.Context, out chan<- input, in input) bool {
 // restored (R2 — the TS left raw mode and the alternate screen behind on TERM and HUP).
 func (w *watcher) signal(ctx context.Context, sig os.Signal) error {
 	if sig == syscall.SIGWINCH {
-		w.draw(ctx, false)
-		return nil
+		return w.draw(ctx, false)
 	}
 	return errLeave
 }
 
 // draw asks for a frame. With none in flight it starts one; otherwise the request waits as
-// the one pending draw, which is fresh if any request folded into it was. The TS chained
-// every request instead; folding them draws the same final state with fewer probes.
-func (w *watcher) draw(ctx context.Context, fresh bool) {
+// the one pending draw, which is fresh if any request folded into it was — and the frame on
+// screen is repainted now with the current view, because a probe is a subprocess (a dark box
+// costs orca 12 s to give up on) and the key path must never wait on one. The TS chained
+// every request instead, so a key pressed mid-probe moved nothing until the probe landed.
+func (w *watcher) draw(ctx context.Context, fresh bool) error {
 	if w.drawing {
 		w.pending, w.pendingFresh = true, w.pendingFresh || fresh
-		return
+		if w.last == nil {
+			return nil
+		}
+		return w.paint(*w.last)
 	}
 	w.drawing = true
 	go w.probe(ctx, fresh)
+	return nil
 }
 
 // probe runs Collect off the loop. It probes no more often than one interval, so a keystroke
@@ -280,7 +287,7 @@ func (w *watcher) landedProbe(ctx context.Context, p probed) error {
 		w.pending = false
 		fresh := w.pendingFresh
 		w.pendingFresh = false
-		w.draw(ctx, fresh)
+		return w.draw(ctx, fresh)
 	}
 	return nil
 }
@@ -355,8 +362,7 @@ func (w *watcher) key(ctx context.Context, key string) error {
 	ctl, programs, err := w.programs()
 	if err != nil {
 		w.view.Message = err.Error()
-		w.draw(ctx, false)
-		return nil
+		return w.draw(ctx, false)
 	}
 	intent, view := DecideKey(key, w.view, programs, w.last)
 	w.view = view
@@ -432,7 +438,7 @@ func (w *watcher) apply(ctx context.Context, out outcome, err error) error {
 	}
 	w.view.Message = out.message
 	if out.redraw {
-		w.draw(ctx, out.fresh)
+		return w.draw(ctx, out.fresh)
 	}
 	return nil
 }

@@ -718,3 +718,26 @@ func TestAnIntentPanicRestoresAndEndsTheSession(t *testing.T) {
 	}
 	checkRestored(t, h)
 }
+
+// A probe is a subprocess and never sits in the key path: while one is in flight a key paints
+// the frame already on screen with the new view, and the probe's state lands when it lands.
+func TestAKeyPaintsWithoutWaitingForTheProbe(t *testing.T) {
+	h, deps := rig(t, 15, threeUp)
+	gate := make(chan struct{})
+	h.collect.gate[1] = gate
+	h.run(deps, 15)
+	h.waitFrames(1)
+	h.ticks <- time.Now() // probe 1 starts and hangs
+	h.waitCalls(2)
+	h.key("j")
+	h.waitFrames(2) // painted while the probe is still held
+	want := painted(h.collect.st, View{Selected: 1}, 100, 40)[len("\x1b[H"):]
+	if got := h.frames()[1]; got != want {
+		t.Errorf("frame after j while probing:\n got  %q\n want %q", got, want)
+	}
+	close(gate)
+	h.key("q")
+	if err := h.wait(); err != nil {
+		t.Fatal(err)
+	}
+}
